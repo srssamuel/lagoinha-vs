@@ -34,4 +34,22 @@ describe('MixerBusService', () => {
     expect(guideEval.gains.rightGain).toBe(0.0);
     expect(keysEval.gains.rightGain).toBe(1.0);
   });
+
+  it('silences all instrument stems when Solo Click (Live Rescue) is engaged', () => {
+    const stems = [
+      new TrackStem({ id: 's1', name: 'Click', type: 'click', volume: 1.0, pan: 0, isMuted: false, isSolo: false }),
+      new TrackStem({ id: 's2', name: 'Guide', type: 'guide', volume: 1.0, pan: 0, isMuted: false, isSolo: false }),
+      new TrackStem({ id: 's3', name: 'Drums', type: 'drums', volume: 0.9, pan: 0, isMuted: false, isSolo: false }),
+      new TrackStem({ id: 's4', name: 'Guitars', type: 'guitars', volume: 0.8, pan: 0, isMuted: false, isSolo: false }),
+    ];
+
+    const evaluations = MixerBusService.evaluateAllStems(stems, 'SPLIT_IEM_PA', true);
+    const clickEval = evaluations.find((e) => e.stemId === 's1')!;
+    const drumsEval = evaluations.find((e) => e.stemId === 's3')!;
+    const guitarsEval = evaluations.find((e) => e.stemId === 's4')!;
+
+    expect(clickEval.isAudible).toBe(true);
+    expect(drumsEval.isAudible).toBe(false);
+    expect(guitarsEval.isAudible).toBe(false);
+  });
 });

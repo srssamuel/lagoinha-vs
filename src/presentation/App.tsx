@@ -5,42 +5,45 @@ import { DemoWorshipSongs } from '../infrastructure/mock/DemoWorshipSongs';
 import { Song } from '../domain/entities/Song';
 import { StageHeader } from './components/StageHeader';
 import { TransportBar } from './components/TransportBar';
+import { WaveformDisplay } from './components/WaveformDisplay';
 import { SectionTimeline } from './components/SectionTimeline';
 import { MultitrackMixer } from './components/MultitrackMixer';
 import { SetlistSidebar } from './components/SetlistSidebar';
 import { AmbientPadBar } from './components/AmbientPadBar';
 import { RoutingModal } from './components/RoutingModal';
+import { MidiModal } from './components/MidiModal';
 
 export const App: React.FC = () => {
-  // Audio Engines
+  // Motores de Áudio
   const audioEngine = useMemo(() => new WebAudioEngine(), []);
   const padEngine = useMemo(() => new PolyphonicAmbientPad(), []);
 
-  // Repertório
+  // Repertório do Culto
   const [songs, setSongs] = useState<Song[]>(() => DemoWorshipSongs.getPresetSongs());
   const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
 
   // Estado Reativo do Motor
   const [engineState, setEngineState] = useState(() => audioEngine.getState());
 
-  // Estado do Pad
+  // Estado do Pad Contínuo
   const [isPadActive, setIsPadActive] = useState<boolean>(false);
   const [currentPadKey, setCurrentPadKey] = useState<MusicalKey | null>(null);
   const [padVolume, setPadVolume] = useState<number>(0.35);
 
-  // Modal de Roteamento
+  // Modais de Configuração
   const [isRoutingModalOpen, setIsRoutingModalOpen] = useState<boolean>(false);
+  const [isMidiModalOpen, setIsMidiModalOpen] = useState<boolean>(false);
 
   const currentSong = songs[currentSongIndex] ?? null;
 
-  // Inicializa o som da música atual no motor
+  // Carrega a música selecionada no motor
   useEffect(() => {
     if (currentSong) {
       void audioEngine.loadSong(currentSong);
     }
   }, [currentSong, audioEngine]);
 
-  // Inscrição nas notificações de estado do motor de áudio
+  // Observer de Telemetria do Motor
   useEffect(() => {
     const unsubscribe = audioEngine.subscribe((state) => {
       setEngineState(state);
@@ -48,7 +51,7 @@ export const App: React.FC = () => {
     return () => unsubscribe();
   }, [audioEngine]);
 
-  // Carrega áudio context do pad
+  // Inicializa o contexto do Pad no primeiro gesto do usuário
   useEffect(() => {
     const handleGesture = () => {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -62,7 +65,6 @@ export const App: React.FC = () => {
   // Teclas de Atalho de Palco
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignora se estiver digitando em input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
@@ -77,6 +79,9 @@ export const App: React.FC = () => {
       } else if (e.code === 'KeyR') {
         e.preventDefault();
         audioEngine.toggleSectionLoop();
+      } else if (e.code === 'KeyC') {
+        e.preventDefault();
+        audioEngine.toggleSoloClick();
       } else if (e.code === 'KeyN') {
         e.preventDefault();
         handleNextSong();
@@ -101,7 +106,7 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [engineState.isPlaying, audioEngine, currentSong]);
 
-  // Navegação do Setlist
+  // Setlist Handlers
   const handleSelectSong = (index: number) => {
     if (index >= 0 && index < songs.length) {
       audioEngine.stop();
@@ -121,10 +126,17 @@ export const App: React.FC = () => {
     }
   }, [currentSongIndex]);
 
+  // BPM direct change
+  const handleBpmChange = (newBpm: number) => {
+    if (currentSong) {
+      currentSong.bpm = newBpm;
+      setSongs([...songs]);
+    }
+  };
+
   // Mixer Callbacks
   const handleVolumeChange = (stemId: string, vol: number) => {
     audioEngine.setStemVolume(stemId, vol);
-    // Força re-render
     setSongs([...songs]);
   };
 
@@ -169,46 +181,49 @@ export const App: React.FC = () => {
     }
   };
 
-  // Custom song import
   const handleImportCustomSong = (newSong: Song) => {
     setSongs((prev) => [...prev, newSong]);
     setCurrentSongIndex(songs.length);
   };
 
   return (
-    <div className="flex flex-col h-screen bg-stage-bg text-slate-100 overflow-hidden font-sans">
-      {/* Topo / Header da Estação */}
+    <div className="flex flex-col h-screen bg-[#0a0d14] text-slate-100 overflow-hidden font-sans">
+      {/* Topo / Header da Estação com Álbuns e BPM */}
       <StageHeader
+        songs={songs}
+        currentSongIndex={currentSongIndex}
         currentSong={currentSong}
         currentBeat={engineState.currentBeat}
         currentBar={engineState.currentBar}
         isPlaying={engineState.isPlaying}
         routingMode={engineState.routingMode}
         masterVolume={engineState.masterVolume}
+        onSelectSongIndex={handleSelectSong}
+        onBpmChange={handleBpmChange}
         onMasterVolumeChange={(vol) => audioEngine.setMasterVolume(vol)}
         onOpenRoutingModal={() => setIsRoutingModalOpen(true)}
       />
 
-      {/* Barra de Transporte (Play, Pause, Stop, Pânico) */}
+      {/* Barra de Transporte (Play, Pause, Solo Click, Loop, MIDI) */}
       <TransportBar
         isPlaying={engineState.isPlaying}
         isLoopingSection={engineState.isLoopingSection}
+        isSoloClickActive={engineState.isSoloClickActive}
+        isLoopClickActive={engineState.isLoopClickActive}
         onPlay={() => audioEngine.play()}
         onPause={() => audioEngine.pause()}
         onStop={() => audioEngine.stop()}
         onPrevSong={handlePrevSong}
         onNextSong={handleNextSong}
         onToggleLoop={() => audioEngine.toggleSectionLoop()}
+        onToggleSoloClick={() => audioEngine.toggleSoloClick()}
+        onToggleLoopClick={() => audioEngine.toggleLoopClick()}
+        onOpenMidiModal={() => setIsMidiModalOpen(true)}
         onPanic={() => audioEngine.panic()}
-        onTapTempo={(newBpm) => {
-          if (currentSong) {
-            currentSong.bpm = newBpm;
-            setSongs([...songs]);
-          }
-        }}
+        onTapTempo={handleBpmChange}
       />
 
-      {/* Área Central: Setlist à Esquerda + Timeline e Mixer no Centro */}
+      {/* Área Central: Setlist à Esquerda + Timeline & Mixer no Centro */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar com o Repertório do Culto */}
         <SetlistSidebar
@@ -221,6 +236,17 @@ export const App: React.FC = () => {
 
         {/* Console Principal */}
         <main className="flex-1 flex flex-col overflow-hidden">
+          {/* Waveform Estilo Fader Club com Fatias Coloridas de Seção */}
+          <WaveformDisplay
+            currentSong={currentSong}
+            currentTime={engineState.currentTime}
+            duration={engineState.duration}
+            activeSectionId={engineState.activeSectionId}
+            queuedSectionId={engineState.queuedSectionId}
+            onSeek={(secs) => audioEngine.seek(secs)}
+            onSelectSection={(secId) => audioEngine.queueSectionJump(secId)}
+          />
+
           {/* Timeline de Seções da Música com Pulos Quantizados */}
           <SectionTimeline
             currentSong={currentSong}
@@ -232,12 +258,13 @@ export const App: React.FC = () => {
             onSeek={(secs) => audioEngine.seek(secs)}
           />
 
-          {/* Mixer de Multitracks com Faders de Palco */}
+          {/* Mixer de Multitracks com Faders de Palco e VU Meters Estéreo */}
           {currentSong && (
             <MultitrackMixer
               stems={currentSong.stems}
               routingMode={engineState.routingMode}
               isPlaying={engineState.isPlaying}
+              isSoloClickActive={engineState.isSoloClickActive}
               onVolumeChange={handleVolumeChange}
               onPanChange={handlePanChange}
               onToggleMute={handleToggleMute}
@@ -257,7 +284,7 @@ export const App: React.FC = () => {
         onPadVolumeChange={handlePadVolumeChange}
       />
 
-      {/* Modal de Configuração de Roteamento de Saída */}
+      {/* Modal de Configuração de Roteamento (IEM/PA Split) */}
       <RoutingModal
         isOpen={isRoutingModalOpen}
         routingMode={engineState.routingMode}
@@ -266,6 +293,12 @@ export const App: React.FC = () => {
           setIsRoutingModalOpen(false);
         }}
         onClose={() => setIsRoutingModalOpen(false)}
+      />
+
+      {/* Modal de Mapeamento MIDI e Teclado de Palco */}
+      <MidiModal
+        isOpen={isMidiModalOpen}
+        onClose={() => setIsMidiModalOpen(false)}
       />
     </div>
   );

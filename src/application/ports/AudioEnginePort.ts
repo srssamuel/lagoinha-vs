@@ -11,6 +11,8 @@ export interface AudioEngineState {
   queuedSectionId: string | null;
   activeSectionId: string | null;
   isLoopingSection: boolean;
+  isSoloClickActive: boolean;
+  isLoopClickActive: boolean;
   masterVolume: number;
 }
 
@@ -29,6 +31,8 @@ export interface AudioEnginePort {
   toggleStemSolo(stemId: string): void;
   queueSectionJump(sectionId: string): void;
   toggleSectionLoop(): void;
+  toggleSoloClick(): void;
+  toggleLoopClick(): void;
   getState(): AudioEngineState;
   subscribe(listener: (state: AudioEngineState) => void): () => void;
   panic(): void; // Emergency fade out

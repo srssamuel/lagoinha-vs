@@ -9,16 +9,24 @@ export interface StemBusEvaluation {
 
 export class MixerBusService {
   /**
-   * Avalia todos os stems de uma música com base nas regras de Solo, Mute, Volume e Roteamento
+   * Avalia todos os stems de uma música com base nas regras de Solo, Mute, Volume, Roteamento e Solo Click (Live Rescue)
    */
   public static evaluateAllStems(
     stems: TrackStem[],
-    routingMode: RoutingMode
+    routingMode: RoutingMode,
+    isSoloClickActive: boolean = false
   ): StemBusEvaluation[] {
     const hasAnySolo = stems.some((s) => s.isSolo);
 
     return stems.map((stem) => {
-      const isAudible = stem.isAudible(hasAnySolo);
+      // Se Solo Click está ativo, apenas click e guia passam para o fone, mutando o resto da banda
+      let isAudible = stem.isAudible(hasAnySolo);
+      if (isSoloClickActive) {
+        if (stem.type !== 'click' && stem.type !== 'guide') {
+          isAudible = false;
+        }
+      }
+
       const gains = AudioRouting.calculateGains(
         stem.type,
         routingMode,

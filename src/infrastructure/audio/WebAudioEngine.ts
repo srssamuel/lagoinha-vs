@@ -28,6 +28,8 @@ export class WebAudioEngine implements AudioEnginePort {
   private routingMode: RoutingMode = 'SPLIT_IEM_PA';
   private queuedSectionId: string | null = null;
   private isLoopingSection: boolean = false;
+  private isSoloClickActive: boolean = false;
+  private isLoopClickActive: boolean = false;
   private masterVolume: number = 1.0;
 
   // Metronome click scheduler
@@ -232,6 +234,17 @@ export class WebAudioEngine implements AudioEnginePort {
     this.notifyState();
   }
 
+  public toggleSoloClick(): void {
+    this.isSoloClickActive = !this.isSoloClickActive;
+    this.applyMixerSettings();
+    this.notifyState();
+  }
+
+  public toggleLoopClick(): void {
+    this.isLoopClickActive = !this.isLoopClickActive;
+    this.notifyState();
+  }
+
   public panic(): void {
     // Parada imediata com fade out de 300ms de emergência
     if (this.masterGain && this.ctx) {
@@ -272,6 +285,8 @@ export class WebAudioEngine implements AudioEnginePort {
       queuedSectionId: this.queuedSectionId,
       activeSectionId: activeSection?.id || null,
       isLoopingSection: this.isLoopingSection,
+      isSoloClickActive: this.isSoloClickActive,
+      isLoopClickActive: this.isLoopClickActive,
       masterVolume: this.masterVolume
     };
   }
@@ -293,7 +308,11 @@ export class WebAudioEngine implements AudioEnginePort {
   private applyMixerSettings(): void {
     if (!this.currentSong || !this.ctx) return;
 
-    const stemEvals = MixerBusService.evaluateAllStems(this.currentSong.stems, this.routingMode);
+    const stemEvals = MixerBusService.evaluateAllStems(
+      this.currentSong.stems,
+      this.routingMode,
+      this.isSoloClickActive
+    );
     const now = this.ctx.currentTime;
 
     stemEvals.forEach(({ stemId, gains }) => {
@@ -462,8 +481,13 @@ export class WebAudioEngine implements AudioEnginePort {
 
       // Checa fim da música
       if (this.currentSong && currentTime >= this.currentSong.duration) {
-        this.stop();
-        return;
+        if (this.isLoopClickActive) {
+          this.stopAudioSources();
+          // Metrônomo continua rodando em loop
+        } else {
+          this.stop();
+          return;
+        }
       }
 
       // Checa pulo quantizado agendado
