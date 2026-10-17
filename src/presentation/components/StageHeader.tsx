@@ -1,7 +1,8 @@
 import React from 'react';
-import { Volume2, Radio, Music2, ShieldCheck, Minus, Plus } from 'lucide-react';
+import { Volume2, Radio, Music2, ShieldCheck, Minus, Plus, Cloud, LogOut, User as UserIcon } from 'lucide-react';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
+import { User } from '../../domain/entities/User';
 
 interface StageHeaderProps {
   songs: Song[];
@@ -12,10 +13,13 @@ interface StageHeaderProps {
   isPlaying: boolean;
   routingMode: RoutingMode;
   masterVolume: number;
+  currentUser: User | null;
   onSelectSongIndex: (idx: number) => void;
   onBpmChange: (newBpm: number) => void;
   onMasterVolumeChange: (vol: number) => void;
   onOpenRoutingModal: () => void;
+  onOpenCloudLibrary: () => void;
+  onSignOut: () => void;
 }
 
 export const StageHeader: React.FC<StageHeaderProps> = ({
@@ -27,10 +31,13 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
   isPlaying,
   routingMode,
   masterVolume,
+  currentUser,
   onSelectSongIndex,
   onBpmChange,
   onMasterVolumeChange,
-  onOpenRoutingModal
+  onOpenRoutingModal,
+  onOpenCloudLibrary,
+  onSignOut
 }) => {
   return (
     <header className="bg-stage-surface border-b border-stage-border px-6 py-2.5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
@@ -54,8 +61,8 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
         </div>
       </div>
 
-      {/* Setlist Song Thumbnails Ribbon (Estilo Fader Club / Multitracks Elite) */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-md lg:max-w-xl">
+      {/* Setlist Song Thumbnails Ribbon */}
+      <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-md lg:max-w-lg">
         {songs.map((song, idx) => {
           const isSelected = currentSongIndex === idx;
           return (
@@ -86,7 +93,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
 
       {/* Musical Stage Telemetry */}
       {currentSong && (
-        <div className="flex items-center gap-5 bg-stage-card/70 border border-stage-border px-4 py-1.5 rounded-2xl shadow-inner">
+        <div className="flex items-center gap-4 bg-stage-card/70 border border-stage-border px-3.5 py-1.5 rounded-2xl shadow-inner">
           {/* Tom / Key */}
           <div className="text-center">
             <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">Tom</span>
@@ -97,7 +104,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
 
           <div className="w-px h-7 bg-stage-border/60" />
 
-          {/* BPM com Botões [-] [+] e LED pulsante */}
+          {/* BPM */}
           <div className="text-center flex flex-col items-center">
             <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">BPM</span>
             <div className="flex items-center gap-1.5">
@@ -135,7 +142,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
 
           <div className="w-px h-7 bg-stage-border/60" />
 
-          {/* Compasso & Batida */}
+          {/* Compasso */}
           <div className="text-center">
             <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">Compasso</span>
             <div className="font-mono text-base font-bold text-slate-100">
@@ -144,21 +151,21 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
               <span className="text-blue-400">{currentBeat}</span>
             </div>
           </div>
-
-          <div className="w-px h-7 bg-stage-border/60" />
-
-          {/* Métrica */}
-          <div className="text-center">
-            <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">Métrica</span>
-            <span className="text-xs font-bold text-slate-300 font-mono">
-              {currentSong.timeSignature.beats}/{currentSong.timeSignature.value}
-            </span>
-          </div>
         </div>
       )}
 
-      {/* Output Routing Badge & Master Volume */}
-      <div className="flex items-center gap-3">
+      {/* Cloud VS Button, Output Routing & User Profile */}
+      <div className="flex items-center gap-2.5">
+        {/* Botão Banco de VS (Google Cloud) */}
+        <button
+          onClick={onOpenCloudLibrary}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-[11px] font-bold transition active:scale-95 shadow-md shadow-blue-600/10"
+          title="Abrir Banco de Multitracks na Nuvem"
+        >
+          <Cloud className="w-3.5 h-3.5 text-blue-400" />
+          <span>BANCO DE VS</span>
+        </button>
+
         {/* Roteamento de Palco (Split vs Stereo) */}
         <button
           onClick={onOpenRoutingModal}
@@ -182,7 +189,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
           )}
         </button>
 
-        {/* Master Volume Slider */}
+        {/* Master Volume */}
         <div className="flex items-center gap-2 bg-stage-card px-2.5 py-1.5 rounded-xl border border-stage-border">
           <Volume2 className="w-3.5 h-3.5 text-stage-muted" />
           <input
@@ -192,13 +199,34 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
             step="0.01"
             value={masterVolume}
             onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
-            className="w-16 accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
+            className="w-14 accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
             title={`Volume Master: ${Math.round(masterVolume * 100)}%`}
           />
-          <span className="text-[11px] font-mono text-slate-300 w-7 text-right">
-            {Math.round(masterVolume * 100)}%
-          </span>
         </div>
+
+        {/* User Profile Badge & Logout */}
+        {currentUser && (
+          <div className="flex items-center gap-2 pl-1 border-l border-stage-border">
+            <div className="flex items-center gap-1.5 bg-stage-card px-2.5 py-1 rounded-xl border border-stage-border">
+              <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white text-[9px] font-black">
+                {currentUser.displayName.charAt(0).toUpperCase() || <UserIcon className="w-3 h-3" />}
+              </div>
+              <div className="text-left text-[10px]">
+                <div className="font-bold text-white truncate max-w-[80px]">
+                  {currentUser.displayName}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onSignOut}
+              className="p-1.5 rounded-xl bg-stage-card border border-stage-border text-slate-400 hover:text-rose-400 transition"
+              title="Sair da Conta (Logout)"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

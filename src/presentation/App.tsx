@@ -3,6 +3,8 @@ import { WebAudioEngine } from '../infrastructure/audio/WebAudioEngine';
 import { PolyphonicAmbientPad, MusicalKey } from '../infrastructure/audio/PolyphonicAmbientPad';
 import { DemoWorshipSongs } from '../infrastructure/mock/DemoWorshipSongs';
 import { Song } from '../domain/entities/Song';
+import { User } from '../domain/entities/User';
+import { FirebaseAuthService } from '../infrastructure/auth/FirebaseAuthService';
 import { StageHeader } from './components/StageHeader';
 import { TransportBar } from './components/TransportBar';
 import { WaveformDisplay } from './components/WaveformDisplay';
@@ -12,17 +14,23 @@ import { SetlistSidebar } from './components/SetlistSidebar';
 import { AmbientPadBar } from './components/AmbientPadBar';
 import { RoutingModal } from './components/RoutingModal';
 import { MidiModal } from './components/MidiModal';
+import { AuthGate } from './components/AuthGate';
+import { CloudVSLibraryModal } from './components/CloudVSLibraryModal';
 
 export const App: React.FC = () => {
-  // Motores de Áudio
+  // Serviços de Autenticação e Áudio
+  const authService = useMemo(() => new FirebaseAuthService(), []);
   const audioEngine = useMemo(() => new WebAudioEngine(), []);
   const padEngine = useMemo(() => new PolyphonicAmbientPad(), []);
+
+  // Estado de Usuário Autenticado
+  const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getCurrentUser());
 
   // Repertório do Culto
   const [songs, setSongs] = useState<Song[]>(() => DemoWorshipSongs.getPresetSongs());
   const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
 
-  // Estado Reativo do Motor
+  // Estado Reativo do Motor de Áudio
   const [engineState, setEngineState] = useState(() => audioEngine.getState());
 
   // Estado do Pad Contínuo
@@ -30,11 +38,20 @@ export const App: React.FC = () => {
   const [currentPadKey, setCurrentPadKey] = useState<MusicalKey | null>(null);
   const [padVolume, setPadVolume] = useState<number>(0.35);
 
-  // Modais de Configuração
+  // Modais de Palco
   const [isRoutingModalOpen, setIsRoutingModalOpen] = useState<boolean>(false);
   const [isMidiModalOpen, setIsMidiModalOpen] = useState<boolean>(false);
+  const [isCloudLibraryOpen, setIsCloudLibraryOpen] = useState<boolean>(false);
 
   const currentSong = songs[currentSongIndex] ?? null;
+
+  // Inscrição no estado de autenticação
+  useEffect(() => {
+    const unsubscribe = authService.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, [authService]);
 
   // Carrega a música selecionada no motor
   useEffect(() => {
@@ -62,8 +79,30 @@ export const App: React.FC = () => {
     window.addEventListener('click', handleGesture, { once: true });
   }, [padEngine]);
 
+  // Navegação de Músicas
+  const handleSelectSong = (index: number) => {
+    if (index >= 0 && index < songs.length) {
+      audioEngine.stop();
+      setCurrentSongIndex(index);
+    }
+  };
+
+  const handleNextSong = useCallback(() => {
+    if (currentSongIndex < songs.length - 1) {
+      handleSelectSong(currentSongIndex + 1);
+    }
+  }, [currentSongIndex, songs.length]);
+
+  const handlePrevSong = useCallback(() => {
+    if (currentSongIndex > 0) {
+      handleSelectSong(currentSongIndex - 1);
+    }
+  }, [currentSongIndex]);
+
   // Teclas de Atalho de Palco
   useEffect(() => {
+    if (!currentUser) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
@@ -104,27 +143,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [engineState.isPlaying, audioEngine, currentSong]);
-
-  // Setlist Handlers
-  const handleSelectSong = (index: number) => {
-    if (index >= 0 && index < songs.length) {
-      audioEngine.stop();
-      setCurrentSongIndex(index);
-    }
-  };
-
-  const handleNextSong = useCallback(() => {
-    if (currentSongIndex < songs.length - 1) {
-      handleSelectSong(currentSongIndex + 1);
-    }
-  }, [currentSongIndex, songs.length]);
-
-  const handlePrevSong = useCallback(() => {
-    if (currentSongIndex > 0) {
-      handleSelectSong(currentSongIndex - 1);
-    }
-  }, [currentSongIndex]);
+  }, [currentUser, engineState.isPlaying, audioEngine, currentSong, handleNextSong, handlePrevSong]);
 
   // BPM direct change
   const handleBpmChange = (newBpm: number) => {
@@ -181,14 +200,26 @@ export const App: React.FC = () => {
     }
   };
 
+  // Importar música local
   const handleImportCustomSong = (newSong: Song) => {
     setSongs((prev) => [...prev, newSong]);
     setCurrentSongIndex(songs.length);
   };
 
+  // Adicionar música do Banco de VS na Nuvem
+  const handleAddCloudSong = (cloudSong: Song) => {
+    setSongs((prev) => [...prev, cloudSong]);
+    setCurrentSongIndex(songs.length);
+  };
+
+  // Se o usuário não estiver autenticado, exibe a tela de login
+  if (!currentUser) {
+    return <AuthGate authService={authService} onAuthenticated={setCurrentUser} />;
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#0a0d14] text-slate-100 overflow-hidden font-sans">
-      {/* Topo / Header da Estação com Álbuns e BPM */}
+      {/* Topo / Header da Estação com Álbuns, BPM, Banco de VS e Perfil */}
       <StageHeader
         songs={songs}
         currentSongIndex={currentSongIndex}
@@ -198,10 +229,13 @@ export const App: React.FC = () => {
         isPlaying={engineState.isPlaying}
         routingMode={engineState.routingMode}
         masterVolume={engineState.masterVolume}
+        currentUser={currentUser}
         onSelectSongIndex={handleSelectSong}
         onBpmChange={handleBpmChange}
         onMasterVolumeChange={(vol) => audioEngine.setMasterVolume(vol)}
         onOpenRoutingModal={() => setIsRoutingModalOpen(true)}
+        onOpenCloudLibrary={() => setIsCloudLibraryOpen(true)}
+        onSignOut={() => void authService.signOut()}
       />
 
       {/* Barra de Transporte (Play, Pause, Solo Click, Loop, MIDI) */}
@@ -299,6 +333,14 @@ export const App: React.FC = () => {
       <MidiModal
         isOpen={isMidiModalOpen}
         onClose={() => setIsMidiModalOpen(false)}
+      />
+
+      {/* Modal do Banco de VS na Nuvem (Google Cloud) */}
+      <CloudVSLibraryModal
+        isOpen={isCloudLibraryOpen}
+        canUpload={currentUser.canUploadVS}
+        onClose={() => setIsCloudLibraryOpen(false)}
+        onAddSongToSetlist={handleAddCloudSong}
       />
     </div>
   );
