@@ -9,3 +9,5 @@ build/
 coverage/
 __pycache__/
 *.tsbuildinfo
+
+.vercel

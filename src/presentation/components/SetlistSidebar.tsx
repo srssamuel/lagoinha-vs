@@ -76,7 +76,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
   };
 
   return (
-    <aside className="w-80 bg-stage-surface border-r border-stage-border flex flex-col justify-between shrink-0 h-full">
+    <aside className="w-full lg:w-72 xl:w-80 bg-stage-surface border-b lg:border-b-0 lg:border-r border-stage-border flex flex-col justify-between shrink-0 lg:h-full">
       {/* Topo do Repertório */}
       <div className="p-4 border-b border-stage-border">
         <div className="flex items-center justify-between mb-1">

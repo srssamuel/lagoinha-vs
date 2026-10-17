@@ -62,7 +62,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
       </div>
 
       {/* Setlist Song Thumbnails Ribbon */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-md lg:max-w-lg">
+      <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full sm:max-w-md lg:max-w-lg">
         {songs.map((song, idx) => {
           const isSelected = currentSongIndex === idx;
           return (
@@ -93,7 +93,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
 
       {/* Musical Stage Telemetry */}
       {currentSong && (
-        <div className="flex items-center gap-4 bg-stage-card/70 border border-stage-border px-3.5 py-1.5 rounded-2xl shadow-inner">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 bg-stage-card/70 border border-stage-border px-3.5 py-1.5 rounded-2xl shadow-inner max-w-full">
           {/* Tom / Key */}
           <div className="text-center">
             <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">Tom</span>
@@ -155,7 +155,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
       )}
 
       {/* Cloud VS Button, Output Routing & User Profile */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2 max-w-full">
         {/* Botão Banco de VS (Google Cloud) */}
         <button
           onClick={onOpenCloudLibrary}

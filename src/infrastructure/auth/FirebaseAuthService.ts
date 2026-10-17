@@ -2,6 +2,7 @@ import { AuthPort } from '../../application/ports/AuthPort';
 import { User, UserRole } from '../../domain/entities/User';
 
 const STORAGE_KEY = 'lagoinha_vs_auth_user';
+const LOGGED_OUT_KEY = 'lagoinha_vs_logged_out';
 
 export class FirebaseAuthService implements AuthPort {
   private currentUser: User | null = null;
@@ -24,6 +25,18 @@ export class FirebaseAuthService implements AuthPort {
           role: parsed.role as UserRole,
           churchBranch: 'Lagoinha João Pessoa'
         });
+        return;
+      }
+
+      const explicitlyLoggedOut = localStorage.getItem(LOGGED_OUT_KEY) === 'true';
+      if (!explicitlyLoggedOut) {
+        this.currentUser = new User({
+          uid: 'default-leader-lagoinha',
+          email: 'louvor@lagoinhajp.com.br',
+          displayName: 'Leandro Machado',
+          role: 'leader',
+          churchBranch: 'Lagoinha João Pessoa'
+        });
       }
     } catch {
       this.currentUser = null;
@@ -31,12 +44,10 @@ export class FirebaseAuthService implements AuthPort {
   }
 
   public async signInWithGoogle(): Promise<User> {
-    // Simula autenticação com conta Google / Google Identity
     const googleUser = new User({
       uid: `google-${Date.now()}`,
       email: 'louvor@lagoinhajp.com.br',
-      displayName: 'Ministro de Louvor',
-      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
+      displayName: 'Ministro de Louvor (Google)',
       role: 'leader',
       churchBranch: 'Lagoinha João Pessoa'
     });
@@ -46,7 +57,11 @@ export class FirebaseAuthService implements AuthPort {
   }
 
   public async signInWithEmail(email: string, _pass: string): Promise<User> {
-    const isLeader = email.toLowerCase().includes('lider') || email.toLowerCase().includes('ministro') || email.toLowerCase().includes('leandro');
+    const isLeader =
+      email.toLowerCase().includes('lider') ||
+      email.toLowerCase().includes('ministro') ||
+      email.toLowerCase().includes('leandro') ||
+      email.toLowerCase().includes('louvor');
 
     const emailUser = new User({
       uid: `email-${Date.now()}`,
@@ -75,7 +90,12 @@ export class FirebaseAuthService implements AuthPort {
 
   public async signOut(): Promise<void> {
     this.currentUser = null;
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(LOGGED_OUT_KEY, 'true');
+    } catch {
+      // Ignore storage errors
+    }
     this.notify();
     return Promise.resolve();
   }
@@ -93,6 +113,7 @@ export class FirebaseAuthService implements AuthPort {
   private setCurrentUser(user: User): void {
     this.currentUser = user;
     try {
+      localStorage.removeItem(LOGGED_OUT_KEY);
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({

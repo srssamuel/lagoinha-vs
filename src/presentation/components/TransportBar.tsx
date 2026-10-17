@@ -82,11 +82,11 @@ export const TransportBar: React.FC<TransportBarProps> = ({
       </div>
 
       {/* Primary Transport Engine Controls */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2">
         {/* Play / Pause */}
         <button
           onClick={isPlaying ? onPause : onPlay}
-          className={`flex items-center justify-center gap-2 px-7 py-2.5 rounded-2xl font-black text-xs tracking-wide transition-all shadow-lg active:scale-95 ${
+          className={`flex items-center justify-center gap-2 px-5 sm:px-7 py-2.5 rounded-2xl font-black text-xs tracking-wide transition-all shadow-lg active:scale-95 ${
             isPlaying
               ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/25 ring-2 ring-amber-400/40'
               : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/25 ring-2 ring-blue-400/40'
@@ -118,7 +118,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
         {/* Section Looper */}
         <button
           onClick={onToggleLoop}
-          className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl border text-xs font-bold transition active:scale-95 ${
+          className={`flex items-center gap-1.5 px-3 py-2.5 rounded-2xl border text-xs font-bold transition active:scale-95 ${
             isLoopingSection
               ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-md shadow-emerald-500/10'
               : 'bg-stage-card border-stage-border text-stage-muted hover:text-white hover:bg-slate-800'
@@ -159,7 +159,7 @@ export const TransportBar: React.FC<TransportBarProps> = ({
       </div>
 
       {/* MIDI Modal, Tap Tempo & Panic */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {/* MIDI / Teclado Mapper Button */}
         <button
           onClick={onOpenMidiModal}

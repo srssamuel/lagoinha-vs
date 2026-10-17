@@ -218,7 +218,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0d14] text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0a0d14] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
       {/* Topo / Header da Estação com Álbuns, BPM, Banco de VS e Perfil */}
       <StageHeader
         songs={songs}
@@ -258,7 +258,7 @@ export const App: React.FC = () => {
       />
 
       {/* Área Central: Setlist à Esquerda + Timeline & Mixer no Centro */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col-reverse lg:flex-row flex-1 min-w-0 lg:overflow-hidden">
         {/* Sidebar com o Repertório do Culto */}
         <SetlistSidebar
           songs={songs}
@@ -269,7 +269,7 @@ export const App: React.FC = () => {
         />
 
         {/* Console Principal */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col min-w-0 lg:overflow-hidden">
           {/* Waveform Estilo Fader Club com Fatias Coloridas de Seção */}
           <WaveformDisplay
             currentSong={currentSong}

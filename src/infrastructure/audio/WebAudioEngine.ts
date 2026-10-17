@@ -4,6 +4,7 @@ import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
 import { QuantizedSectionService } from '../../application/services/QuantizedSectionService';
 import { ProceduralClickGenerator } from './ProceduralClickGenerator';
+import { ProceduralStemSynthesizer } from './ProceduralStemSynthesizer';
 
 interface StemAudioNodes {
   source: AudioBufferSourceNode | null;
@@ -396,68 +397,62 @@ export class WebAudioEngine implements AudioEnginePort {
   private startAudioSources(offset: number): void {
     if (!this.ctx || !this.currentSong) return;
 
-    // Para cada stem com buffer de áudio carregado ou sintetizado
-    this.currentSong.stems.forEach((stem) => {
-      const nodes = this.stemNodes.get(stem.id);
-      if (!nodes || !this.ctx) return;
+    const song = this.currentSong;
 
-      if (stem.audioBuffer) {
-        const source = this.ctx.createBufferSource();
-        source.buffer = stem.audioBuffer;
-        source.connect(nodes.gainNode);
-        source.start(0, offset);
+    // Para cada stem com buffer de áudio carregado ou sintetizado
+    song.stems.forEach((stem) => {
+      const nodes = this.stemNodes.get(stem.id);
+      if (!nodes || !this.ctx || stem.type === 'click') return;
+
+      // Se possui arquivo importado via URL e ainda não decodificado, decodifica em background
+      if (stem.audioUrl && !stem.audioBuffer) {
+        const ctxRef = this.ctx;
+        void fetch(stem.audioUrl)
+          .then((res) => res.arrayBuffer())
+          .then((ab) => ctxRef.decodeAudioData(ab))
+          .then((decoded) => {
+            stem.audioBuffer = decoded;
+            if (this.isPlaying && this.currentSong?.id === song.id) {
+              const src = ctxRef.createBufferSource();
+              src.buffer = decoded;
+              src.connect(nodes.gainNode);
+              src.start(0, Math.min(this.getCurrentPlaybackTime(), decoded.duration));
+              nodes.source = src;
+            }
+          })
+          .catch(() => {
+            // Fallback para síntese procedural se o arquivo falhar
+          });
+        return;
+      }
+
+      if (!stem.audioBuffer) {
+        stem.audioBuffer = ProceduralStemSynthesizer.createStemLoopBuffer(
+          this.ctx,
+          stem.type,
+          song.bpm,
+          song.timeSignature.beats,
+          song.currentKey
+        );
+      }
+
+      const source = this.ctx.createBufferSource();
+      source.buffer = stem.audioBuffer;
+      const isProceduralLoop = !stem.audioUrl;
+      source.loop = isProceduralLoop;
+      source.connect(nodes.gainNode);
+
+      const startOffset = isProceduralLoop
+        ? offset % stem.audioBuffer.duration
+        : Math.min(offset, stem.audioBuffer.duration);
+
+      try {
+        source.start(0, startOffset);
         nodes.source = source;
-      } else if (stem.type !== 'click') {
-        // Gera textura harmônica sintetizada realista para a demonstração
-        this.createSynthesizedTrackSource(stem.type, offset, nodes);
+      } catch {
+        // Ignora caso já iniciado
       }
     });
-  }
-
-  private createSynthesizedTrackSource(
-    stemType: string,
-    _offset: number,
-    nodes: StemAudioNodes
-  ): void {
-    if (!this.ctx || !this.currentSong) return;
-    const now = this.ctx.currentTime;
-
-    // Síntese harmônica sutil baseada no tom e tempo da música
-    const osc = this.ctx.createOscillator();
-    const stemFilter = this.ctx.createBiquadFilter();
-
-    let baseFreq = 220; // A3
-    if (stemType === 'bass') {
-      osc.type = 'sawtooth';
-      stemFilter.type = 'lowpass';
-      stemFilter.frequency.setValueAtTime(180, now);
-      baseFreq = 55; // A1
-    } else if (stemType === 'drums') {
-      osc.type = 'triangle';
-      stemFilter.type = 'bandpass';
-      stemFilter.frequency.setValueAtTime(400, now);
-      baseFreq = 65;
-    } else if (stemType === 'pad' || stemType === 'keys') {
-      osc.type = 'sine';
-      stemFilter.type = 'lowpass';
-      stemFilter.frequency.setValueAtTime(800, now);
-      baseFreq = 164.81; // E3
-    } else {
-      osc.type = 'triangle';
-      baseFreq = 293.66; // D4
-    }
-
-    osc.frequency.setValueAtTime(baseFreq, now);
-    osc.connect(stemFilter);
-    stemFilter.connect(nodes.gainNode);
-
-    try {
-      osc.start(now);
-      // Armazena source
-      nodes.source = osc as unknown as AudioBufferSourceNode;
-    } catch {
-      // Ignora se não puder iniciar
-    }
   }
 
   private stopAudioSources(): void {
