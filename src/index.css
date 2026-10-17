@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0a0d14;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Stage Fader Range styling */
+input[type="range"].fader-vertical {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 28px;
+  height: 180px;
+  background: #182030;
+  border-radius: 6px;
+  cursor: pointer;
+  accent-color: #3b82f6;
+}
+
+/* Animations for stage indicators */
+@keyframes pulse-beat {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-pulse-beat {
+  animation: pulse-beat 0.25s ease-out;
+}

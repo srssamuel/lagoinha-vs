@@ -1,0 +1,18 @@
+﻿# ai-memory project marker (opt-in capture)
+project = "lagoinha-vs"
+workspace = "default"
+
+[capture]
+ignore_paths = [
+  ".env*",
+  "*.key",
+  "*.pem",
+  "*.token",
+  "*.secret",
+  "auth.json",
+  "credentials.json",
+  "node_modules/**",
+  ".git/**",
+  ".venv/**"
+]
+

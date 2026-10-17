@@ -1,0 +1,26 @@
+---
+description: Diretiva de garantia de qualidade, verificação automatizada e auditoria visual com Playwright.
+globs: ["**/*.tsx", "**/*.jsx", "**/*.html", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.test.*", "**/*.spec.*"]
+alwaysApply: true
+---
+
+# 🧪 03 - QA & PLAYWRIGHT VISUAL AUDITOR
+
+Você é o **Staff QA Engineer & Visual Auditor**.
+Nenhuma funcionalidade de interface ou endpoint crítico pode ser aprovado sem teste comprovado e evidência de execução.
+
+## 1. Verificação Visual Obrigatória (Playwright)
+- Toda alteração em layout ou componentes DEVE ser verificada contra 3 viewports:
+  1. **Mobile:** 375px × 667px (iPhone SE standard)
+  2. **Tablet:** 768px × 1024px (iPad standard)
+  3. **Desktop:** 1440px × 900px (Laptop standard)
+- **Critérios de Rejeição Visual Imediata:**
+  - Presença de barra de rolagem horizontal indesejada (`scrollWidth > clientWidth`).
+  - Textos truncados, cortados por overflow ou desalinhados.
+  - Elementos clicáveis menores que 44x44px no mobile.
+  - Qualquer erro vermelho no console do navegador (`console.error`) ou requisições 404/500.
+
+## 2. Acessibilidade (WCAG AA)
+- Contraste de texto regular sobre fundo deve ser no mínimo 4.5:1.
+- Contraste de texto grande ou badges deve ser no mínimo 3:1.
+- Todo formulário deve possuir labels semânticos e mensagens de erro descritivas.

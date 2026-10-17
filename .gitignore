@@ -1,0 +1,11 @@
+.env
+.env.*
+*.local
+*.sqlite
+*.db
+node_modules/
+dist/
+build/
+coverage/
+__pycache__/
+*.tsbuildinfo
