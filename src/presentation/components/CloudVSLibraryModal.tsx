@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CloudSong } from '../../domain/entities/CloudSong';
 import { DemoCloudVSLibrary } from '../../infrastructure/mock/DemoCloudVSLibrary';
 import { Song } from '../../domain/entities/Song';
+import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
 import {
   X,
   Search,
@@ -83,9 +84,10 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   // Upload Form State
   const [newTitle, setNewTitle] = useState('');
   const [newArtist, setNewArtist] = useState('');
-  const [newKey, setNewKey] = useState('G');
-  const [newBpm, setNewBpm] = useState(120);
+  const [newKey, setNewKey] = useState('B');
+  const [newBpm, setNewBpm] = useState(140);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -100,6 +102,36 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
     setAddedSongIds((prev) => new Set([...prev, cloudSong.id]));
   };
 
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFiles = Array.from(e.target.files || []);
+    if (rawFiles.length === 0) return;
+
+    const zipFile = rawFiles.find((f) => f.name.toLowerCase().endsWith('.zip'));
+    if (zipFile) {
+      setIsExtractingZip(true);
+      try {
+        const meta = ZipMultitrackExtractor.parseMetadataFromZipName(zipFile.name);
+        if (!newTitle) setNewTitle(meta.title);
+        if (!newArtist) setNewArtist(meta.artist);
+        setNewBpm(meta.bpm);
+        setNewKey(meta.originalKey);
+
+        const zipBuffer = await zipFile.arrayBuffer();
+        const extracted = await ZipMultitrackExtractor.extractAudioFiles(zipBuffer);
+        const asFiles = extracted.map(
+          (entry) => new File([entry.data], entry.filename, { type: 'audio/wav' })
+        );
+        setUploadedFiles(asFiles.length > 0 ? asFiles : rawFiles);
+      } catch {
+        setUploadedFiles(rawFiles);
+      } finally {
+        setIsExtractingZip(false);
+      }
+    } else {
+      setUploadedFiles(rawFiles);
+    }
+  };
+
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle) return;
@@ -112,7 +144,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
           artist: newArtist || 'Lagoinha Worship',
           originalKey: newKey,
           bpm: newBpm,
-          duration: 300
+          duration: 247
         },
         uploadedFiles
       );
@@ -146,11 +178,11 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                   Banco de VS na Nuvem & Repositórios
                 </h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                  A100 NEURAL STEMS
+                  SUPORTE A .ZIP / WAV / MP3
                 </span>
               </div>
               <p className="text-xs text-stage-muted">
-                Catálogo com 9 stems separados (Violão, Guitarra, Baixo, Bateria, Keys, Pad, Vocals, Click e Guia).
+                Catálogo com stems isolados (Click, Guia, Bateria, Loops, Baixo, Guitarras, Violão, Teclados, Pad e Vozes).
               </p>
             </div>
           </div>
@@ -188,7 +220,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
               }`}
             >
               <UploadCloud className="w-3.5 h-3.5" />
-              <span>Subir Novo VS (WAV/MP3)</span>
+              <span>Subir Novo VS (ZIP / WAV / MP3)</span>
             </button>
           )}
 
@@ -215,7 +247,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                 <Search className="w-4 h-4 text-stage-muted absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Pesquisar por título, artista ou tag (ex: Casa Worship, Bondade de Deus, Ceia)..."
+                  placeholder="Pesquisar por título, artista ou tag (ex: O Nosso General, Casa Worship, Bondade de Deus)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-stage-border text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
@@ -264,7 +296,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                           </span>
                         </div>
                         <p className="text-xs text-stage-muted truncate">
-                          {song.artist} • {song.stemsCount} Stems Isolados (Violão + Guitarra separados)
+                          {song.artist} • {song.stemsCount} Stems Isolados (Bateria/Loops/Click em Pitch Lock)
                         </p>
                         <div className="flex items-center gap-2 mt-1">
                           {song.tags.map((t) => (
@@ -320,7 +352,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Ruja o Leão"
+                  placeholder="ex: O Nosso General"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   required
@@ -334,7 +366,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Talitha Pereira"
+                  placeholder="ex: Versão Mateus Brito"
                   value={newArtist}
                   onChange={(e) => setNewArtist(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-stage-border text-xs text-white"
@@ -368,41 +400,47 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
               </div>
             </div>
 
-            {/* Seletor de Arquivos de Áudio */}
+            {/* Seletor de Pacote ZIP ou Arquivos de Áudio */}
             <div>
               <label className="text-[10px] font-bold text-slate-300 uppercase block mb-1">
-                Arquivos das Multitracks (Stems WAV ou MP3)
+                Pacote .ZIP de Multitrack ou Stems Individuais (WAV / MP3)
               </label>
               <div className="border-2 border-dashed border-stage-border rounded-2xl p-6 text-center hover:border-blue-500/60 bg-slate-900/40">
                 <HardDrive className="w-8 h-8 text-blue-400 mx-auto mb-2" />
                 <p className="text-xs font-bold text-slate-300">
-                  Arraste os arquivos de áudio dos stems ou clique para selecionar
+                  Selecione o arquivo .ZIP completo da Multitrack ou os arquivos WAV/MP3
                 </p>
                 <p className="text-[11px] text-stage-muted mt-0.5">
-                  Click, Guia, Bateria, Baixo, Violão, Guitarra, Teclados, Pads, Vocals
+                  O sistema extrai o .ZIP automaticamente, identifica BPM/Tom e protege Bateria, Loops, Click e Guia contra mudança de tom.
                 </p>
                 <input
                   type="file"
                   multiple
-                  accept="audio/*"
-                  onChange={(e) => setUploadedFiles(Array.from(e.target.files || []))}
+                  accept=".zip,application/zip,audio/*,.wav,.mp3,.ogg,.flac,.m4a"
+                  onChange={(e) => void handleFilesSelected(e)}
                   className="mt-3 text-xs text-slate-400"
                 />
               </div>
 
-              {uploadedFiles.length > 0 && (
+              {isExtractingZip && (
+                <div className="mt-2 text-xs text-amber-300 font-mono">
+                  Descompactando pacote .ZIP de Multitracks...
+                </div>
+              )}
+
+              {uploadedFiles.length > 0 && !isExtractingZip && (
                 <div className="mt-2 text-xs text-emerald-400 font-mono">
-                  {uploadedFiles.length} arquivos selecionados para upload no Google Cloud.
+                  ✓ {uploadedFiles.length} stems prontos para abrir no Mixer (Bateria, Loops, Click e Guia com Pitch Lock automático).
                 </div>
               )}
             </div>
 
             <button
               type="submit"
-              disabled={isSubmitting || !newTitle}
+              disabled={isSubmitting || isExtractingZip || !newTitle}
               className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition shadow-lg shadow-blue-600/30 disabled:opacity-50"
             >
-              {isSubmitting ? 'Sincronizando no Google Cloud...' : 'Salvar no Banco de VS da Lagoinha'}
+              {isSubmitting ? 'Carregando Stems no Mixer...' : 'Salvar e Abrir Multitrack no Culto'}
             </button>
           </form>
         )}
@@ -411,9 +449,8 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
         {activeTab === 'repositories' && (
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
             <div className="p-3 rounded-2xl bg-blue-950/30 border border-blue-500/30 text-xs text-slate-300">
-              Baixe pacotes de Multitracks (WAV ou MP3) de qualquer um dos repositórios abaixo e clique em{' '}
-              <strong className="text-white">&ldquo;Importar Multitracks (WAV/MP3)&rdquo;</strong> na barra lateral ou em{' '}
-              <strong className="text-white">&ldquo;Subir Novo VS&rdquo;</strong> para abrir os canais separados automaticamente.
+              Baixe pacotes de Multitracks (<strong className="text-white">.ZIP, WAV ou MP3</strong>) de qualquer um dos repositórios abaixo e clique em{' '}
+              <strong className="text-white">&ldquo;Subir Track (.ZIP / WAV / MP3)&rdquo;</strong> na barra lateral para abrir os canais separados automaticamente.
             </div>
 
             {EXTERNAL_REPOSITORIES.map((repo) => (

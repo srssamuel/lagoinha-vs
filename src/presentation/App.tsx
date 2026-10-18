@@ -161,10 +161,21 @@ export const App: React.FC = () => {
     }
   };
 
-  // Transposição de Tom em Tempo Real (Pitch Shift MultiTracks.com.br)
+  // Transposição de Tom em Tempo Real (Pitchproof Constant-Tempo Pitch Shift — Protege Bateria/Loops/Click/Guia)
   const handlePitchShiftChange = (semitones: number) => {
     audioEngine.setPitchShift(semitones);
     setSongs([...songs]);
+  };
+
+  // Alternar Pitch Lock de um canal específico (se o usuário quiser travar/destravar manualmente)
+  const handleTogglePitchLock = (stemId: string) => {
+    if (!currentSong) return;
+    const target = currentSong.stems.find((s) => s.id === stemId);
+    if (target) {
+      target.isPitchShiftable = !target.isPitchShiftable;
+      audioEngine.setPitchShift(currentSong.pitchShiftSemitones);
+      setSongs([...songs]);
+    }
   };
 
   // EnsaioMix® (RehearsalMix MultiTracks.com.br: Mix Aumentada / Mix Diminuta)
@@ -291,7 +302,7 @@ export const App: React.FC = () => {
       padEngine.stop(1.5);
       setIsPadActive(false);
     } else {
-      const keyToPlay = currentPadKey || (currentSong?.currentKey as MusicalKey) || 'G';
+      const keyToPlay = currentPadKey || (currentSong?.currentKey as MusicalKey) || 'B';
       setCurrentPadKey(keyToPlay);
       padEngine.play(keyToPlay, padVolume);
       setIsPadActive(true);
@@ -305,7 +316,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Importar música local
+  // Importar música local (.ZIP ou WAV/MP3)
   const handleImportCustomSong = (newSong: Song) => {
     setSongs((prev) => [...prev, newSong]);
     setCurrentSongIndex(songs.length);
@@ -324,7 +335,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
-      {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro e Banco de VS */}
+      {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro, Plugins VST e Banco de VS */}
       <StageHeader
         songs={songs}
         currentSongIndex={currentSongIndex}
@@ -342,6 +353,7 @@ export const App: React.FC = () => {
         onOpenRoutingModal={() => setIsRoutingModalOpen(true)}
         onOpenCloudLibrary={() => setIsCloudLibraryOpen(true)}
         onOpenCifraModal={() => setIsCifraModalOpen(true)}
+        onOpenVstRack={() => handleOpenVstRack()}
         onSignOut={() => void authService.signOut()}
       />
 
@@ -402,7 +414,7 @@ export const App: React.FC = () => {
             onSeek={(secs) => audioEngine.seek(secs)}
           />
 
-          {/* Mixer de Multitracks com Faders de Palco, EnsaioMix, Rack VST e VU Meters Estéreo */}
+          {/* Mixer de Multitracks com Faders de Palco, Mudança de Tom c/ Pitch Lock, EnsaioMix, Rack VST e VU Meters Estéreo */}
           {currentSong && (
             <MultitrackMixer
               stems={currentSong.stems}
@@ -410,11 +422,16 @@ export const App: React.FC = () => {
               isPlaying={engineState.isPlaying}
               isSoloClickActive={engineState.isSoloClickActive}
               stemLevels={engineState.stemLevels}
+              originalKey={currentSong.originalKey}
+              currentKey={currentSong.currentKey}
+              pitchShiftSemitones={currentSong.pitchShiftSemitones}
               onVolumeChange={handleVolumeChange}
               onPanChange={handlePanChange}
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
               onResetMixer={handleResetMixer}
+              onPitchShiftChange={handlePitchShiftChange}
+              onTogglePitchLock={handleTogglePitchLock}
               onApplyEnsaioMix={handleApplyEnsaioMix}
               onOpenVstRack={handleOpenVstRack}
               onAutoFixAllStems={handleAutoFixAllStems}

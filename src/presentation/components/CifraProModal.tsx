@@ -19,6 +19,58 @@ interface SectionChartData {
 }
 
 const CHARTS_BY_SONG_ID: Record<string, SectionChartData[]> = {
+  'o-nosso-general': [
+    {
+      type: 'intro',
+      chords: 'G#m7   E   B   F#',
+      lyrics: '[Riff Synth Lead + Guitarras EG1/EG2 + Bateria 140 BPM em Si Maior]'
+    },
+    {
+      type: 'verse',
+      chords: 'G#m7   E   B   F#',
+      lyrics: 'Pelo Senhor marchamos sim / O Seu exército poderoso é / Sua glória será vista em toda a Terra...'
+    },
+    {
+      type: 'chorus',
+      chords: 'G#m7   E   B   F#',
+      lyrics: 'O nosso General é Cristo / Seguimos os Seus passos / Nenhum inimigo nos resistirá!'
+    },
+    {
+      type: 'turnaround',
+      chords: 'G#m7   E   B   F#',
+      lyrics: '[Interlúdio Synth Lead + EG 3 + Órgão Hammond]'
+    },
+    {
+      type: 'verse',
+      chords: 'G#m7   E   B   F#',
+      lyrics: 'Vamos cantar o canto da vitória / Glória a Deus, vencemos a batalha / Toda arma contra nós perecerá!'
+    },
+    {
+      type: 'chorus',
+      chords: 'G#m7   E   B   F#',
+      lyrics: 'O nosso General é Cristo / Seguimos os Seus passos / Nenhum inimigo nos resistirá!'
+    },
+    {
+      type: 'instrumental',
+      chords: 'E   F#   G#m7   D#m7',
+      lyrics: '[Solo Guitarra EG 3 + Keys EP + Groove Contrabaixo]'
+    },
+    {
+      type: 'bridge',
+      chords: 'E   F#   G#m7   B/D#',
+      lyrics: 'Com o Messias marchamos sim / Em Suas mãos a chave da vitória / Que nos leva a possuir a Terra Prometida!'
+    },
+    {
+      type: 'chorus',
+      chords: 'G#m7   E   B   F#',
+      lyrics: 'O nosso General é Cristo / Seguimos os Seus passos / Nenhum inimigo nos resistirá! (2x)'
+    },
+    {
+      type: 'outro',
+      chords: 'G#m7   E   B   F#   G#m7',
+      lyrics: '[Final Explosivo — Parada Geral no Tempo 1]'
+    }
+  ],
   'song-casa-sua': [
     {
       type: 'intro',

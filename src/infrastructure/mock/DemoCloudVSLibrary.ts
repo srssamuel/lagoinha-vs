@@ -3,8 +3,10 @@ import { CloudVSRepositoryPort } from '../../application/ports/CloudVSRepository
 import { Song } from '../../domain/entities/Song';
 import { TrackStem } from '../../domain/entities/TrackStem';
 import { SongSection } from '../../domain/value-objects/SongSection';
+import { DemoWorshipSongs } from './DemoWorshipSongs';
 
 const FOLDER_BY_CLOUD_ID: Record<string, string> = {
+  'cloud-o-nosso-general': 'o-nosso-general',
   'cloud-casa-e-sua': 'song-casa-sua',
   'cloud-ruja-o-leao': 'song-ruja-o-leao',
   'cloud-bondade-de-deus': 'cloud-bondade-deus',
@@ -17,6 +19,35 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
   private uploadedBlobUrls: Map<string, Map<string, string>> = new Map();
 
   private library: CloudSong[] = [
+    new CloudSong({
+      id: 'cloud-o-nosso-general',
+      title: 'O Nosso General',
+      artist: 'Versão Mateus Brito',
+      originalKey: 'B',
+      bpm: 140,
+      timeSignature: { beats: 4, value: 4 },
+      duration: 247,
+      stemsCount: 13,
+      tags: ['Guerra Espiritual', 'Celebração', 'Multitrack Real 13 Canais'],
+      uploadedBy: 'Samuel (Upload ZIP Oficial)',
+      uploadedAt: '18/10/2026',
+      storageFolder: 'gs://lagoinha-vs-cloud/tracks/o-nosso-general',
+      stems: [
+        { id: 'click', name: 'Click 140 BPM', type: 'click', fileSizeMb: 2.9 },
+        { id: 'guide', name: 'Guia (Voz de Comando)', type: 'guide', fileSizeMb: 2.9 },
+        { id: 'drums', name: 'Bateria (Drums)', type: 'drums', fileSizeMb: 4.7 },
+        { id: 'loop', name: 'Loop Percussivo (Keys Loop)', type: 'loop', fileSizeMb: 3.9 },
+        { id: 'bass', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 4.7 },
+        { id: 'eg1', name: 'Guitarra 1 (EG 1 Base)', type: 'guitars', fileSizeMb: 4.7 },
+        { id: 'eg2', name: 'Guitarra 2 (EG 2 Riff)', type: 'guitars', fileSizeMb: 4.7 },
+        { id: 'eg3', name: 'Guitarra Solo (EG 3 Lead)', type: 'guitars', fileSizeMb: 4.7 },
+        { id: 'keys_ep', name: 'Piano Elétrico (Keys EP)', type: 'keys', fileSizeMb: 4.7 },
+        { id: 'keys_orgao', name: 'Órgão Hammond (Keys Órgão)', type: 'keys', fileSizeMb: 4.7 },
+        { id: 'pad', name: 'Keys Synth Pad', type: 'pad', fileSizeMb: 4.7 },
+        { id: 'keys_lead', name: 'Synth Lead (Keys Lead)', type: 'keys', fileSizeMb: 4.7 },
+        { id: 'vocals', name: 'Backing Vocals (Coro)', type: 'vocals', fileSizeMb: 3.9 }
+      ]
+    }),
     new CloudSong({
       id: 'cloud-bondade-de-deus',
       title: 'Bondade de Deus',
@@ -195,6 +226,15 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
   }
 
   public async convertCloudSongToPlaybackSong(cloudSong: CloudSong): Promise<Song> {
+    if (cloudSong.id === 'cloud-o-nosso-general') {
+      const preset = DemoWorshipSongs.getPresetSongs().find(
+        (s) => s.id === 'o-nosso-general'
+      );
+      if (preset) {
+        return Promise.resolve(preset);
+      }
+    }
+
     const sections = [
       new SongSection({ id: `${cloudSong.id}-intro`, name: 'Intro', type: 'intro', startBar: 1, barCount: 6, startTime: 0, endTime: 18 }),
       new SongSection({ id: `${cloudSong.id}-v1`, name: 'Verso 1', type: 'verse', startBar: 7, barCount: 12, startTime: 18, endTime: 50 }),
@@ -217,6 +257,9 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       } else if (st.type === 'drums') {
         type = 'drums';
         fileName = 'drums.mp3';
+      } else if (st.type === 'loop') {
+        type = 'loop';
+        fileName = 'loop.mp3';
       } else if (st.type === 'bass') {
         type = 'bass';
         fileName = 'bass.mp3';
@@ -271,16 +314,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
 
     const stems = files.map((f, i) => {
       const stemId = `st-${i}`;
-      const lower = f.name.toLowerCase();
-      let type = 'vocals';
-      if (lower.includes('click') || lower.includes('metro')) type = 'click';
-      else if (lower.includes('guia') || lower.includes('guide') || lower.includes('cue')) type = 'guide';
-      else if (lower.includes('drum') || lower.includes('bateria') || lower.includes('loop')) type = 'drums';
-      else if (lower.includes('bass') || lower.includes('baixo')) type = 'bass';
-      else if (lower.includes('violao') || lower.includes('violão') || lower.includes('acustic') || lower.includes('acoustic') || lower.includes('ag')) type = 'violao';
-      else if (lower.includes('gtr') || lower.includes('guit') || lower.includes('eg') || lower.includes('eletric')) type = 'guitars';
-      else if (lower.includes('key') || lower.includes('piano') || lower.includes('teclado')) type = 'keys';
-      else if (lower.includes('pad') || lower.includes('synth') || lower.includes('atmo')) type = 'pad';
+      const classified = TrackStem.classifyStemFromFilename(f.name);
 
       if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
         blobMap.set(stemId, URL.createObjectURL(f));
@@ -288,8 +322,8 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
 
       return {
         id: stemId,
-        name: f.name.replace(/\.[^/.]+$/, ''),
-        type,
+        name: classified.displayName,
+        type: classified.type,
         fileSizeMb: parseFloat((f.size / (1024 * 1024)).toFixed(1))
       };
     });

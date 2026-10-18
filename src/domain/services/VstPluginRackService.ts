@@ -59,6 +59,17 @@ export class VstPluginRackService {
       dspEquivalentInLagoinhaVS: 'Master Brickwall Limiter (Threshold -1.0 dBFS, Ratio 20:1, Attack 1ms) sempre ativo no barramento Master'
     },
     {
+      id: 'pitchproof-vst',
+      name: 'Pitchproof / Kilohearts Pitch Shifter (Constant-Tempo)',
+      developer: 'Aegean Music / Kilohearts',
+      category: 'Pitch Shifter Harmônico Sem Alterar BPM',
+      url: 'https://www.pluginboutique.com/free-plugins',
+      defectSolved:
+        'Evita que instrumentos tonais saiam do tempo ao mudar o Tom e protege Bateria, Loops, Click e Guia contra mudança de pitch.',
+      dspEquivalentInLagoinhaVS:
+        'PitchShifterDspNode Dual-Tap Hann (sin²+cos²=1) ativo apenas em instrumentos tonais (Bateria, Loops, Click e Guia em PITCH LOCK 🔒)'
+    },
+    {
       id: 'ozone-imager',
       name: 'Ozone Imager v2',
       developer: 'iZotope',
@@ -108,12 +119,13 @@ export class VstPluginRackService {
           compressorEnabled: true
         };
       case 'drums':
+      case 'loop':
         return {
-          presetName: 'Transient Punch & Bus Glue',
+          presetName: 'Transient Punch & Bus Glue (Pitch Lock)',
           highPassHz: 28,
-          eqLowDb: 2.5,    // Punch de bumbo
+          eqLowDb: 2.5,    // Punch de bumbo e percussão
           eqMidDb: -1.5,   // Limpa som encaixotado
-          eqHighDb: 2.5,   // Nitidez de chimbal e pratos
+          eqHighDb: 2.5,   // Nitidez de chimbal, shakers e pratos
           driveAmount: 0.1,
           compressorEnabled: true
         };

@@ -5,9 +5,11 @@ import { MixerBusService } from '../../application/services/MixerBusService';
 import { QuantizedSectionService } from '../../application/services/QuantizedSectionService';
 import { ProceduralClickGenerator } from './ProceduralClickGenerator';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
+import { PitchShifterDspNode } from './PitchShifterDspNode';
 
 interface StemAudioNodes {
   source: AudioBufferSourceNode | null;
+  pitchShifter: PitchShifterDspNode;
   highPassFilter: BiquadFilterNode;
   eqLow: BiquadFilterNode;
   eqMid: BiquadFilterNode;
@@ -97,14 +99,18 @@ export class WebAudioEngine implements AudioEnginePort {
 
     if (!this.ctx || !this.channelMerger) return;
 
-    // Limpa nós anteriores
+    // Limpa nós anteriores e libera osciladores LFO do PitchShifter
+    this.stemNodes.forEach((n) => n.pitchShifter.dispose());
     this.stemNodes.clear();
 
     const ctxRef = this.ctx;
 
-    // Cria cadeia DSP completa (Channel Strip) para cada stem real da música
+    // Cria cadeia DSP completa (PitchShifter Constant-Tempo + Channel Strip) para cada stem real da música
     song.stems.forEach((stem) => {
       if (!this.ctx || !this.channelMerger) return;
+
+      const pitchShifter = new PitchShifterDspNode(this.ctx, stem.isPitchShiftable);
+      pitchShifter.setSemitones(song.pitchShiftSemitones);
 
       const highPassFilter = this.ctx.createBiquadFilter();
       highPassFilter.type = 'highpass';
@@ -136,7 +142,8 @@ export class WebAudioEngine implements AudioEnginePort {
       const timeDomainData = new Uint8Array(analyser.frequencyBinCount);
 
       // Cadeia VST Channel Strip:
-      // HighPass (De-Bleed) -> EQ Low -> EQ Mid -> EQ High -> Tube Saturator -> Compressor -> Gain -> Analyser & Split L/R
+      // PitchShifter (Constant-Tempo, Bypass em Bateria/Loops/Click/Guia) -> HighPass (De-Bleed) -> EQ 3 Bandas -> Tube Saturator -> Compressor -> Gain -> Analyser & Split L/R
+      pitchShifter.output.connect(highPassFilter);
       highPassFilter.connect(eqLow);
       eqLow.connect(eqMid);
       eqMid.connect(eqHigh);
@@ -154,6 +161,7 @@ export class WebAudioEngine implements AudioEnginePort {
 
       this.stemNodes.set(stem.id, {
         source: null,
+        pitchShifter,
         highPassFilter,
         eqLow,
         eqMid,
@@ -182,10 +190,7 @@ export class WebAudioEngine implements AudioEnginePort {
               if (currentNodes && !currentNodes.source) {
                 const src = ctxRef.createBufferSource();
                 src.buffer = decoded;
-                if (stem.type !== 'click' && stem.type !== 'guide' && src.detune) {
-                  src.detune.value = this.currentSong.pitchShiftSemitones * 100;
-                }
-                src.connect(currentNodes.highPassFilter);
+                src.connect(currentNodes.pitchShifter.input);
                 const nowOffset = Math.min(this.getCurrentPlaybackTime(), decoded.duration);
                 src.start(0, nowOffset);
                 currentNodes.source = src;
@@ -348,13 +353,17 @@ export class WebAudioEngine implements AudioEnginePort {
 
   public refreshDspChain(): void {
     if (!this.currentSong || !this.ctx) return;
+    const song = this.currentSong;
     const now = this.ctx.currentTime;
 
-    this.currentSong.stems.forEach((stem) => {
+    song.stems.forEach((stem) => {
       const nodes = this.stemNodes.get(stem.id);
       if (!nodes) return;
 
       const dsp = stem.dsp;
+      nodes.pitchShifter.setPitchShiftable(stem.isPitchShiftable);
+      nodes.pitchShifter.setSemitones(song.pitchShiftSemitones);
+
       nodes.highPassFilter.frequency.value = dsp.highPassHz;
       nodes.highPassFilter.frequency.setValueAtTime(dsp.highPassHz, now);
 
@@ -391,15 +400,13 @@ export class WebAudioEngine implements AudioEnginePort {
     if (!this.currentSong) return;
     this.currentSong.setPitchShift(semitones);
     if (this.ctx) {
-      const now = this.ctx.currentTime;
-      const cents = this.currentSong.pitchShiftSemitones * 100;
       this.currentSong.stems.forEach((stem) => {
-        if (stem.type === 'click' || stem.type === 'guide') return;
         const nodes = this.stemNodes.get(stem.id);
-        if (nodes?.source?.detune) {
-          nodes.source.detune.value = cents;
-          nodes.source.detune.setValueAtTime(cents, now);
-        }
+        if (!nodes) return;
+        // Aplica mudança de tom em tempo constante APENAS nos instrumentos tonais (stem.isPitchShiftable === true).
+        // Bateria (drums), Loops (loop), Click (click) e Guia (guide) permanecem em PITCH LOCK (100% Dry).
+        nodes.pitchShifter.setPitchShiftable(stem.isPitchShiftable);
+        nodes.pitchShifter.setSemitones(this.currentSong?.pitchShiftSemitones ?? 0);
       });
     }
     this.notifyState();
@@ -613,20 +620,19 @@ export class WebAudioEngine implements AudioEnginePort {
 
     const song = this.currentSong;
     const ctxRef = this.ctx;
-    const detuneCents = song.pitchShiftSemitones * 100;
 
     song.stems.forEach((stem) => {
       const nodes = this.stemNodes.get(stem.id);
       if (!nodes) return;
 
-      // Se o buffer já foi decodificado, inicia reprodução sincronizada passando pelo Channel Strip DSP
+      nodes.pitchShifter.setPitchShiftable(stem.isPitchShiftable);
+      nodes.pitchShifter.setSemitones(song.pitchShiftSemitones);
+
+      // Se o buffer já foi decodificado, inicia reprodução sincronizada a playbackRate = 1.0 (BPM constante)
       if (stem.audioBuffer) {
         const source = ctxRef.createBufferSource();
         source.buffer = stem.audioBuffer;
-        if (stem.type !== 'click' && stem.type !== 'guide' && source.detune) {
-          source.detune.value = detuneCents;
-        }
-        source.connect(nodes.highPassFilter);
+        source.connect(nodes.pitchShifter.input);
 
         const startOffset = Math.min(offset, stem.audioBuffer.duration);
         try {
@@ -651,10 +657,7 @@ export class WebAudioEngine implements AudioEnginePort {
             if (this.isPlaying && this.currentSong?.id === song.id && !nodes.source) {
               const src = ctxRef.createBufferSource();
               src.buffer = decoded;
-              if (stem.type !== 'click' && stem.type !== 'guide' && src.detune) {
-                src.detune.value = this.currentSong.pitchShiftSemitones * 100;
-              }
-              src.connect(nodes.highPassFilter);
+              src.connect(nodes.pitchShifter.input);
               src.start(0, Math.min(this.getCurrentPlaybackTime(), decoded.duration));
               nodes.source = src;
             }

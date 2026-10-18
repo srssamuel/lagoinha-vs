@@ -1,17 +1,20 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Song } from '../../domain/entities/Song';
+import { SongSection } from '../../domain/value-objects/SongSection';
 import {
   ListMusic,
-  Plus,
   Play,
   Calendar,
   Music,
   Trash2,
   ChevronUp,
   ChevronDown,
-  RotateCcw
+  RotateCcw,
+  FolderArchive
 } from 'lucide-react';
 import { TrackStem } from '../../domain/entities/TrackStem';
+import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
+import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 
 interface SetlistSidebarProps {
   songs: Song[];
@@ -35,73 +38,136 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
   onImportCustomSong
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isExtractingZip, setIsExtractingZip] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const buildStandardSections = (prefix: string, duration: number, bpm: number): SongSection[] => {
+    const barSec = (60 / bpm) * 4;
+    const totalBars = Math.max(16, Math.round(duration / barSec));
+    const introEnd = Math.min(duration * 0.1, 20);
+    const v1End = Math.min(duration * 0.28, 60);
+    const ref1End = Math.min(duration * 0.5, 110);
+    const ponteEnd = Math.min(duration * 0.78, 180);
+
+    return [
+      new SongSection({ id: `${prefix}-intro`, name: 'Intro', type: 'intro', startBar: 1, barCount: 8, startTime: 0, endTime: Math.round(introEnd) }),
+      new SongSection({ id: `${prefix}-v1`, name: 'Verso', type: 'verse', startBar: 9, barCount: 16, startTime: Math.round(introEnd), endTime: Math.round(v1End) }),
+      new SongSection({ id: `${prefix}-ref`, name: 'Refrão', type: 'chorus', startBar: 25, barCount: 16, startTime: Math.round(v1End), endTime: Math.round(ref1End) }),
+      new SongSection({ id: `${prefix}-ponte`, name: 'Ponte / Instrumental', type: 'bridge', startBar: 41, barCount: 16, startTime: Math.round(ref1End), endTime: Math.round(ponteEnd) }),
+      new SongSection({ id: `${prefix}-final`, name: 'Refrão Final / Outro', type: 'outro', startBar: 57, barCount: Math.max(8, totalBars - 56), startTime: Math.round(ponteEnd), endTime: Math.round(duration) })
+    ];
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // Converte os arquivos de áudio selecionados em stems de uma nova música
-    const stems: TrackStem[] = Array.from(files).map((file, idx) => {
-      const fileNameLower = file.name.toLowerCase();
-      let type: TrackStem['type'] = 'vocals';
+    const fileArray = Array.from(files);
+    const zipFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.zip'));
 
-      if (fileNameLower.includes('click') || fileNameLower.includes('metronomo')) {
-        type = 'click';
-      } else if (fileNameLower.includes('guia') || fileNameLower.includes('cue') || fileNameLower.includes('guide')) {
-        type = 'guide';
-      } else if (fileNameLower.includes('bateria') || fileNameLower.includes('drum') || fileNameLower.includes('loop')) {
-        type = 'drums';
-      } else if (fileNameLower.includes('baixo') || fileNameLower.includes('bass')) {
-        type = 'bass';
-      } else if (
-        fileNameLower.includes('violao') ||
-        fileNameLower.includes('violão') ||
-        fileNameLower.includes('acustic') ||
-        fileNameLower.includes('acoustic') ||
-        fileNameLower.includes('ag')
-      ) {
-        type = 'violao';
-      } else if (
-        fileNameLower.includes('guitar') ||
-        fileNameLower.includes('gtr') ||
-        fileNameLower.includes('eletric') ||
-        fileNameLower.includes('eg')
-      ) {
-        type = 'guitars';
-      } else if (fileNameLower.includes('teclado') || fileNameLower.includes('piano') || fileNameLower.includes('key')) {
-        type = 'keys';
-      } else if (fileNameLower.includes('pad') || fileNameLower.includes('synth')) {
-        type = 'pad';
-      } else {
-        type = 'vocals';
+    // Caso 1: Pacote Multitrack completo em .ZIP (ex: "O Nosso General (Versão Mateus Brito) 140Bpm - B.zip")
+    if (zipFile) {
+      setIsExtractingZip(true);
+      try {
+        const meta = ZipMultitrackExtractor.parseMetadataFromZipName(zipFile.name);
+        const arrayBuf = await zipFile.arrayBuffer();
+        const entries = await ZipMultitrackExtractor.extractAudioFiles(arrayBuf);
+
+        const stems: TrackStem[] = entries.map((entry, idx) => {
+          const info = TrackStem.classifyStemFromFilename(entry.filename);
+          const blob = new Blob([entry.data], {
+            type: entry.filename.toLowerCase().endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav'
+          });
+          return new TrackStem({
+            id: `zip-stem-${Date.now()}-${idx}`,
+            name: info.displayName,
+            type: info.type,
+            volume: info.type === 'click' ? 0.85 : info.type === 'guide' ? 0.95 : 1.0,
+            pan: info.defaultPan,
+            isMuted: false,
+            isSolo: false,
+            isPitchShiftable: info.isPitchShiftable,
+            audioUrl: URL.createObjectURL(blob)
+          });
+        });
+
+        // Ordena os stems na sequência padrão de palco: Click, Guia, Bateria, Loop, Baixo, Violão, Guitarras, Teclas, Pad, Vocals
+        const orderRank: Record<TrackStem['type'], number> = {
+          click: 1,
+          guide: 2,
+          drums: 3,
+          loop: 4,
+          bass: 5,
+          violao: 6,
+          guitars: 7,
+          strings: 8,
+          keys: 9,
+          pad: 10,
+          vocals: 11,
+          fx: 12
+        };
+        stems.sort((a, b) => orderRank[a.type] - orderRank[b.type]);
+
+        VstPluginRackService.applySmartAutoFixAll(stems);
+
+        const duration = 247;
+        const songId = `zip-song-${Date.now()}`;
+        const newSong = new Song({
+          id: songId,
+          title: meta.title,
+          artist: `${meta.artist} (ZIP ${stems.length} Stems)`,
+          originalKey: meta.originalKey,
+          currentKey: meta.originalKey,
+          bpm: meta.bpm,
+          timeSignature: { beats: 4, value: 4 },
+          duration,
+          sections: buildStandardSections(songId, duration, meta.bpm),
+          stems
+        });
+
+        onImportCustomSong(newSong);
+      } catch (err) {
+        console.error('Erro ao extrair pacote Multitrack .ZIP:', err);
+      } finally {
+        setIsExtractingZip(false);
+        e.target.value = '';
       }
+      return;
+    }
 
+    // Caso 2: Arquivos de áudio WAV/MP3 soltos
+    const stems: TrackStem[] = fileArray.map((file, idx) => {
+      const info = TrackStem.classifyStemFromFilename(file.name);
       return new TrackStem({
-        id: `imported-stem-${idx}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        type,
-        volume: 1.0,
-        pan: type === 'violao' ? -0.2 : type === 'guitars' ? 0.2 : 0,
+        id: `imported-stem-${Date.now()}-${idx}`,
+        name: info.displayName,
+        type: info.type,
+        volume: info.type === 'click' ? 0.85 : info.type === 'guide' ? 0.95 : 1.0,
+        pan: info.defaultPan,
         isMuted: false,
         isSolo: false,
+        isPitchShiftable: info.isPitchShiftable,
         audioUrl: URL.createObjectURL(file)
       });
     });
 
+    VstPluginRackService.applySmartAutoFixAll(stems);
+
+    const songId = `imported-song-${Date.now()}`;
     const newSong = new Song({
-      id: `imported-song-${Date.now()}`,
-      title: 'Música Importada (Arquivos Locais)',
+      id: songId,
+      title: 'Multitrack Importada (Stems Locais)',
       artist: 'Lagoinha Worship',
       originalKey: 'G',
       currentKey: 'G',
       bpm: 120,
       timeSignature: { beats: 4, value: 4 },
       duration: 240,
-      sections: [],
+      sections: buildStandardSections(songId, 240, 120),
       stems
     });
 
     onImportCustomSong(newSong);
+    e.target.value = '';
   };
 
   return (
@@ -247,23 +313,31 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         )}
       </div>
 
-      {/* Botão de Importar Multitracks Locais */}
+      {/* Botão de Importar Multitracks Locais (.ZIP ou WAV/MP3) */}
       <div className="p-4 border-t border-stage-border bg-stage-card/40">
         <input
           type="file"
           ref={fileInputRef}
           multiple
-          accept="audio/*"
+          accept=".zip,application/zip,audio/*"
           className="hidden"
-          onChange={handleFileUpload}
+          onChange={(e) => void handleFileUpload(e)}
         />
         <button
           type="button"
+          disabled={isExtractingZip}
           onClick={() => fileInputRef.current?.click()}
-          className="w-full py-2.5 px-4 rounded-xl border border-dashed border-stage-border hover:border-blue-500/60 bg-stage-surface text-slate-300 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition"
+          className="w-full py-2.5 px-4 rounded-xl border border-dashed border-amber-500/40 hover:border-amber-400 bg-stage-surface text-amber-300 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-50"
+          title="Suba um arquivo .ZIP de Multitrack (ex: O Nosso General 140Bpm - B.zip) ou vários arquivos .WAV/.MP3"
         >
-          <Plus className="w-4 h-4 text-blue-400" />
-          <span>Importar Multitracks (WAV/MP3)</span>
+          {isExtractingZip ? (
+            <span>Extraindo pacote Multitrack .ZIP...</span>
+          ) : (
+            <>
+              <FolderArchive className="w-4 h-4 text-amber-400" />
+              <span>Subir Multitrack (.ZIP / WAV / MP3)</span>
+            </>
+          )}
         </button>
       </div>
     </aside>

@@ -1,0 +1,163 @@
+[  248607ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:4318/node_modules/.vite/deps/react-dom_client.js?v=b2201293:22162
+[  255293ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255307ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255309ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255310ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255312ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255315ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255316ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255318ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255319ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255321ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255323ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255325ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255327ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255332ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255334ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255336ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255337ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255339ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255341ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255343ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255344ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255346ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255347ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255349ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255350ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  255354ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ http://127.0.0.1:4318/src/infrastructure/audio/PitchShifterDspNode.ts:72
+[  256052ms] [WARNING] Falha ao decodificar stem real Click 140 BPM: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  256140ms] [WARNING] Falha ao decodificar stem real Guia (Cues): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  256240ms] [WARNING] Falha ao decodificar stem real Baixo (BASS): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  256547ms] [WARNING] Falha ao decodificar stem real Bateria (DRUM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  256547ms] [WARNING] Falha ao decodificar stem real Loop Percussivo: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  256691ms] [WARNING] Falha ao decodificar stem real Guitarra 1 (EG 1): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257208ms] [WARNING] Falha ao decodificar stem real Guitarra 2 (EG 2): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257244ms] [WARNING] Falha ao decodificar stem real Guitarra Solo (EG 3): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257293ms] [WARNING] Falha ao decodificar stem real Piano Elétrico (EP): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257373ms] [WARNING] Falha ao decodificar stem real Órgão Hammond: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257373ms] [WARNING] Falha ao decodificar stem real Keys Synth Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257379ms] [WARNING] Falha ao decodificar stem real Synth Lead: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257569ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257647ms] [WARNING] Falha ao decodificar stem real Click 140 BPM: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257719ms] [WARNING] Falha ao decodificar stem real Guia (Cues): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257750ms] [WARNING] Falha ao decodificar stem real Baixo (BASS): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  257866ms] [WARNING] Falha ao decodificar stem real Loop Percussivo: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258029ms] [WARNING] Falha ao decodificar stem real Guitarra 2 (EG 2): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258030ms] [WARNING] Falha ao decodificar stem real Bateria (DRUM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258058ms] [WARNING] Falha ao decodificar stem real Guitarra 1 (EG 1): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258216ms] [WARNING] Falha ao decodificar stem real Guitarra Solo (EG 3): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258375ms] [WARNING] Falha ao decodificar stem real Piano Elétrico (EP): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258560ms] [WARNING] Falha ao decodificar stem real Órgão Hammond: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258560ms] [WARNING] Falha ao decodificar stem real Keys Synth Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258599ms] [WARNING] Falha ao decodificar stem real Synth Lead: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  258605ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  276294ms] [WARNING] Erro ao carregar stem real (Click 140 BPM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276294ms] [WARNING] Erro ao carregar stem real (Guia (Cues)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276344ms] [WARNING] Erro ao carregar stem real (Bateria (DRUM)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276345ms] [WARNING] Erro ao carregar stem real (Loop Percussivo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276345ms] [WARNING] Erro ao carregar stem real (Baixo (BASS)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276346ms] [WARNING] Erro ao carregar stem real (Guitarra Solo (EG 3)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276346ms] [WARNING] Erro ao carregar stem real (Guitarra 1 (EG 1)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276346ms] [WARNING] Erro ao carregar stem real (Piano Elétrico (EP)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276346ms] [WARNING] Erro ao carregar stem real (Guitarra 2 (EG 2)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276347ms] [WARNING] Erro ao carregar stem real (Órgão Hammond): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276347ms] [WARNING] Erro ao carregar stem real (Keys Synth Pad): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276347ms] [WARNING] Erro ao carregar stem real (Synth Lead): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  276347ms] [WARNING] Erro ao carregar stem real (Backing Vocals): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  319888ms] [WARNING] Erro ao carregar stem real (Bateria (DRUM)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320048ms] [WARNING] Erro ao carregar stem real (Loop Percussivo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320049ms] [WARNING] Erro ao carregar stem real (Click 140 BPM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320066ms] [WARNING] Erro ao carregar stem real (Guia (Cues)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320066ms] [WARNING] Erro ao carregar stem real (Guitarra 1 (EG 1)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320301ms] [WARNING] Erro ao carregar stem real (Baixo (BASS)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320539ms] [WARNING] Erro ao carregar stem real (Guitarra 2 (EG 2)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320539ms] [WARNING] Erro ao carregar stem real (Keys Synth Pad): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320629ms] [WARNING] Erro ao carregar stem real (Guitarra Solo (EG 3)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320630ms] [WARNING] Erro ao carregar stem real (Órgão Hammond): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320801ms] [WARNING] Erro ao carregar stem real (Synth Lead): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320801ms] [WARNING] Erro ao carregar stem real (Piano Elétrico (EP)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  320932ms] [WARNING] Erro ao carregar stem real (Backing Vocals): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343545ms] [WARNING] Erro ao carregar stem real (Click 140 BPM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343545ms] [WARNING] Erro ao carregar stem real (Guia (Cues)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343571ms] [WARNING] Erro ao carregar stem real (Bateria (DRUM)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343571ms] [WARNING] Erro ao carregar stem real (Baixo (BASS)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343571ms] [WARNING] Erro ao carregar stem real (Loop Percussivo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Guitarra 1 (EG 1)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Guitarra 2 (EG 2)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Órgão Hammond): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Guitarra Solo (EG 3)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Backing Vocals): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Synth Lead): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Keys Synth Pad): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  343572ms] [WARNING] Erro ao carregar stem real (Piano Elétrico (EP)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  380091ms] [WARNING] Falha ao decodificar stem real Guia Vocal: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380113ms] [WARNING] Falha ao decodificar stem real Baixo (Bass): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380113ms] [WARNING] Falha ao decodificar stem real Bateria (Drums): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380114ms] [WARNING] Falha ao decodificar stem real Violão Acústico: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380114ms] [WARNING] Falha ao decodificar stem real Click (Metrônomo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380115ms] [WARNING] Falha ao decodificar stem real Guitarra Elétrica: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380133ms] [WARNING] Falha ao decodificar stem real Synth / Warm Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380134ms] [WARNING] Falha ao decodificar stem real Teclado / Piano: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  380134ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  381026ms] [WARNING] Erro ao carregar stem real (Click (Metrônomo)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381027ms] [WARNING] Erro ao carregar stem real (Violão Acústico): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381027ms] [WARNING] Erro ao carregar stem real (Guia Vocal): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381027ms] [WARNING] Erro ao carregar stem real (Guitarra Elétrica): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381028ms] [WARNING] Erro ao carregar stem real (Baixo (Bass)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381028ms] [WARNING] Erro ao carregar stem real (Bateria (Drums)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381051ms] [WARNING] Erro ao carregar stem real (Teclado / Piano): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381293ms] [WARNING] Erro ao carregar stem real (Synth / Warm Pad): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  381293ms] [WARNING] Erro ao carregar stem real (Backing Vocals): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  394273ms] [WARNING] Falha ao decodificar stem real Click (Metrônomo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394343ms] [WARNING] Falha ao decodificar stem real Bateria (Drums): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394343ms] [WARNING] Falha ao decodificar stem real Baixo (Bass): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394405ms] [WARNING] Falha ao decodificar stem real Guia Vocal: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394430ms] [WARNING] Falha ao decodificar stem real Violão Acústico: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394466ms] [WARNING] Falha ao decodificar stem real Guitarra Elétrica: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394484ms] [WARNING] Falha ao decodificar stem real Teclado / Piano: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394523ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394523ms] [WARNING] Falha ao decodificar stem real Synth / Warm Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394636ms] [WARNING] Falha ao decodificar stem real Click (Metrônomo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394783ms] [WARNING] Falha ao decodificar stem real Baixo (Bass): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394783ms] [WARNING] Falha ao decodificar stem real Guia Vocal: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394784ms] [WARNING] Falha ao decodificar stem real Guitarra Elétrica: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394785ms] [WARNING] Falha ao decodificar stem real Bateria (Drums): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394785ms] [WARNING] Falha ao decodificar stem real Teclado / Piano: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394785ms] [WARNING] Falha ao decodificar stem real Violão Acústico: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394848ms] [WARNING] Falha ao decodificar stem real Synth / Warm Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  394855ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  395904ms] [WARNING] Falha ao decodificar stem real Click (Metrônomo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  395904ms] [WARNING] Falha ao decodificar stem real Guia Vocal: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  395904ms] [WARNING] Falha ao decodificar stem real Bateria (Drums): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  396123ms] [WARNING] Falha ao decodificar stem real Baixo (Bass): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  396124ms] [WARNING] Falha ao decodificar stem real Violão Acústico: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  396124ms] [WARNING] Falha ao decodificar stem real Guitarra Elétrica: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  396124ms] [WARNING] Falha ao decodificar stem real Synth / Warm Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  396124ms] [WARNING] Falha ao decodificar stem real Teclado / Piano: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  396124ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397162ms] [WARNING] Falha ao decodificar stem real Click 140 BPM: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397176ms] [WARNING] Falha ao decodificar stem real Guia (Cues): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397191ms] [WARNING] Falha ao decodificar stem real Bateria (DRUM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397192ms] [WARNING] Falha ao decodificar stem real Loop Percussivo: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397248ms] [WARNING] Falha ao decodificar stem real Baixo (BASS): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397264ms] [WARNING] Falha ao decodificar stem real Guitarra 1 (EG 1): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397430ms] [WARNING] Falha ao decodificar stem real Guitarra 2 (EG 2): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397451ms] [WARNING] Falha ao decodificar stem real Piano Elétrico (EP): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397451ms] [WARNING] Falha ao decodificar stem real Keys Synth Pad: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397451ms] [WARNING] Falha ao decodificar stem real Guitarra Solo (EG 3): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397451ms] [WARNING] Falha ao decodificar stem real Órgão Hammond: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397568ms] [WARNING] Falha ao decodificar stem real Synth Lead: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  397688ms] [WARNING] Falha ao decodificar stem real Backing Vocals: EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:134
+[  399229ms] [WARNING] Erro ao carregar stem real (Guia (Cues)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399342ms] [WARNING] Erro ao carregar stem real (Bateria (DRUM)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399342ms] [WARNING] Erro ao carregar stem real (Baixo (BASS)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399344ms] [WARNING] Erro ao carregar stem real (Guitarra 1 (EG 1)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399344ms] [WARNING] Erro ao carregar stem real (Loop Percussivo): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399344ms] [WARNING] Erro ao carregar stem real (Click 140 BPM): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399600ms] [WARNING] Erro ao carregar stem real (Guitarra 2 (EG 2)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399931ms] [WARNING] Erro ao carregar stem real (Guitarra Solo (EG 3)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399943ms] [WARNING] Erro ao carregar stem real (Piano Elétrico (EP)): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399943ms] [WARNING] Erro ao carregar stem real (Órgão Hammond): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  399943ms] [WARNING] Erro ao carregar stem real (Keys Synth Pad): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  400026ms] [WARNING] Erro ao carregar stem real (Synth Lead): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
+[  400204ms] [WARNING] Erro ao carregar stem real (Backing Vocals): EncodingError: Unable to decode audio data @ http://127.0.0.1:4318/src/infrastructure/audio/WebAudioEngine.ts:508
