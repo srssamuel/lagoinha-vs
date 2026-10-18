@@ -10,6 +10,8 @@ interface StemAudioNodes {
   gainNode: GainNode;
   leftGain: GainNode;
   rightGain: GainNode;
+  analyser: AnalyserNode;
+  timeDomainData: Uint8Array<ArrayBuffer>;
 }
 
 export class WebAudioEngine implements AudioEnginePort {
@@ -89,7 +91,12 @@ export class WebAudioEngine implements AudioEnginePort {
       const gainNode = this.ctx.createGain();
       const leftGain = this.ctx.createGain();
       const rightGain = this.ctx.createGain();
+      const analyser = this.ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.65;
+      const timeDomainData = new Uint8Array(analyser.frequencyBinCount);
 
+      gainNode.connect(analyser);
       gainNode.connect(leftGain);
       gainNode.connect(rightGain);
 
@@ -101,7 +108,9 @@ export class WebAudioEngine implements AudioEnginePort {
         source: null,
         gainNode,
         leftGain,
-        rightGain
+        rightGain,
+        analyser,
+        timeDomainData
       });
 
       if (stem.audioUrl && !stem.audioBuffer) {
@@ -151,6 +160,8 @@ export class WebAudioEngine implements AudioEnginePort {
     if (!clickStem?.audioUrl) {
       this.setupMetronomeSchedule();
     }
+
+    this.applyMixerSettings();
 
     // Inicia reprodução sincronizada de todos os stems reais
     this.startAudioSources(this.pausedAtTime);
@@ -203,6 +214,7 @@ export class WebAudioEngine implements AudioEnginePort {
       if (!clickStem?.audioUrl) {
         this.setupMetronomeSchedule();
       }
+      this.applyMixerSettings();
       this.startAudioSources(this.pausedAtTime);
       this.isPlaying = true;
     }
@@ -211,8 +223,10 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   public setMasterVolume(vol: number): void {
-    this.masterVolume = Math.max(0, Math.min(1, vol));
+    this.masterVolume = Math.max(0, Math.min(1.5, vol));
     if (this.masterGain && this.ctx) {
+      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.masterGain.gain.value = this.masterVolume;
       this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
     }
     this.notifyState();
@@ -258,6 +272,18 @@ export class WebAudioEngine implements AudioEnginePort {
       this.applyMixerSettings();
       this.notifyState();
     }
+  }
+
+  public resetMixer(): void {
+    if (!this.currentSong) return;
+    this.currentSong.stems.forEach((stem) => {
+      stem.resetVolume();
+      stem.isMuted = false;
+      stem.isSolo = false;
+    });
+    this.isSoloClickActive = false;
+    this.applyMixerSettings();
+    this.notifyState();
   }
 
   public queueSectionJump(sectionId: string): void {
@@ -311,6 +337,40 @@ export class WebAudioEngine implements AudioEnginePort {
     const beatInBar = Math.floor((currentTime % secondsPerBar) / secondsPerBeat) + 1;
     const activeSection = this.currentSong?.getActiveSection(currentTime);
 
+    const stemLevels: Record<string, number> = {};
+    if (this.currentSong) {
+      const hasAnySolo = this.currentSong.hasSoloTrack;
+      this.currentSong.stems.forEach((stem) => {
+        const nodes = this.stemNodes.get(stem.id);
+        const isAudible =
+          this.isPlaying &&
+          stem.isAudible(hasAnySolo) &&
+          (!this.isSoloClickActive || stem.type === 'click') &&
+          stem.volume > 0;
+
+        if (!nodes || !isAudible) {
+          stemLevels[stem.id] = 0;
+          return;
+        }
+
+        try {
+          nodes.analyser.getByteTimeDomainData(nodes.timeDomainData);
+          let sumSquares = 0;
+          const len = nodes.timeDomainData.length;
+          for (let i = 0; i < len; i++) {
+            const normalized = ((nodes.timeDomainData[i] ?? 128) - 128) / 128;
+            sumSquares += normalized * normalized;
+          }
+          const rms = Math.sqrt(sumSquares / len);
+          // Escala visual proporcional ao RMS real do stem e ao ganho (até 2.0)
+          const level = Math.min(1, rms * 3.2 * Math.min(1.5, stem.volume));
+          stemLevels[stem.id] = Number(level.toFixed(3));
+        } catch {
+          stemLevels[stem.id] = Math.min(1, stem.volume * 0.65);
+        }
+      });
+    }
+
     return {
       isPlaying: this.isPlaying,
       currentTime,
@@ -323,7 +383,8 @@ export class WebAudioEngine implements AudioEnginePort {
       isLoopingSection: this.isLoopingSection,
       isSoloClickActive: this.isSoloClickActive,
       isLoopClickActive: this.isLoopClickActive,
-      masterVolume: this.masterVolume
+      masterVolume: this.masterVolume,
+      stemLevels
     };
   }
 
@@ -356,10 +417,14 @@ export class WebAudioEngine implements AudioEnginePort {
       if (!nodes) return;
 
       nodes.leftGain.gain.cancelScheduledValues(now);
-      nodes.leftGain.gain.linearRampToValueAtTime(gains.leftGain, now + 0.02);
+      nodes.leftGain.gain.value = gains.leftGain;
+      nodes.leftGain.gain.setValueAtTime(gains.leftGain, now);
+      nodes.leftGain.gain.linearRampToValueAtTime(gains.leftGain, now + 0.015);
 
       nodes.rightGain.gain.cancelScheduledValues(now);
-      nodes.rightGain.gain.linearRampToValueAtTime(gains.rightGain, now + 0.02);
+      nodes.rightGain.gain.value = gains.rightGain;
+      nodes.rightGain.gain.setValueAtTime(gains.rightGain, now);
+      nodes.rightGain.gain.linearRampToValueAtTime(gains.rightGain, now + 0.015);
     });
   }
 

@@ -54,4 +54,51 @@ export class Setlist {
     }
     return null;
   }
+
+  public removeSongAt(index: number): Song | null {
+    if (index < 0 || index >= this.songs.length) {
+      return this.currentSong;
+    }
+    this.songs.splice(index, 1);
+    if (this.songs.length === 0) {
+      this.currentIndex = 0;
+      return null;
+    }
+    if (this.currentIndex >= this.songs.length) {
+      this.currentIndex = this.songs.length - 1;
+    } else if (index < this.currentIndex) {
+      this.currentIndex = Math.max(0, this.currentIndex - 1);
+    }
+    return this.currentSong;
+  }
+
+  public removeSongById(songId: string): Song | null {
+    const idx = this.songs.findIndex(s => s.id === songId);
+    if (idx === -1) return this.currentSong;
+    return this.removeSongAt(idx);
+  }
+
+  public moveSong(fromIndex: number, toIndex: number): Song | null {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= this.songs.length ||
+      toIndex < 0 ||
+      toIndex >= this.songs.length ||
+      fromIndex === toIndex
+    ) {
+      return this.currentSong;
+    }
+    const currentSongId = this.currentSong?.id;
+    const [moved] = this.songs.splice(fromIndex, 1);
+    if (moved) {
+      this.songs.splice(toIndex, 0, moved);
+    }
+    if (currentSongId) {
+      const newIdx = this.songs.findIndex(s => s.id === currentSongId);
+      if (newIdx !== -1) {
+        this.currentIndex = newIdx;
+      }
+    }
+    return this.currentSong;
+  }
 }

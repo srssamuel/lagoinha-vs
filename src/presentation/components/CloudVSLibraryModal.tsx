@@ -2,7 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { CloudSong } from '../../domain/entities/CloudSong';
 import { DemoCloudVSLibrary } from '../../infrastructure/mock/DemoCloudVSLibrary';
 import { Song } from '../../domain/entities/Song';
-import { X, Search, Cloud, Plus, Check, Music2, HardDrive, UploadCloud } from 'lucide-react';
+import {
+  X,
+  Search,
+  Cloud,
+  Plus,
+  Check,
+  Music2,
+  HardDrive,
+  UploadCloud,
+  Globe,
+  ExternalLink
+} from 'lucide-react';
 
 interface CloudVSLibraryModalProps {
   isOpen: boolean;
@@ -10,6 +21,44 @@ interface CloudVSLibraryModalProps {
   onClose: () => void;
   onAddSongToSetlist: (song: Song) => void;
 }
+
+const EXTERNAL_REPOSITORIES = [
+  {
+    name: 'MultiTracks.com.br (Catálogo Oficial Gospel & Worship)',
+    url: 'https://www.multitracks.com.br/songs/',
+    badge: 'OFICIAL WORSHIP',
+    description:
+      'Maior acervo mundial de multitracks originais de estúdio (Casa Worship, Gabriel Guedes, Isaías Saad, Lagoinha, Elevation, Bethel) com canais isolados de Violão, Guitarra, Baixo, Bateria, Keys, Click e Guia.'
+  },
+  {
+    name: 'Loop Community — Prime Multitracks & Community Stems',
+    url: 'https://loopcommunity.com/en-us/tracks',
+    badge: 'PRODUTORES & COMUNIDADE',
+    description:
+      'Repositório global de produtores de louvor com pacotes de stems WAV/MP3 prontos para importar diretamente no Lagoinha VS.'
+  },
+  {
+    name: 'Cambridge MT — Open Multitrack Download Library (500+ Projetos WAV Grátis)',
+    url: 'https://cambridge-mt.com/ms/mtk/',
+    badge: 'DOWNLOAD DIRETO GRATUITO (WAV)',
+    description:
+      'Maior biblioteca pública de multitracks reais de estúdio abertas para download gratuito em ZIP/WAV, com canais individuais de Violão Acústico, Guitarra Elétrica, Contrabaixo, Bateria, Piano, Cordas e Vozes.'
+  },
+  {
+    name: 'Telefunken — Live From The Lab (Stems Reais de Estúdio Grátis)',
+    url: 'https://www.telefunken-elektroakustik.com/live-from-the-lab-season-4/',
+    badge: 'MULTITRACKS DE ESTÚDIO GRÁTIS',
+    description:
+      'Sessões multitrack reais gravadas ao vivo em estúdio com microfones Telefunken, disponibilizadas gratuitamente em arquivos WAV stem-por-stem.'
+  },
+  {
+    name: 'Worship Backing Band — MultiTrack Player Stems',
+    url: 'https://www.worshipbackingband.com/',
+    badge: 'LOUVOR CONGREGACIONAL',
+    description:
+      'Multitracks econômicas em WAV separadas por instrumento para igrejas e ministérios de louvor.'
+  }
+];
 
 export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   isOpen,
@@ -21,7 +70,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   const [songs, setSongs] = useState<CloudSong[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'catalog' | 'upload'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'upload' | 'repositories'>('catalog');
   const [addedSongIds, setAddedSongIds] = useState<Set<string>>(new Set());
 
   // Upload Form State
@@ -65,10 +114,8 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
       setNewArtist('');
       setUploadedFiles([]);
       setActiveTab('catalog');
-      // Recarrega catálogo
       const list = await repository.listAllSongs();
       setSongs(list);
-      // Auto adiciona ao setlist
       await handleSelectSong(created);
     } finally {
       setIsSubmitting(false);
@@ -89,18 +136,19 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-black text-white tracking-wide uppercase">
-                  Banco de VS na Nuvem
+                  Banco de VS na Nuvem & Repositórios
                 </h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                  GOOGLE CLOUD STORAGE
+                  A100 NEURAL STEMS
                 </span>
               </div>
               <p className="text-xs text-stage-muted">
-                Catálogo oficial de multitracks sincronizadas do ministério de louvor Lagoinha João Pessoa.
+                Catálogo com 9 stems separados (Violão, Guitarra, Baixo, Bateria, Keys, Pad, Vocals, Click e Guia).
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 rounded-xl bg-stage-card border border-stage-border text-stage-muted hover:text-white"
           >
@@ -108,9 +156,10 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
           </button>
         </div>
 
-        {/* Abas: Catálogo na Nuvem vs Upload de Novo VS */}
-        <div className="flex items-center gap-2 mb-4 shrink-0">
+        {/* Abas: Catálogo na Nuvem | Subir Novo VS | Repositórios Reais de Multitracks */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
           <button
+            type="button"
             onClick={() => setActiveTab('catalog')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
               activeTab === 'catalog'
@@ -118,11 +167,12 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                 : 'bg-stage-card text-slate-400 hover:text-white'
             }`}
           >
-            Catálogo na Nuvem ({songs.length} Músicas)
+            Catálogo Lagoinha ({songs.length} Músicas)
           </button>
 
           {canUpload && (
             <button
+              type="button"
               onClick={() => setActiveTab('upload')}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
                 activeTab === 'upload'
@@ -131,9 +181,22 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
               }`}
             >
               <UploadCloud className="w-3.5 h-3.5" />
-              <span>Subir Novo VS (Upload Stems)</span>
+              <span>Subir Novo VS (WAV/MP3)</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('repositories')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              activeTab === 'repositories'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-stage-card text-amber-300 border border-amber-500/30 hover:bg-amber-500/10'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Repositórios Externos de Multitracks</span>
+          </button>
         </div>
 
         {/* Conteúdo Aba Catálogo */}
@@ -145,7 +208,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                 <Search className="w-4 h-4 text-stage-muted absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Pesquisar por título, artista ou tag (ex: Casa Worship, Entrada, Ceia)..."
+                  placeholder="Pesquisar por título, artista ou tag (ex: Casa Worship, Bondade de Deus, Ceia)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-stage-border text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
@@ -194,7 +257,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                           </span>
                         </div>
                         <p className="text-xs text-stage-muted truncate">
-                          {song.artist} • {song.stemsCount} Stems de Áudio
+                          {song.artist} • {song.stemsCount} Stems Isolados (Violão + Guitarra separados)
                         </p>
                         <div className="flex items-center gap-2 mt-1">
                           {song.tags.map((t) => (
@@ -213,7 +276,8 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                     </div>
 
                     <button
-                      onClick={() => handleSelectSong(song)}
+                      type="button"
+                      onClick={() => void handleSelectSong(song)}
                       className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition active:scale-95 shrink-0 ${
                         isAdded
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
@@ -241,7 +305,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
 
         {/* Conteúdo Aba Upload de Novo VS */}
         {activeTab === 'upload' && canUpload && (
-          <form onSubmit={handleUploadSubmit} className="flex-1 overflow-y-auto space-y-4 pr-1">
+          <form onSubmit={(e) => void handleUploadSubmit(e)} className="flex-1 overflow-y-auto space-y-4 pr-1">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-300 uppercase block mb-1">
@@ -308,7 +372,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                   Arraste os arquivos de áudio dos stems ou clique para selecionar
                 </p>
                 <p className="text-[11px] text-stage-muted mt-0.5">
-                  Click, Guia, Bateria, Baixo, Guitarras, Teclados, Pads, FX
+                  Click, Guia, Bateria, Baixo, Violão, Guitarra, Teclados, Pads, Vocals
                 </p>
                 <input
                   type="file"
@@ -334,6 +398,40 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
               {isSubmitting ? 'Sincronizando no Google Cloud...' : 'Salvar no Banco de VS da Lagoinha'}
             </button>
           </form>
+        )}
+
+        {/* Conteúdo Aba Repositórios Externos Reais */}
+        {activeTab === 'repositories' && (
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div className="p-3 rounded-2xl bg-blue-950/30 border border-blue-500/30 text-xs text-slate-300">
+              Baixe pacotes de Multitracks (WAV ou MP3) de qualquer um dos repositórios abaixo e clique em{' '}
+              <strong className="text-white">&ldquo;Importar Multitracks (WAV/MP3)&rdquo;</strong> na barra lateral ou em{' '}
+              <strong className="text-white">&ldquo;Subir Novo VS&rdquo;</strong> para abrir os canais separados automaticamente.
+            </div>
+
+            {EXTERNAL_REPOSITORIES.map((repo) => (
+              <a
+                key={repo.url}
+                href={repo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block p-4 rounded-2xl bg-stage-card border border-stage-border hover:border-amber-400/60 transition group"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-white group-hover:text-amber-300 transition">
+                      {repo.name}
+                    </span>
+                    <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      {repo.badge}
+                    </span>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-amber-300 shrink-0" />
+                </div>
+                <p className="text-xs text-stage-muted leading-relaxed">{repo.description}</p>
+              </a>
+            ))}
+          </div>
         )}
       </div>
     </div>

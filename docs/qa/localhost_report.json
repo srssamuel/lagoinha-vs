@@ -1,6 +1,6 @@
 {
-  "target": "http://localhost:4173",
-  "timestamp": "2026-10-17T23:14:01.099Z",
+  "target": "http://localhost:3000",
+  "timestamp": "2026-10-18T01:51:57.271Z",
   "overallStatus": "PASSED",
   "results": [
     {
@@ -18,7 +18,7 @@
       "smallTargets": [],
       "clipped": [],
       "contrastIssues": [],
-      "contrastSampled": 86,
+      "contrastSampled": 120,
       "contrastBlendSkipped": 0,
       "srOnlySkipped": 0,
       "contrastUnparsed": 0,
@@ -47,7 +47,7 @@
       "smallTargets": [],
       "clipped": [],
       "contrastIssues": [],
-      "contrastSampled": 88,
+      "contrastSampled": 120,
       "contrastBlendSkipped": 0,
       "srOnlySkipped": 0,
       "contrastUnparsed": 0,
@@ -76,7 +76,7 @@
       "smallTargets": [],
       "clipped": [],
       "contrastIssues": [],
-      "contrastSampled": 88,
+      "contrastSampled": 120,
       "contrastBlendSkipped": 0,
       "srOnlySkipped": 0,
       "contrastUnparsed": 0,

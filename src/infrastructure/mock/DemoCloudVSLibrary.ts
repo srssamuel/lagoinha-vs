@@ -25,7 +25,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       bpm: 70,
       timeSignature: { beats: 4, value: 4 },
       duration: 120,
-      stemsCount: 8,
+      stemsCount: 9,
       tags: ['Intimidade', 'Ofertório', 'Ministração'],
       uploadedBy: 'Leandro Machado (Lagoinha JP)',
       uploadedAt: '17/10/2026',
@@ -33,12 +33,13 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       stems: [
         { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
         { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
-        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
-        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 0.9 },
-        { id: 'st-5', name: 'Violão & Guitarras', type: 'guitars', fileSizeMb: 1.4 },
-        { id: 'st-6', name: 'Piano & Keys', type: 'keys', fileSizeMb: 1.4 },
-        { id: 'st-7', name: 'Atmosphere Pad', type: 'pad', fileSizeMb: 0.9 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+        { id: 'st-3', name: 'Bateria (Drums)', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 1.4 },
+        { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Guitarra Elétrica', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-8', name: 'Atmosphere Pad', type: 'pad', fileSizeMb: 1.4 },
+        { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
       ]
     }),
     new CloudSong({
@@ -49,7 +50,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       bpm: 72,
       timeSignature: { beats: 4, value: 4 },
       duration: 120,
-      stemsCount: 8,
+      stemsCount: 9,
       tags: ['Adoração', 'Ceia', 'Clamor'],
       uploadedBy: 'Equipe de Louvor Lagoinha JP',
       uploadedAt: '17/10/2026',
@@ -57,12 +58,13 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       stems: [
         { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
         { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
-        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
-        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 0.9 },
-        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
-        { id: 'st-6', name: 'Piano & Keys', type: 'keys', fileSizeMb: 1.4 },
-        { id: 'st-7', name: 'Warm Pad', type: 'pad', fileSizeMb: 0.9 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+        { id: 'st-3', name: 'Bateria (Drums)', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 1.4 },
+        { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Guitarra Elétrica', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-8', name: 'Warm Pad', type: 'pad', fileSizeMb: 1.4 },
+        { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
       ]
     }),
     new CloudSong({
@@ -73,7 +75,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       bpm: 130,
       timeSignature: { beats: 4, value: 4 },
       duration: 120,
-      stemsCount: 8,
+      stemsCount: 9,
       tags: ['Worship', 'Celebração', 'Entrada'],
       uploadedBy: 'Leandro Machado (Lagoinha JP)',
       uploadedAt: '17/10/2026',
@@ -82,11 +84,12 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
         { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
         { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
         { id: 'st-3', name: 'Bateria / Loops', type: 'drums', fileSizeMb: 1.4 },
-        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 0.9 },
-        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
-        { id: 'st-6', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
-        { id: 'st-7', name: 'Synth Pad', type: 'pad', fileSizeMb: 0.9 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 1.4 },
+        { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Guitarra Elétrica', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-8', name: 'Synth Pad', type: 'pad', fileSizeMb: 1.4 },
+        { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
       ]
     }),
     new CloudSong({
@@ -97,7 +100,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       bpm: 126,
       timeSignature: { beats: 4, value: 4 },
       duration: 120,
-      stemsCount: 8,
+      stemsCount: 9,
       tags: ['Júbilo', 'Abertura de Culto'],
       uploadedBy: 'Equipe de Louvor Lagoinha JP',
       uploadedAt: '16/10/2026',
@@ -105,12 +108,13 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       stems: [
         { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
         { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
-        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
-        { id: 'st-4', name: 'Baixo', type: 'bass', fileSizeMb: 0.9 },
-        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
-        { id: 'st-6', name: 'Teclado', type: 'keys', fileSizeMb: 1.4 },
-        { id: 'st-7', name: 'Synth Pad', type: 'pad', fileSizeMb: 0.9 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+        { id: 'st-3', name: 'Bateria (Drums)', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 1.4 },
+        { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Guitarra Elétrica', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-8', name: 'Synth Pad', type: 'pad', fileSizeMb: 1.4 },
+        { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
       ]
     }),
     new CloudSong({
@@ -121,7 +125,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       bpm: 68,
       timeSignature: { beats: 6, value: 8 },
       duration: 120,
-      stemsCount: 8,
+      stemsCount: 9,
       tags: ['Adoração', 'Ministração'],
       uploadedBy: 'Leandro Machado (Lagoinha JP)',
       uploadedAt: '15/10/2026',
@@ -129,12 +133,13 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       stems: [
         { id: 'st-1', name: 'Click 6/8', type: 'click', fileSizeMb: 0.9 },
         { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
-        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
-        { id: 'st-4', name: 'Baixo', type: 'bass', fileSizeMb: 0.9 },
-        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
-        { id: 'st-6', name: 'Piano & Keys', type: 'keys', fileSizeMb: 1.4 },
-        { id: 'st-7', name: 'Pad Contínuo', type: 'pad', fileSizeMb: 0.9 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+        { id: 'st-3', name: 'Bateria (Drums)', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 1.4 },
+        { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Guitarra Elétrica', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-8', name: 'Pad Contínuo', type: 'pad', fileSizeMb: 1.4 },
+        { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
       ]
     }),
     new CloudSong({
@@ -145,7 +150,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       bpm: 74,
       timeSignature: { beats: 4, value: 4 },
       duration: 120,
-      stemsCount: 8,
+      stemsCount: 9,
       tags: ['Adoração Profética', 'Clamor', 'Ceia'],
       uploadedBy: 'Equipe de Louvor Lagoinha JP',
       uploadedAt: '15/10/2026',
@@ -154,11 +159,12 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
         { id: 'st-1', name: 'Click', type: 'click', fileSizeMb: 0.9 },
         { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
         { id: 'st-3', name: 'Bateria Pesada', type: 'drums', fileSizeMb: 1.4 },
-        { id: 'st-4', name: 'Synth Bass', type: 'bass', fileSizeMb: 0.9 },
-        { id: 'st-5', name: 'Gtr Drive', type: 'guitars', fileSizeMb: 1.4 },
-        { id: 'st-6', name: 'Piano & Strings', type: 'keys', fileSizeMb: 1.4 },
-        { id: 'st-7', name: 'Warm Pad', type: 'pad', fileSizeMb: 0.9 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+        { id: 'st-4', name: 'Synth Bass', type: 'bass', fileSizeMb: 1.4 },
+        { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Guitarra Drive', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Piano & Strings', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-8', name: 'Warm Pad', type: 'pad', fileSizeMb: 1.4 },
+        { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
       ]
     })
   ];
@@ -200,7 +206,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
     const customBlobs = this.uploadedBlobUrls.get(cloudSong.id);
 
     const stems = cloudSong.stems.map((st) => {
-      let type: TrackStem['type'] = 'fx';
+      let type: TrackStem['type'] = 'vocals';
       let fileName = 'vocals.mp3';
       if (st.type === 'click') {
         type = 'click';
@@ -214,15 +220,21 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       } else if (st.type === 'bass') {
         type = 'bass';
         fileName = 'bass.mp3';
+      } else if (st.type === 'violao') {
+        type = 'violao';
+        fileName = 'violao.mp3';
       } else if (st.type === 'guitars') {
         type = 'guitars';
-        fileName = 'guitars.mp3';
+        fileName = 'guitarra.mp3';
       } else if (st.type === 'keys') {
         type = 'keys';
         fileName = 'keys.mp3';
       } else if (st.type === 'pad') {
         type = 'pad';
         fileName = 'pad.mp3';
+      } else if (st.type === 'vocals' || st.type === 'fx') {
+        type = 'vocals';
+        fileName = 'vocals.mp3';
       }
 
       const audioUrl = customBlobs?.get(st.id) || `./stems/${folder}/${fileName}`;
@@ -231,8 +243,8 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
         id: `${cloudSong.id}-${st.id}`,
         name: st.name,
         type,
-        volume: type === 'click' ? 0.85 : type === 'guide' ? 0.95 : 0.80,
-        pan: 0,
+        volume: type === 'click' ? 0.85 : type === 'guide' ? 0.95 : 1.0,
+        pan: type === 'violao' ? -0.2 : type === 'guitars' ? 0.2 : 0,
         isMuted: false,
         isSolo: false,
         audioUrl
@@ -260,14 +272,15 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
     const stems = files.map((f, i) => {
       const stemId = `st-${i}`;
       const lower = f.name.toLowerCase();
-      let type = 'fx';
+      let type = 'vocals';
       if (lower.includes('click') || lower.includes('metro')) type = 'click';
       else if (lower.includes('guia') || lower.includes('guide') || lower.includes('cue')) type = 'guide';
       else if (lower.includes('drum') || lower.includes('bateria') || lower.includes('loop')) type = 'drums';
       else if (lower.includes('bass') || lower.includes('baixo')) type = 'bass';
-      else if (lower.includes('gtr') || lower.includes('guit') || lower.includes('violao')) type = 'guitars';
+      else if (lower.includes('violao') || lower.includes('violão') || lower.includes('acustic') || lower.includes('acoustic') || lower.includes('ag')) type = 'violao';
+      else if (lower.includes('gtr') || lower.includes('guit') || lower.includes('eg') || lower.includes('eletric')) type = 'guitars';
       else if (lower.includes('key') || lower.includes('piano') || lower.includes('teclado')) type = 'keys';
-      else if (lower.includes('pad') || lower.includes('synth')) type = 'pad';
+      else if (lower.includes('pad') || lower.includes('synth') || lower.includes('atmo')) type = 'pad';
 
       if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
         blobMap.set(stemId, URL.createObjectURL(f));

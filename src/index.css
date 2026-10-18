@@ -21,16 +21,35 @@
   }
 }
 
-/* Custom Stage Fader Range styling */
+/* Custom Stage Fader Range styling (0 at bottom, 2.0 / +6dB at top) */
 input[type="range"].fader-vertical {
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 28px;
-  height: 180px;
-  background: #182030;
-  border-radius: 6px;
-  cursor: pointer;
-  accent-color: #3b82f6;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 144px;
+  height: 28px;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  background: transparent;
+  cursor: ns-resize;
+  margin: 0;
+}
+
+input[type="range"].fader-vertical::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.9);
+}
+
+input[type="range"].fader-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 14px;
+  border-radius: 4px;
+  background: #38bdf8;
+  border: 2px solid #f8fafc;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.65);
+  margin-top: -4px;
 }
 
 /* Animations for stage indicators */

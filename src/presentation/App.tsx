@@ -174,6 +174,57 @@ export const App: React.FC = () => {
     setSongs([...songs]);
   };
 
+  const handleResetMixer = () => {
+    audioEngine.resetMixer();
+    setSongs([...songs]);
+  };
+
+  // Gerenciamento do Repertório do Culto (Excluir, Reordenar e Restaurar)
+  const handleRemoveSong = (index: number) => {
+    if (index < 0 || index >= songs.length) return;
+    audioEngine.stop();
+    const nextSongs = songs.filter((_, i) => i !== index);
+    setSongs(nextSongs);
+    if (nextSongs.length === 0) {
+      setCurrentSongIndex(0);
+    } else if (currentSongIndex >= nextSongs.length) {
+      setCurrentSongIndex(nextSongs.length - 1);
+    } else if (index < currentSongIndex) {
+      setCurrentSongIndex(Math.max(0, currentSongIndex - 1));
+    }
+  };
+
+  const handleMoveSong = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= songs.length ||
+      toIndex < 0 ||
+      toIndex >= songs.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const activeId = currentSong?.id;
+    const nextSongs = [...songs];
+    const [moved] = nextSongs.splice(fromIndex, 1);
+    if (moved) {
+      nextSongs.splice(toIndex, 0, moved);
+    }
+    setSongs(nextSongs);
+    if (activeId) {
+      const updatedIdx = nextSongs.findIndex((s) => s.id === activeId);
+      if (updatedIdx !== -1) {
+        setCurrentSongIndex(updatedIdx);
+      }
+    }
+  };
+
+  const handleRestoreDefaultSetlist = () => {
+    audioEngine.stop();
+    setSongs(DemoWorshipSongs.getPresetSongs());
+    setCurrentSongIndex(0);
+  };
+
   // Pad Handlers
   const handleSelectPadKey = (key: MusicalKey) => {
     setCurrentPadKey(key);
@@ -218,7 +269,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0a0d14] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
+    <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
       {/* Topo / Header da Estação com Álbuns, BPM, Banco de VS e Perfil */}
       <StageHeader
         songs={songs}
@@ -265,6 +316,9 @@ export const App: React.FC = () => {
           currentSongIndex={currentSongIndex}
           isPlaying={engineState.isPlaying}
           onSelectSong={handleSelectSong}
+          onRemoveSong={handleRemoveSong}
+          onMoveSong={handleMoveSong}
+          onRestoreDefaultSetlist={handleRestoreDefaultSetlist}
           onImportCustomSong={handleImportCustomSong}
         />
 
@@ -299,10 +353,12 @@ export const App: React.FC = () => {
               routingMode={engineState.routingMode}
               isPlaying={engineState.isPlaying}
               isSoloClickActive={engineState.isSoloClickActive}
+              stemLevels={engineState.stemLevels}
               onVolumeChange={handleVolumeChange}
               onPanChange={handlePanChange}
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
+              onResetMixer={handleResetMixer}
             />
           )}
         </main>

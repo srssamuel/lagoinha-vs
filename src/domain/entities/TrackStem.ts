@@ -3,7 +3,9 @@ export type StemType =
   | 'guide'
   | 'drums'
   | 'bass'
+  | 'violao'
   | 'guitars'
+  | 'strings'
   | 'keys'
   | 'pad'
   | 'vocals'
@@ -15,7 +17,7 @@ export interface TrackStemProps {
   id: string;
   name: string;
   type: StemType;
-  volume: number; // 0.0 to 1.0 (linear gain)
+  volume: number; // 0.0 to 2.0 (linear gain, 1.0 = 0 dB, 2.0 = +6.0 dB)
   pan: number;    // -1.0 (Left) to +1.0 (Right)
   isMuted: boolean;
   isSolo: boolean;
@@ -38,7 +40,7 @@ export class TrackStem {
     this.id = props.id;
     this.name = props.name;
     this.type = props.type;
-    this.volume = Math.max(0, Math.min(1, props.volume));
+    this.volume = Math.max(0, Math.min(2, props.volume));
     this.pan = Math.max(-1, Math.min(1, props.pan));
     this.isMuted = props.isMuted;
     this.isSolo = props.isSolo;
@@ -47,7 +49,15 @@ export class TrackStem {
   }
 
   public setVolume(vol: number): void {
-    this.volume = Math.max(0, Math.min(1, vol));
+    this.volume = Math.max(0, Math.min(2, Number(vol.toFixed(3))));
+  }
+
+  public stepVolume(delta: number): void {
+    this.setVolume(this.volume + delta);
+  }
+
+  public resetVolume(): void {
+    this.volume = 1.0;
   }
 
   public setPan(p: number): void {
@@ -60,6 +70,19 @@ export class TrackStem {
 
   public toggleSolo(): void {
     this.isSolo = !this.isSolo;
+  }
+
+  /**
+   * Identifica se o canal pertence à família de instrumentos de corda
+   * (Violão Acústico, Guitarra Elétrica, Contrabaixo ou Cordas/Strings).
+   */
+  public isStringInstrument(): boolean {
+    return (
+      this.type === 'violao' ||
+      this.type === 'guitars' ||
+      this.type === 'bass' ||
+      this.type === 'strings'
+    );
   }
 
   /**

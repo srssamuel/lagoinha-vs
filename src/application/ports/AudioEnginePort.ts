@@ -14,6 +14,7 @@ export interface AudioEngineState {
   isSoloClickActive: boolean;
   isLoopClickActive: boolean;
   masterVolume: number;
+  stemLevels?: Record<string, number>;
 }
 
 export interface AudioEnginePort {
@@ -29,6 +30,7 @@ export interface AudioEnginePort {
   setStemPan(stemId: string, pan: number): void;
   toggleStemMute(stemId: string): void;
   toggleStemSolo(stemId: string): void;
+  resetMixer(): void;
   queueSectionJump(sectionId: string): void;
   toggleSectionLoop(): void;
   toggleSoloClick(): void;
