@@ -4,7 +4,6 @@ import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
 import { QuantizedSectionService } from '../../application/services/QuantizedSectionService';
 import { ProceduralClickGenerator } from './ProceduralClickGenerator';
-import { ProceduralStemSynthesizer } from './ProceduralStemSynthesizer';
 
 interface StemAudioNodes {
   source: AudioBufferSourceNode | null;
@@ -33,7 +32,7 @@ export class WebAudioEngine implements AudioEnginePort {
   private isLoopClickActive: boolean = false;
   private masterVolume: number = 1.0;
 
-  // Metronome click scheduler
+  // Metronome click scheduler (used only when no real click stem file is present or during Loop Click)
   private clickTimerId: number | null = null;
   private nextClickTime: number = 0;
   private currentBeatInBar: number = 1;
@@ -51,7 +50,9 @@ export class WebAudioEngine implements AudioEnginePort {
   public async init(): Promise<void> {
     if (this.ctx) return;
 
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AudioContextClass();
 
     this.masterGain = this.ctx.createGain();
@@ -62,7 +63,7 @@ export class WebAudioEngine implements AudioEnginePort {
     this.channelMerger.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
 
-    // Pré-cria buffers de click de alta fidelidade
+    // Pré-cria buffers de click de reserva para Loop Click
     this.clickBufferAccent = ProceduralClickGenerator.createClickBuffer(this.ctx, true);
     this.clickBufferRegular = ProceduralClickGenerator.createClickBuffer(this.ctx, false);
   }
@@ -79,7 +80,9 @@ export class WebAudioEngine implements AudioEnginePort {
     // Limpa nós anteriores
     this.stemNodes.clear();
 
-    // Cria nós para cada stem da música
+    const ctxRef = this.ctx;
+
+    // Cria nós para cada stem real da música e pré-carrega os arquivos de áudio reais
     song.stems.forEach((stem) => {
       if (!this.ctx || !this.channelMerger) return;
 
@@ -90,7 +93,7 @@ export class WebAudioEngine implements AudioEnginePort {
       gainNode.connect(leftGain);
       gainNode.connect(rightGain);
 
-      // Conecta no mixer: leftGain no canal 0 (Left), rightGain no canal 1 (Right)
+      // Conecta no mixer: leftGain no canal 0 (Left = IEM), rightGain no canal 1 (Right = PA)
       leftGain.connect(this.channelMerger, 0, 0);
       rightGain.connect(this.channelMerger, 0, 1);
 
@@ -100,6 +103,33 @@ export class WebAudioEngine implements AudioEnginePort {
         leftGain,
         rightGain
       });
+
+      if (stem.audioUrl && !stem.audioBuffer) {
+        void fetch(stem.audioUrl)
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.arrayBuffer();
+          })
+          .then((ab) => ctxRef.decodeAudioData(ab))
+          .then((decoded) => {
+            stem.audioBuffer = decoded;
+            // Se o usuário já deu Play enquanto o stem terminava de decodificar, sincroniza imediatamente
+            if (this.isPlaying && this.currentSong?.id === song.id) {
+              const currentNodes = this.stemNodes.get(stem.id);
+              if (currentNodes && !currentNodes.source) {
+                const src = ctxRef.createBufferSource();
+                src.buffer = decoded;
+                src.connect(currentNodes.gainNode);
+                const nowOffset = Math.min(this.getCurrentPlaybackTime(), decoded.duration);
+                src.start(0, nowOffset);
+                currentNodes.source = src;
+              }
+            }
+          })
+          .catch((err) => {
+            console.warn(`Falha ao decodificar stem real ${stem.name}:`, err);
+          });
+      }
     });
 
     this.applyMixerSettings();
@@ -116,10 +146,13 @@ export class WebAudioEngine implements AudioEnginePort {
     this.isPlaying = true;
     this.playbackStartTime = this.ctx.currentTime - this.pausedAtTime;
 
-    // Inicia metrônomo alinhado
-    this.setupMetronomeSchedule();
+    // Só usa metrônomo procedural se a música não tiver um arquivo real de click
+    const clickStem = this.currentSong.stems.find((s) => s.type === 'click');
+    if (!clickStem?.audioUrl) {
+      this.setupMetronomeSchedule();
+    }
 
-    // Inicia geração/reprodução de áudio de cada stem
+    // Inicia reprodução sincronizada de todos os stems reais
     this.startAudioSources(this.pausedAtTime);
 
     // Inicia loop de telemetria
@@ -166,7 +199,10 @@ export class WebAudioEngine implements AudioEnginePort {
 
     if (wasPlaying && this.ctx) {
       this.playbackStartTime = this.ctx.currentTime - this.pausedAtTime;
-      this.setupMetronomeSchedule();
+      const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
+      if (!clickStem?.audioUrl) {
+        this.setupMetronomeSchedule();
+      }
       this.startAudioSources(this.pausedAtTime);
       this.isPlaying = true;
     }
@@ -247,7 +283,6 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   public panic(): void {
-    // Parada imediata com fade out de 300ms de emergência
     if (this.masterGain && this.ctx) {
       const now = this.ctx.currentTime;
       this.masterGain.gain.cancelScheduledValues(now);
@@ -320,7 +355,6 @@ export class WebAudioEngine implements AudioEnginePort {
       const nodes = this.stemNodes.get(stemId);
       if (!nodes) return;
 
-      // Suaviza ajustes de fader com rampa linear de 20ms para evitar estalos
       nodes.leftGain.gain.cancelScheduledValues(now);
       nodes.leftGain.gain.linearRampToValueAtTime(gains.leftGain, now + 0.02);
 
@@ -342,11 +376,9 @@ export class WebAudioEngine implements AudioEnginePort {
     this.currentBeatInBar = (totalBeatsElapsed % beatsPerBar) + 1;
     this.nextClickTime = this.ctx.currentTime + (secondsPerBeat - (currentTime % secondsPerBeat));
 
-    // Inicia loop de agendamento em janela (Lookahead scheduling)
     const scheduleWindow = () => {
       if (!this.isPlaying || !this.ctx) return;
 
-      // Agenda cliques nos próximos 150ms
       while (this.nextClickTime < this.ctx.currentTime + 0.15) {
         this.scheduleClick(this.nextClickTime, this.currentBeatInBar === 1);
         this.nextClickTime += secondsPerBeat;
@@ -373,11 +405,9 @@ export class WebAudioEngine implements AudioEnginePort {
     const vol = clickStem?.isAudible(this.currentSong?.hasSoloTrack || false) ? clickStem.volume : 0;
 
     clickGain.gain.setValueAtTime(vol, time);
-
     clickSource.connect(clickGain);
 
     if (this.routingMode === 'SPLIT_IEM_PA') {
-      // Estritamente no canal 0 (Left = Fones). RIGOROSAMENTE NADA no canal 1 (Right = PA).
       clickGain.connect(this.channelMerger, 0, 0);
     } else {
       clickGain.connect(this.channelMerger, 0, 0);
@@ -398,21 +428,39 @@ export class WebAudioEngine implements AudioEnginePort {
     if (!this.ctx || !this.currentSong) return;
 
     const song = this.currentSong;
+    const ctxRef = this.ctx;
 
-    // Para cada stem com buffer de áudio carregado ou sintetizado
     song.stems.forEach((stem) => {
       const nodes = this.stemNodes.get(stem.id);
-      if (!nodes || !this.ctx || stem.type === 'click') return;
+      if (!nodes) return;
 
-      // Se possui arquivo importado via URL e ainda não decodificado, decodifica em background
-      if (stem.audioUrl && !stem.audioBuffer) {
-        const ctxRef = this.ctx;
+      // Se o buffer já foi decodificado, inicia reprodução sincronizada
+      if (stem.audioBuffer) {
+        const source = ctxRef.createBufferSource();
+        source.buffer = stem.audioBuffer;
+        source.connect(nodes.gainNode);
+
+        const startOffset = Math.min(offset, stem.audioBuffer.duration);
+        try {
+          source.start(0, startOffset);
+          nodes.source = source;
+        } catch {
+          // Ignora caso já iniciado
+        }
+        return;
+      }
+
+      // Se ainda não foi decodificado, busca o arquivo real e inicia na posição atual
+      if (stem.audioUrl) {
         void fetch(stem.audioUrl)
-          .then((res) => res.arrayBuffer())
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.arrayBuffer();
+          })
           .then((ab) => ctxRef.decodeAudioData(ab))
           .then((decoded) => {
             stem.audioBuffer = decoded;
-            if (this.isPlaying && this.currentSong?.id === song.id) {
+            if (this.isPlaying && this.currentSong?.id === song.id && !nodes.source) {
               const src = ctxRef.createBufferSource();
               src.buffer = decoded;
               src.connect(nodes.gainNode);
@@ -420,37 +468,9 @@ export class WebAudioEngine implements AudioEnginePort {
               nodes.source = src;
             }
           })
-          .catch(() => {
-            // Fallback para síntese procedural se o arquivo falhar
+          .catch((err) => {
+            console.warn(`Erro ao carregar stem real (${stem.name}):`, err);
           });
-        return;
-      }
-
-      if (!stem.audioBuffer) {
-        stem.audioBuffer = ProceduralStemSynthesizer.createStemLoopBuffer(
-          this.ctx,
-          stem.type,
-          song.bpm,
-          song.timeSignature.beats,
-          song.currentKey
-        );
-      }
-
-      const source = this.ctx.createBufferSource();
-      source.buffer = stem.audioBuffer;
-      const isProceduralLoop = !stem.audioUrl;
-      source.loop = isProceduralLoop;
-      source.connect(nodes.gainNode);
-
-      const startOffset = isProceduralLoop
-        ? offset % stem.audioBuffer.duration
-        : Math.min(offset, stem.audioBuffer.duration);
-
-      try {
-        source.start(0, startOffset);
-        nodes.source = source;
-      } catch {
-        // Ignora caso já iniciado
       }
     });
   }
@@ -474,18 +494,18 @@ export class WebAudioEngine implements AudioEnginePort {
 
       const currentTime = this.getCurrentPlaybackTime();
 
-      // Checa fim da música
       if (this.currentSong && currentTime >= this.currentSong.duration) {
         if (this.isLoopClickActive) {
           this.stopAudioSources();
-          // Metrônomo continua rodando em loop
+          if (this.clickTimerId === null) {
+            this.setupMetronomeSchedule();
+          }
         } else {
           this.stop();
           return;
         }
       }
 
-      // Checa pulo quantizado agendado
       if (this.queuedSectionId && this.currentSong) {
         const { nextDownbeatTime } = QuantizedSectionService.calculateNextDownbeatTime(
           currentTime,
@@ -501,7 +521,6 @@ export class WebAudioEngine implements AudioEnginePort {
         }
       }
 
-      // Checa repetição de seção (Looping)
       if (this.isLoopingSection && this.currentSong && !this.queuedSectionId) {
         const activeSection = this.currentSong.getActiveSection(currentTime);
         if (activeSection && currentTime >= activeSection.endTime - 0.05) {

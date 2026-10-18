@@ -4,55 +4,19 @@ import { Song } from '../../domain/entities/Song';
 import { TrackStem } from '../../domain/entities/TrackStem';
 import { SongSection } from '../../domain/value-objects/SongSection';
 
+const FOLDER_BY_CLOUD_ID: Record<string, string> = {
+  'cloud-casa-e-sua': 'song-casa-sua',
+  'cloud-ruja-o-leao': 'song-ruja-o-leao',
+  'cloud-bondade-de-deus': 'cloud-bondade-deus',
+  'cloud-santo-pra-sempre': 'cloud-santo-pra-sempre',
+  'cloud-vitorioso-es': 'song-vitorioso-es',
+  'cloud-ousado-amor': 'song-ousado-amor'
+};
+
 export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
+  private uploadedBlobUrls: Map<string, Map<string, string>> = new Map();
+
   private library: CloudSong[] = [
-    new CloudSong({
-      id: 'cloud-casa-e-sua',
-      title: 'A Casa É Sua',
-      artist: 'Casa Worship',
-      originalKey: 'G',
-      bpm: 130,
-      timeSignature: { beats: 4, value: 4 },
-      duration: 320,
-      stemsCount: 8,
-      tags: ['Worship', 'Celebração', 'Entrada'],
-      uploadedBy: 'Leandro Machado (Lagoinha JP)',
-      uploadedAt: '17/10/2026',
-      storageFolder: 'gs://lagoinha-vs-cloud/tracks/a-casa-e-sua',
-      stems: [
-        { id: 'st-1', name: 'Click', type: 'click', fileSizeMb: 2.1 },
-        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 4.8 },
-        { id: 'st-3', name: 'Bateria / Loops', type: 'drums', fileSizeMb: 12.4 },
-        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 9.6 },
-        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 15.2 },
-        { id: 'st-6', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 11.0 },
-        { id: 'st-7', name: 'Synth Pad', type: 'pad', fileSizeMb: 8.5 },
-        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 7.2 }
-      ]
-    }),
-    new CloudSong({
-      id: 'cloud-ruja-o-leao',
-      title: 'Ruja o Leão',
-      artist: 'Talitha Pereira / FHOP',
-      originalKey: 'Em',
-      bpm: 74,
-      timeSignature: { beats: 4, value: 4 },
-      duration: 410,
-      stemsCount: 9,
-      tags: ['Adoração Profética', 'Clamor', 'Ceia'],
-      uploadedBy: 'Equipe de Louvor Lagoinha JP',
-      uploadedAt: '15/10/2026',
-      storageFolder: 'gs://lagoinha-vs-cloud/tracks/ruja-o-leao',
-      stems: [
-        { id: 'st-1', name: 'Click', type: 'click', fileSizeMb: 2.4 },
-        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 5.1 },
-        { id: 'st-3', name: 'Bateria Pesada', type: 'drums', fileSizeMb: 14.2 },
-        { id: 'st-4', name: 'Synth Bass', type: 'bass', fileSizeMb: 11.3 },
-        { id: 'st-5', name: 'Gtr Drive', type: 'guitars', fileSizeMb: 16.0 },
-        { id: 'st-6', name: 'Piano & Strings', type: 'keys', fileSizeMb: 12.8 },
-        { id: 'st-7', name: 'Warm Pad', type: 'pad', fileSizeMb: 10.1 }
-      ]
-    }),
     new CloudSong({
       id: 'cloud-bondade-de-deus',
       title: 'Bondade de Deus',
@@ -60,63 +24,141 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       originalKey: 'Ab',
       bpm: 70,
       timeSignature: { beats: 4, value: 4 },
-      duration: 340,
-      stemsCount: 7,
+      duration: 120,
+      stemsCount: 8,
       tags: ['Intimidade', 'Ofertório', 'Ministração'],
       uploadedBy: 'Leandro Machado (Lagoinha JP)',
-      uploadedAt: '12/10/2026',
+      uploadedAt: '17/10/2026',
       storageFolder: 'gs://lagoinha-vs-cloud/tracks/bondade-de-deus',
       stems: [
-        { id: 'st-1', name: 'Click', type: 'click', fileSizeMb: 2.0 },
-        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 4.5 },
-        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 11.0 },
-        { id: 'st-4', name: 'Baixo Acústico', type: 'bass', fileSizeMb: 8.9 },
-        { id: 'st-5', name: 'Violão Aço', type: 'guitars', fileSizeMb: 13.4 },
-        { id: 'st-6', name: 'Piano Rhodes', type: 'keys', fileSizeMb: 10.2 },
-        { id: 'st-7', name: 'Atmosphere Pad', type: 'pad', fileSizeMb: 9.1 }
+        { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
+        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 0.9 },
+        { id: 'st-5', name: 'Violão & Guitarras', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Piano & Keys', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Atmosphere Pad', type: 'pad', fileSizeMb: 0.9 },
+        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
       ]
     }),
     new CloudSong({
-      id: 'cloud-ele-vem',
-      title: 'Ele Vem (O Céu Se Abre)',
+      id: 'cloud-santo-pra-sempre',
+      title: 'Santo Pra Sempre',
+      artist: 'Gabriel Guedes',
+      originalKey: 'A',
+      bpm: 72,
+      timeSignature: { beats: 4, value: 4 },
+      duration: 120,
+      stemsCount: 8,
+      tags: ['Adoração', 'Ceia', 'Clamor'],
+      uploadedBy: 'Equipe de Louvor Lagoinha JP',
+      uploadedAt: '17/10/2026',
+      storageFolder: 'gs://lagoinha-vs-cloud/tracks/santo-pra-sempre',
+      stems: [
+        { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
+        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 0.9 },
+        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Piano & Keys', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Warm Pad', type: 'pad', fileSizeMb: 0.9 },
+        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+      ]
+    }),
+    new CloudSong({
+      id: 'cloud-casa-e-sua',
+      title: 'A Casa É Sua',
+      artist: 'Casa Worship',
+      originalKey: 'G',
+      bpm: 130,
+      timeSignature: { beats: 4, value: 4 },
+      duration: 120,
+      stemsCount: 8,
+      tags: ['Worship', 'Celebração', 'Entrada'],
+      uploadedBy: 'Leandro Machado (Lagoinha JP)',
+      uploadedAt: '17/10/2026',
+      storageFolder: 'gs://lagoinha-vs-cloud/tracks/a-casa-e-sua',
+      stems: [
+        { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
+        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+        { id: 'st-3', name: 'Bateria / Loops', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 0.9 },
+        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Synth Pad', type: 'pad', fileSizeMb: 0.9 },
+        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+      ]
+    }),
+    new CloudSong({
+      id: 'cloud-vitorioso-es',
+      title: 'Vitorioso És',
       artist: 'Gabriel Guedes',
       originalKey: 'D',
-      bpm: 124,
+      bpm: 126,
       timeSignature: { beats: 4, value: 4 },
-      duration: 290,
+      duration: 120,
       stemsCount: 8,
       tags: ['Júbilo', 'Abertura de Culto'],
       uploadedBy: 'Equipe de Louvor Lagoinha JP',
-      uploadedAt: '10/10/2026',
-      storageFolder: 'gs://lagoinha-vs-cloud/tracks/ele-vem',
+      uploadedAt: '16/10/2026',
+      storageFolder: 'gs://lagoinha-vs-cloud/tracks/vitorioso-es',
       stems: [
-        { id: 'st-1', name: 'Click', type: 'click', fileSizeMb: 2.1 },
-        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 4.8 },
-        { id: 'st-3', name: 'Drums', type: 'drums', fileSizeMb: 13.5 },
-        { id: 'st-4', name: 'Bass', type: 'bass', fileSizeMb: 9.0 },
-        { id: 'st-5', name: 'Lead Guitars', type: 'guitars', fileSizeMb: 14.8 },
-        { id: 'st-6', name: 'Synth Arp', type: 'keys', fileSizeMb: 11.2 }
+        { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
+        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo', type: 'bass', fileSizeMb: 0.9 },
+        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Teclado', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Synth Pad', type: 'pad', fileSizeMb: 0.9 },
+        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
       ]
     }),
     new CloudSong({
-      id: 'cloud-me-atraiu',
-      title: 'Me Atraiu',
-      artist: 'Gabriela Rocha',
-      originalKey: 'E',
+      id: 'cloud-ousado-amor',
+      title: 'Ousado Amor',
+      artist: 'Isaías Saad',
+      originalKey: 'Gb',
       bpm: 68,
       timeSignature: { beats: 6, value: 8 },
-      duration: 380,
-      stemsCount: 7,
-      tags: ['Clamor', 'Palavra'],
+      duration: 120,
+      stemsCount: 8,
+      tags: ['Adoração', 'Ministração'],
       uploadedBy: 'Leandro Machado (Lagoinha JP)',
-      uploadedAt: '08/10/2026',
-      storageFolder: 'gs://lagoinha-vs-cloud/tracks/me-atraiu',
+      uploadedAt: '15/10/2026',
+      storageFolder: 'gs://lagoinha-vs-cloud/tracks/ousado-amor',
       stems: [
-        { id: 'st-1', name: 'Click 6/8', type: 'click', fileSizeMb: 2.3 },
-        { id: 'st-2', name: 'Guia', type: 'guide', fileSizeMb: 5.0 },
-        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 12.0 },
-        { id: 'st-4', name: 'Baixo', type: 'bass', fileSizeMb: 8.5 },
-        { id: 'st-5', name: 'Piano & Pad', type: 'keys', fileSizeMb: 14.0 }
+        { id: 'st-1', name: 'Click 6/8', type: 'click', fileSizeMb: 0.9 },
+        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+        { id: 'st-3', name: 'Bateria', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Baixo', type: 'bass', fileSizeMb: 0.9 },
+        { id: 'st-5', name: 'Guitarras', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Piano & Keys', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Pad Contínuo', type: 'pad', fileSizeMb: 0.9 },
+        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
+      ]
+    }),
+    new CloudSong({
+      id: 'cloud-ruja-o-leao',
+      title: 'Ruja o Leão',
+      artist: 'Talita Catanzaro / FHOP',
+      originalKey: 'Em',
+      bpm: 74,
+      timeSignature: { beats: 4, value: 4 },
+      duration: 120,
+      stemsCount: 8,
+      tags: ['Adoração Profética', 'Clamor', 'Ceia'],
+      uploadedBy: 'Equipe de Louvor Lagoinha JP',
+      uploadedAt: '15/10/2026',
+      storageFolder: 'gs://lagoinha-vs-cloud/tracks/ruja-o-leao',
+      stems: [
+        { id: 'st-1', name: 'Click', type: 'click', fileSizeMb: 0.9 },
+        { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+        { id: 'st-3', name: 'Bateria Pesada', type: 'drums', fileSizeMb: 1.4 },
+        { id: 'st-4', name: 'Synth Bass', type: 'bass', fileSizeMb: 0.9 },
+        { id: 'st-5', name: 'Gtr Drive', type: 'guitars', fileSizeMb: 1.4 },
+        { id: 'st-6', name: 'Piano & Strings', type: 'keys', fileSizeMb: 1.4 },
+        { id: 'st-7', name: 'Warm Pad', type: 'pad', fileSizeMb: 0.9 },
+        { id: 'st-8', name: 'Backing Vocals', type: 'fx', fileSizeMb: 0.9 }
       ]
     })
   ];
@@ -147,35 +189,53 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
   }
 
   public async convertCloudSongToPlaybackSong(cloudSong: CloudSong): Promise<Song> {
-    const barSeconds = (60 / cloudSong.bpm) * cloudSong.timeSignature.beats;
-
     const sections = [
-      new SongSection({ id: `${cloudSong.id}-intro`, name: 'Intro', type: 'intro', startBar: 1, barCount: 4, startTime: 0, endTime: 4 * barSeconds }),
-      new SongSection({ id: `${cloudSong.id}-v1`, name: 'Verso 1', type: 'verse', startBar: 5, barCount: 8, startTime: 4 * barSeconds, endTime: 12 * barSeconds }),
-      new SongSection({ id: `${cloudSong.id}-ref`, name: 'Refrão', type: 'chorus', startBar: 13, barCount: 8, startTime: 12 * barSeconds, endTime: 20 * barSeconds }),
-      new SongSection({ id: `${cloudSong.id}-ponte`, name: 'Ponte', type: 'bridge', startBar: 21, barCount: 8, startTime: 20 * barSeconds, endTime: 28 * barSeconds }),
-      new SongSection({ id: `${cloudSong.id}-vamp`, name: 'Espontâneo', type: 'vamp', startBar: 29, barCount: 8, startTime: 28 * barSeconds, endTime: 36 * barSeconds }),
-      new SongSection({ id: `${cloudSong.id}-final`, name: 'Final', type: 'outro', startBar: 37, barCount: 4, startTime: 36 * barSeconds, endTime: 40 * barSeconds })
+      new SongSection({ id: `${cloudSong.id}-intro`, name: 'Intro', type: 'intro', startBar: 1, barCount: 6, startTime: 0, endTime: 18 }),
+      new SongSection({ id: `${cloudSong.id}-v1`, name: 'Verso 1', type: 'verse', startBar: 7, barCount: 12, startTime: 18, endTime: 50 }),
+      new SongSection({ id: `${cloudSong.id}-ref`, name: 'Refrão', type: 'chorus', startBar: 19, barCount: 12, startTime: 50, endTime: 86 }),
+      new SongSection({ id: `${cloudSong.id}-ponte`, name: 'Ponte / Final', type: 'bridge', startBar: 31, barCount: 12, startTime: 86, endTime: 120 })
     ];
+
+    const folder = FOLDER_BY_CLOUD_ID[cloudSong.id] || 'song-casa-sua';
+    const customBlobs = this.uploadedBlobUrls.get(cloudSong.id);
 
     const stems = cloudSong.stems.map((st) => {
       let type: TrackStem['type'] = 'fx';
-      if (st.type === 'click') type = 'click';
-      else if (st.type === 'guide') type = 'guide';
-      else if (st.type === 'drums') type = 'drums';
-      else if (st.type === 'bass') type = 'bass';
-      else if (st.type === 'guitars') type = 'guitars';
-      else if (st.type === 'keys') type = 'keys';
-      else if (st.type === 'pad') type = 'pad';
+      let fileName = 'vocals.mp3';
+      if (st.type === 'click') {
+        type = 'click';
+        fileName = 'click.mp3';
+      } else if (st.type === 'guide') {
+        type = 'guide';
+        fileName = 'guide.mp3';
+      } else if (st.type === 'drums') {
+        type = 'drums';
+        fileName = 'drums.mp3';
+      } else if (st.type === 'bass') {
+        type = 'bass';
+        fileName = 'bass.mp3';
+      } else if (st.type === 'guitars') {
+        type = 'guitars';
+        fileName = 'guitars.mp3';
+      } else if (st.type === 'keys') {
+        type = 'keys';
+        fileName = 'keys.mp3';
+      } else if (st.type === 'pad') {
+        type = 'pad';
+        fileName = 'pad.mp3';
+      }
+
+      const audioUrl = customBlobs?.get(st.id) || `./stems/${folder}/${fileName}`;
 
       return new TrackStem({
-        id: st.id,
+        id: `${cloudSong.id}-${st.id}`,
         name: st.name,
         type,
-        volume: type === 'click' ? 0.85 : type === 'guide' ? 0.9 : 0.75,
+        volume: type === 'click' ? 0.85 : type === 'guide' ? 0.95 : 0.80,
         pan: 0,
         isMuted: false,
-        isSolo: false
+        isSolo: false,
+        audioUrl
       });
     });
 
@@ -194,25 +254,49 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
   }
 
   public async uploadSong(newSong: Partial<CloudSong>, files: File[]): Promise<CloudSong> {
+    const cloudId = `cloud-${Date.now()}`;
+    const blobMap = new Map<string, string>();
+
+    const stems = files.map((f, i) => {
+      const stemId = `st-${i}`;
+      const lower = f.name.toLowerCase();
+      let type = 'fx';
+      if (lower.includes('click') || lower.includes('metro')) type = 'click';
+      else if (lower.includes('guia') || lower.includes('guide') || lower.includes('cue')) type = 'guide';
+      else if (lower.includes('drum') || lower.includes('bateria') || lower.includes('loop')) type = 'drums';
+      else if (lower.includes('bass') || lower.includes('baixo')) type = 'bass';
+      else if (lower.includes('gtr') || lower.includes('guit') || lower.includes('violao')) type = 'guitars';
+      else if (lower.includes('key') || lower.includes('piano') || lower.includes('teclado')) type = 'keys';
+      else if (lower.includes('pad') || lower.includes('synth')) type = 'pad';
+
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        blobMap.set(stemId, URL.createObjectURL(f));
+      }
+
+      return {
+        id: stemId,
+        name: f.name.replace(/\.[^/.]+$/, ''),
+        type,
+        fileSizeMb: parseFloat((f.size / (1024 * 1024)).toFixed(1))
+      };
+    });
+
+    this.uploadedBlobUrls.set(cloudId, blobMap);
+
     const created = new CloudSong({
-      id: `cloud-${Date.now()}`,
+      id: cloudId,
       title: newSong.title || 'Novo VS',
       artist: newSong.artist || 'Lagoinha Worship',
       originalKey: newSong.originalKey || 'G',
       bpm: newSong.bpm || 120,
       timeSignature: newSong.timeSignature || { beats: 4, value: 4 },
-      duration: newSong.duration || 300,
+      duration: newSong.duration || 120,
       stemsCount: files.length || 6,
       tags: newSong.tags || ['Culto'],
       uploadedBy: 'Ministro de Louvor (Lagoinha JP)',
       uploadedAt: 'Hoje',
       storageFolder: `gs://lagoinha-vs-cloud/tracks/${Date.now()}`,
-      stems: files.map((f, i) => ({
-        id: `st-${i}`,
-        name: f.name.replace(/\.[^/.]+$/, ''),
-        type: 'other',
-        fileSizeMb: parseFloat((f.size / (1024 * 1024)).toFixed(1))
-      }))
+      stems
     });
 
     this.library.unshift(created);
