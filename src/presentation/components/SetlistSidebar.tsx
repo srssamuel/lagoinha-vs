@@ -39,44 +39,56 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
+  const [zipProgressText, setZipProgressText] = useState<string>('');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const buildStandardSections = (prefix: string, duration: number, bpm: number): SongSection[] => {
     const barSec = (60 / bpm) * 4;
     const totalBars = Math.max(16, Math.round(duration / barSec));
-    const introEnd = Math.min(duration * 0.1, 20);
-    const v1End = Math.min(duration * 0.28, 60);
-    const ref1End = Math.min(duration * 0.5, 110);
-    const ponteEnd = Math.min(duration * 0.78, 180);
+    const introEnd = Math.max(4, Math.min(Math.round(duration * 0.1), 20));
+    const v1End = Math.max(introEnd + 4, Math.min(Math.round(duration * 0.28), 60));
+    const ref1End = Math.max(v1End + 4, Math.min(Math.round(duration * 0.5), 110));
+    const ponteEnd = Math.max(ref1End + 4, Math.min(Math.round(duration * 0.78), 180));
+    const finalEnd = Math.max(ponteEnd + 4, Math.round(duration));
 
     return [
-      new SongSection({ id: `${prefix}-intro`, name: 'Intro', type: 'intro', startBar: 1, barCount: 8, startTime: 0, endTime: Math.round(introEnd) }),
-      new SongSection({ id: `${prefix}-v1`, name: 'Verso', type: 'verse', startBar: 9, barCount: 16, startTime: Math.round(introEnd), endTime: Math.round(v1End) }),
-      new SongSection({ id: `${prefix}-ref`, name: 'Refrão', type: 'chorus', startBar: 25, barCount: 16, startTime: Math.round(v1End), endTime: Math.round(ref1End) }),
-      new SongSection({ id: `${prefix}-ponte`, name: 'Ponte / Instrumental', type: 'bridge', startBar: 41, barCount: 16, startTime: Math.round(ref1End), endTime: Math.round(ponteEnd) }),
-      new SongSection({ id: `${prefix}-final`, name: 'Refrão Final / Outro', type: 'outro', startBar: 57, barCount: Math.max(8, totalBars - 56), startTime: Math.round(ponteEnd), endTime: Math.round(duration) })
+      new SongSection({ id: `${prefix}-intro`, name: 'Intro', type: 'intro', startBar: 1, barCount: 8, startTime: 0, endTime: introEnd }),
+      new SongSection({ id: `${prefix}-v1`, name: 'Verso', type: 'verse', startBar: 9, barCount: 16, startTime: introEnd, endTime: v1End }),
+      new SongSection({ id: `${prefix}-ref`, name: 'Refrão', type: 'chorus', startBar: 25, barCount: 16, startTime: v1End, endTime: ref1End }),
+      new SongSection({ id: `${prefix}-ponte`, name: 'Ponte / Instrumental', type: 'bridge', startBar: 41, barCount: 16, startTime: ref1End, endTime: ponteEnd }),
+      new SongSection({ id: `${prefix}-final`, name: 'Refrão Final / Outro', type: 'outro', startBar: 57, barCount: Math.max(8, totalBars - 56), startTime: ponteEnd, endTime: finalEnd })
     ];
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const processImportedFiles = async (fileArray: File[]) => {
+    if (fileArray.length === 0) return;
 
-    const fileArray = Array.from(files);
-    const zipFile = fileArray.find((f) => f.name.toLowerCase().endsWith('.zip'));
+    const zipFile = fileArray.find(
+      (f) =>
+        f.name.toLowerCase().endsWith('.zip') ||
+        f.type === 'application/zip' ||
+        f.type === 'application/x-zip-compressed'
+    );
 
     // Caso 1: Pacote Multitrack completo em .ZIP (ex: "O Nosso General (Versão Mateus Brito) 140Bpm - B.zip")
     if (zipFile) {
       setIsExtractingZip(true);
+      setZipProgressText('Lendo pacote .ZIP...');
       try {
         const meta = ZipMultitrackExtractor.parseMetadataFromZipName(zipFile.name);
-        const arrayBuf = await zipFile.arrayBuffer();
-        const entries = await ZipMultitrackExtractor.extractAudioFiles(arrayBuf);
+        const entries = await ZipMultitrackExtractor.extractFromZipBlob(
+          zipFile,
+          (current, total, currentFilename) => {
+            setZipProgressText(`Extraindo ${current}/${total}: ${currentFilename}`);
+          }
+        );
 
+        let detectedDuration = 0;
         const stems: TrackStem[] = entries.map((entry, idx) => {
+          if (entry.durationSeconds && entry.durationSeconds > detectedDuration) {
+            detectedDuration = entry.durationSeconds;
+          }
           const info = TrackStem.classifyStemFromFilename(entry.filename);
-          const blob = new Blob([entry.data], {
-            type: entry.filename.toLowerCase().endsWith('.mp3') ? 'audio/mpeg' : 'audio/wav'
-          });
           return new TrackStem({
             id: `zip-stem-${Date.now()}-${idx}`,
             name: info.displayName,
@@ -86,7 +98,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
             isMuted: false,
             isSolo: false,
             isPitchShiftable: info.isPitchShiftable,
-            audioUrl: URL.createObjectURL(blob)
+            audioUrl: URL.createObjectURL(entry.blob)
           });
         });
 
@@ -109,7 +121,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
 
         VstPluginRackService.applySmartAutoFixAll(stems);
 
-        const duration = 247;
+        const duration = detectedDuration > 10 ? detectedDuration : 247;
         const songId = `zip-song-${Date.now()}`;
         const newSong = new Song({
           id: songId,
@@ -129,12 +141,27 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         console.error('Erro ao extrair pacote Multitrack .ZIP:', err);
       } finally {
         setIsExtractingZip(false);
-        e.target.value = '';
+        setZipProgressText('');
       }
       return;
     }
 
-    // Caso 2: Arquivos de áudio WAV/MP3 soltos
+    // Caso 2: Arquivos de áudio WAV/MP3/OGG/FLAC/M4A soltos
+    let detectedDuration = 0;
+    for (const file of fileArray) {
+      if (file.name.toLowerCase().endsWith('.wav') && file.size > 44) {
+        try {
+          const headerBuf = await file.slice(0, 256).arrayBuffer();
+          const secs = ZipMultitrackExtractor.parseWavDurationFromHeader(headerBuf, file.size);
+          if (secs && secs > detectedDuration) {
+            detectedDuration = secs;
+          }
+        } catch {
+          // Ignora falha de leitura de header
+        }
+      }
+    }
+
     const stems: TrackStem[] = fileArray.map((file, idx) => {
       const info = TrackStem.classifyStemFromFilename(file.name);
       return new TrackStem({
@@ -150,8 +177,25 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       });
     });
 
+    const orderRank: Record<TrackStem['type'], number> = {
+      click: 1,
+      guide: 2,
+      drums: 3,
+      loop: 4,
+      bass: 5,
+      violao: 6,
+      guitars: 7,
+      strings: 8,
+      keys: 9,
+      pad: 10,
+      vocals: 11,
+      fx: 12
+    };
+    stems.sort((a, b) => orderRank[a.type] - orderRank[b.type]);
+
     VstPluginRackService.applySmartAutoFixAll(stems);
 
+    const duration = detectedDuration > 10 ? detectedDuration : 240;
     const songId = `imported-song-${Date.now()}`;
     const newSong = new Song({
       id: songId,
@@ -161,17 +205,42 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       currentKey: 'G',
       bpm: 120,
       timeSignature: { beats: 4, value: 4 },
-      duration: 240,
-      sections: buildStandardSections(songId, 240, 120),
+      duration,
+      sections: buildStandardSections(songId, duration, 120),
       stems
     });
 
     onImportCustomSong(newSong);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    await processImportedFiles(Array.from(files));
     e.target.value = '';
   };
 
+  const handleDrop = async (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) {
+      await processImportedFiles(files);
+    }
+  };
+
   return (
-    <aside className="w-full lg:w-72 xl:w-80 bg-stage-surface border-b lg:border-b-0 lg:border-r border-stage-border flex flex-col justify-between shrink-0 lg:h-full">
+    <aside
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDraggingOver(true);
+      }}
+      onDragLeave={() => setIsDraggingOver(false)}
+      onDrop={(e) => void handleDrop(e)}
+      className={`w-full lg:w-72 xl:w-80 bg-stage-surface border-b lg:border-b-0 lg:border-r flex flex-col justify-between shrink-0 lg:h-full transition-colors ${
+        isDraggingOver ? 'border-amber-400 bg-amber-500/5' : 'border-stage-border'
+      }`}
+    >
       {/* Topo do Repertório */}
       <div className="p-4 border-b border-stage-border">
         <div className="flex items-center justify-between mb-1">
@@ -313,13 +382,13 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         )}
       </div>
 
-      {/* Botão de Importar Multitracks Locais (.ZIP ou WAV/MP3) */}
+      {/* Botão de Importar Multitracks Locais (.ZIP ou WAV/MP3) com Drag & Drop */}
       <div className="p-4 border-t border-stage-border bg-stage-card/40">
         <input
           type="file"
           ref={fileInputRef}
           multiple
-          accept=".zip,application/zip,audio/*"
+          accept=".zip,application/zip,application/x-zip-compressed,audio/*,.wav,.mp3,.ogg,.flac,.m4a"
           className="hidden"
           onChange={(e) => void handleFileUpload(e)}
         />
@@ -327,17 +396,22 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           type="button"
           disabled={isExtractingZip}
           onClick={() => fileInputRef.current?.click()}
-          className="w-full py-2.5 px-4 rounded-xl border border-dashed border-amber-500/40 hover:border-amber-400 bg-stage-surface text-amber-300 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition disabled:opacity-50"
-          title="Suba um arquivo .ZIP de Multitrack (ex: O Nosso General 140Bpm - B.zip) ou vários arquivos .WAV/.MP3"
+          className="w-full py-2.5 px-3 rounded-xl border border-dashed border-amber-500/50 hover:border-amber-400 bg-stage-surface text-amber-300 hover:text-white text-xs font-bold flex flex-col items-center justify-center gap-1 transition disabled:opacity-50"
+          title="Suba ou arraste um arquivo .ZIP de Multitrack (ex: O Nosso General 140Bpm - B.zip) ou vários arquivos .WAV/.MP3"
         >
           {isExtractingZip ? (
-            <span>Extraindo pacote Multitrack .ZIP...</span>
+            <span className="font-mono text-[11px] text-amber-300 truncate max-w-full">
+              {zipProgressText || 'Extraindo pacote Multitrack .ZIP...'}
+            </span>
           ) : (
-            <>
-              <FolderArchive className="w-4 h-4 text-amber-400" />
-              <span>Subir Multitrack (.ZIP / WAV / MP3)</span>
-            </>
+            <div className="flex items-center gap-2">
+              <FolderArchive className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Importar Track (.ZIP / WAV / MP3)</span>
+            </div>
           )}
+          <span className="text-[9px] font-mono text-slate-400">
+            Aceita pacote .ZIP completo ou stems soltos
+          </span>
         </button>
       </div>
     </aside>

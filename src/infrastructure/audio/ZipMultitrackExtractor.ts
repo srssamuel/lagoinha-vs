@@ -1,17 +1,18 @@
 /**
  * ZipMultitrackExtractor — Extrator nativo de pacotes Multitrack .ZIP no navegador
- * (Zero dependências externas: usa DataView + DecompressionStream('deflate-raw') nativo).
+ * (Zero dependências externas: usa DataView + File.slice() + DecompressionStream('deflate-raw') nativo).
  *
- * Permite subir diretamente pacotes como:
- * "O Nosso General (Versão Mateus Brito) 140Bpm - B.zip"
- * extraindo automaticamente Título, Artista/Versão, BPM (140), Tom Original (B)
- * e decodificando todos os stems .wav / .mp3 com regras estritas de Pitch Lock
- * (Bateria, Loops, Click e Guia bloqueados contra mudança de tom).
+ * Suporta tanto leitura via Streaming de `Blob`/`File` (para pacotes .ZIP gigantes de 500MB+ sem estourar RAM)
+ * quanto leitura direta de `ArrayBuffer`.
+ * Extrai automaticamente Título, Artista/Versão, BPM, Tom Original, Duração real do WAV
+ * e aplica regras estritas de Pitch Lock (Bateria, Loops, Click e Guia bloqueados contra mudança de tom).
  */
 
 export interface ExtractedZipEntry {
   filename: string;
   data: ArrayBuffer;
+  blob: Blob;
+  durationSeconds?: number;
 }
 
 export interface ParsedMultitrackMetadata {
@@ -65,14 +66,199 @@ export class ZipMultitrackExtractor {
   }
 
   /**
-   * Extrai arquivos de áudio (.wav, .mp3, .ogg, .flac, .m4a) de dentro de um arquivo .ZIP
-   * lendo o Central Directory no final do buffer.
+   * Calcula a duração exata (em segundos) de um arquivo WAV lendo apenas os primeiros 256 bytes do cabeçalho RIFF.
+   */
+  public static parseWavDurationFromHeader(headerBuffer: ArrayBuffer, totalFileByteLength: number): number | undefined {
+    if (headerBuffer.byteLength < 44) return undefined;
+    const view = new DataView(headerBuffer);
+    // Verifica "RIFF" (0x46464952 little-endian) e "WAVE" (0x45564157 little-endian)
+    if (view.getUint32(0, true) !== 0x46464952 || view.getUint32(8, true) !== 0x45564157) {
+      return undefined;
+    }
+
+    let offset = 12;
+    let byteRate = 0;
+    let dataSize = 0;
+
+    while (offset + 8 <= headerBuffer.byteLength) {
+      const chunkId = view.getUint32(offset, true);
+      const chunkSize = view.getUint32(offset + 4, true);
+
+      // "fmt " = 0x20746d66
+      if (chunkId === 0x20746d66 && offset + 20 <= headerBuffer.byteLength) {
+        byteRate = view.getUint32(offset + 16, true);
+      }
+      // "data" = 0x61746164
+      if (chunkId === 0x61746164) {
+        dataSize = chunkSize;
+        break;
+      }
+      offset += 8 + chunkSize + (chunkSize % 2);
+    }
+
+    if (byteRate > 0) {
+      const effectiveDataBytes = dataSize > 0 ? dataSize : Math.max(0, totalFileByteLength - 44);
+      const secs = effectiveDataBytes / byteRate;
+      if (secs > 1 && secs < 3600) {
+        return Math.round(secs);
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Extrai os stems de áudio de um arquivo `File` ou `Blob` .ZIP via Streaming (`Blob.slice()`),
+   * suportando arquivos .ZIP grandes (400MB–1GB+) sem carregar o ZIP inteiro na memória de uma só vez.
+   */
+  public static async extractFromZipBlob(
+    zipBlob: Blob,
+    onProgress?: (current: number, total: number, currentFilename: string) => void
+  ): Promise<ExtractedZipEntry[]> {
+    const fileSize = zipBlob.size;
+    if (fileSize < 22) {
+      throw new Error('Arquivo .ZIP vazio ou corrompido.');
+    }
+
+    // 1. Lê apenas os últimos 65 KB do arquivo para localizar o End of Central Directory (EOCD)
+    const tailSize = Math.min(fileSize, 65557);
+    const tailStart = fileSize - tailSize;
+    const tailBuffer = await zipBlob.slice(tailStart, fileSize).arrayBuffer();
+    const tailView = new DataView(tailBuffer);
+
+    let eocdRelOffset = -1;
+    for (let i = tailSize - 22; i >= 0; i--) {
+      if (tailView.getUint32(i, true) === 0x06054b50) {
+        eocdRelOffset = i;
+        break;
+      }
+    }
+
+    if (eocdRelOffset === -1) {
+      throw new Error('Arquivo .ZIP inválido (assinatura Central Directory não encontrada).');
+    }
+
+    const totalEntries = tailView.getUint16(eocdRelOffset + 10, true);
+    const centralDirSize = tailView.getUint32(eocdRelOffset + 12, true);
+    const centralDirOffset = tailView.getUint32(eocdRelOffset + 16, true);
+
+    // 2. Lê apenas o Central Directory
+    const cdBuffer = await zipBlob
+      .slice(centralDirOffset, centralDirOffset + centralDirSize)
+      .arrayBuffer();
+    const cdView = new DataView(cdBuffer);
+    const cdBytes = new Uint8Array(cdBuffer);
+    const utf8Decoder = new TextDecoder('utf-8');
+
+    interface ZipCdItem {
+      filename: string;
+      compressionMethod: number;
+      compressedSize: number;
+      uncompressedSize: number;
+      localHeaderOffset: number;
+    }
+
+    const audioEntries: ZipCdItem[] = [];
+    let ptr = 0;
+
+    for (let idx = 0; idx < totalEntries; idx++) {
+      if (ptr + 46 > cdBuffer.byteLength) break;
+      const sig = cdView.getUint32(ptr, true);
+      if (sig !== 0x02014b50) break;
+
+      const compressionMethod = cdView.getUint16(ptr + 10, true);
+      const compressedSize = cdView.getUint32(ptr + 20, true);
+      const uncompressedSize = cdView.getUint32(ptr + 24, true);
+      const fileNameLen = cdView.getUint16(ptr + 28, true);
+      const extraLen = cdView.getUint16(ptr + 30, true);
+      const commentLen = cdView.getUint16(ptr + 32, true);
+      const localHeaderOffset = cdView.getUint32(ptr + 42, true);
+
+      const rawNameBytes = cdBytes.subarray(ptr + 46, ptr + 46 + fileNameLen);
+      const fullPath = utf8Decoder.decode(rawNameBytes).normalize('NFC');
+      const baseName = fullPath.split(/[/\\]/).pop() || fullPath;
+
+      ptr += 46 + fileNameLen + extraLen + commentLen;
+
+      if (
+        fullPath.endsWith('/') ||
+        fullPath.includes('__MACOSX') ||
+        baseName.startsWith('._') ||
+        !/\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(baseName)
+      ) {
+        continue;
+      }
+
+      audioEntries.push({
+        filename: baseName,
+        compressionMethod,
+        compressedSize,
+        uncompressedSize,
+        localHeaderOffset
+      });
+    }
+
+    const results: ExtractedZipEntry[] = [];
+
+    for (let i = 0; i < audioEntries.length; i++) {
+      const item = audioEntries[i]!;
+      onProgress?.(i + 1, audioEntries.length, item.filename);
+
+      // Lê os 30 bytes do Local File Header para saber onde começam os dados comprimidos
+      const lhBuffer = await zipBlob
+        .slice(item.localHeaderOffset, item.localHeaderOffset + 30)
+        .arrayBuffer();
+      if (lhBuffer.byteLength < 30) continue;
+      const lhView = new DataView(lhBuffer);
+      if (lhView.getUint32(0, true) !== 0x04034b50) continue;
+
+      const localNameLen = lhView.getUint16(26, true);
+      const localExtraLen = lhView.getUint16(28, true);
+      const dataStart = item.localHeaderOffset + 30 + localNameLen + localExtraLen;
+      const compressedBlob = zipBlob.slice(dataStart, dataStart + item.compressedSize);
+
+      const mimeType = ZipMultitrackExtractor.getAudioMimeType(item.filename);
+      let outBlob: Blob;
+
+      if (item.compressionMethod === 0) {
+        // Store (sem compressão) — reusa o slice direto do disco sem copiar RAM
+        outBlob = new Blob([compressedBlob], { type: mimeType });
+      } else if (item.compressionMethod === 8 && typeof DecompressionStream !== 'undefined') {
+        // Deflate via Web Streams API
+        const decompressedStream = compressedBlob
+          .stream()
+          .pipeThrough(new DecompressionStream('deflate-raw'));
+        outBlob = await new Response(decompressedStream, {
+          headers: { 'Content-Type': mimeType }
+        }).blob();
+      } else {
+        continue;
+      }
+
+      // Lê apenas os primeiros 256 bytes para detectar a duração se for WAV
+      const headerSlice = await outBlob.slice(0, Math.min(256, outBlob.size)).arrayBuffer();
+      const durationSeconds = ZipMultitrackExtractor.parseWavDurationFromHeader(
+        headerSlice,
+        outBlob.size
+      );
+
+      results.push({
+        filename: item.filename,
+        data: headerSlice,
+        blob: outBlob,
+        durationSeconds
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Extrai arquivos de áudio (.wav, .mp3, .ogg, .flac, .m4a) de dentro de um `ArrayBuffer` .ZIP.
    */
   public static async extractAudioFiles(zipBuffer: ArrayBuffer): Promise<ExtractedZipEntry[]> {
     const view = new DataView(zipBuffer);
     const bytes = new Uint8Array(zipBuffer);
 
-    // Procura assinatura End of Central Directory (0x06054b50) de trás para frente
     let eocdOffset = -1;
     const minEocdOffset = Math.max(0, zipBuffer.byteLength - 65557);
     for (let i = zipBuffer.byteLength - 22; i >= minEocdOffset; i--) {
@@ -106,43 +292,62 @@ export class ZipMultitrackExtractor {
       const localHeaderOffset = view.getUint32(ptr + 42, true);
 
       const rawNameBytes = bytes.subarray(ptr + 46, ptr + 46 + fileNameLen);
-      const filename = utf8Decoder.decode(rawNameBytes).normalize('NFC');
+      const fullPath = utf8Decoder.decode(rawNameBytes).normalize('NFC');
+      const filename = fullPath.split(/[/\\]/).pop() || fullPath;
 
       ptr += 46 + fileNameLen + extraLen + commentLen;
 
-      // Ignora pastas, metadados macOS (__MACOSX) e arquivos não-áudio
       if (
-        filename.endsWith('/') ||
-        filename.includes('__MACOSX') ||
-        !/\.(wav|mp3|ogg|flac|m4a)$/i.test(filename)
+        fullPath.endsWith('/') ||
+        fullPath.includes('__MACOSX') ||
+        filename.startsWith('._') ||
+        !/\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(filename)
       ) {
         continue;
       }
 
-      // Lê Local File Header (0x04034b50)
       if (localHeaderOffset + 30 > zipBuffer.byteLength) continue;
       const localNameLen = view.getUint16(localHeaderOffset + 26, true);
       const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
       const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
       const compressedSlice = bytes.subarray(dataStart, dataStart + compressedSize);
+      const mimeType = ZipMultitrackExtractor.getAudioMimeType(filename);
 
       if (compressionMethod === 0) {
-        // Store (sem compressão)
         const copy = new Uint8Array(compressedSlice.byteLength);
         copy.set(compressedSlice);
-        results.push({ filename, data: copy.buffer });
+        const arrayBuf = copy.buffer;
+        const blob = new Blob([arrayBuf], { type: mimeType });
+        const durationSeconds = ZipMultitrackExtractor.parseWavDurationFromHeader(
+          arrayBuf,
+          arrayBuf.byteLength
+        );
+        results.push({ filename, data: arrayBuf, blob, durationSeconds });
       } else if (compressionMethod === 8 && typeof DecompressionStream !== 'undefined') {
-        // Deflate (RFC 1951)
         const ds = new DecompressionStream('deflate-raw');
         const writer = ds.writable.getWriter();
         void writer.write(new Uint8Array(compressedSlice));
         void writer.close();
         const decompressedResponse = new Response(ds.readable);
         const arrayBuf = await decompressedResponse.arrayBuffer();
-        results.push({ filename, data: arrayBuf });
+        const blob = new Blob([arrayBuf], { type: mimeType });
+        const durationSeconds = ZipMultitrackExtractor.parseWavDurationFromHeader(
+          arrayBuf,
+          arrayBuf.byteLength
+        );
+        results.push({ filename, data: arrayBuf, blob, durationSeconds });
       }
     }
 
     return results;
+  }
+
+  public static getAudioMimeType(filename: string): string {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith('.mp3')) return 'audio/mpeg';
+    if (lower.endsWith('.ogg')) return 'audio/ogg';
+    if (lower.endsWith('.flac')) return 'audio/flac';
+    if (lower.endsWith('.m4a') || lower.endsWith('.aac')) return 'audio/mp4';
+    return 'audio/wav';
   }
 }

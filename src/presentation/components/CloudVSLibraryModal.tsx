@@ -86,8 +86,10 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   const [newArtist, setNewArtist] = useState('');
   const [newKey, setNewKey] = useState('B');
   const [newBpm, setNewBpm] = useState(140);
+  const [detectedDuration, setDetectedDuration] = useState(247);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
+  const [zipProgress, setZipProgress] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -106,9 +108,15 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
     const rawFiles = Array.from(e.target.files || []);
     if (rawFiles.length === 0) return;
 
-    const zipFile = rawFiles.find((f) => f.name.toLowerCase().endsWith('.zip'));
+    const zipFile = rawFiles.find(
+      (f) =>
+        f.name.toLowerCase().endsWith('.zip') ||
+        f.type === 'application/zip' ||
+        f.type === 'application/x-zip-compressed'
+    );
     if (zipFile) {
       setIsExtractingZip(true);
+      setZipProgress('Lendo cabeçalho do .ZIP...');
       try {
         const meta = ZipMultitrackExtractor.parseMetadataFromZipName(zipFile.name);
         if (!newTitle) setNewTitle(meta.title);
@@ -116,16 +124,31 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
         setNewBpm(meta.bpm);
         setNewKey(meta.originalKey);
 
-        const zipBuffer = await zipFile.arrayBuffer();
-        const extracted = await ZipMultitrackExtractor.extractAudioFiles(zipBuffer);
-        const asFiles = extracted.map(
-          (entry) => new File([entry.data], entry.filename, { type: 'audio/wav' })
+        const extracted = await ZipMultitrackExtractor.extractFromZipBlob(
+          zipFile,
+          (current, total, filename) => {
+            setZipProgress(`Descompactando ${current}/${total}: ${filename}`);
+          }
         );
+
+        let maxDur = 0;
+        const asFiles = extracted.map((entry) => {
+          if (entry.durationSeconds && entry.durationSeconds > maxDur) {
+            maxDur = entry.durationSeconds;
+          }
+          return new File([entry.blob], entry.filename, {
+            type: ZipMultitrackExtractor.getAudioMimeType(entry.filename)
+          });
+        });
+        if (maxDur > 10) {
+          setDetectedDuration(maxDur);
+        }
         setUploadedFiles(asFiles.length > 0 ? asFiles : rawFiles);
       } catch {
         setUploadedFiles(rawFiles);
       } finally {
         setIsExtractingZip(false);
+        setZipProgress('');
       }
     } else {
       setUploadedFiles(rawFiles);
@@ -144,7 +167,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
           artist: newArtist || 'Lagoinha Worship',
           originalKey: newKey,
           bpm: newBpm,
-          duration: 247
+          duration: detectedDuration
         },
         uploadedFiles
       );
@@ -424,7 +447,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
 
               {isExtractingZip && (
                 <div className="mt-2 text-xs text-amber-300 font-mono">
-                  Descompactando pacote .ZIP de Multitracks...
+                  {zipProgress || 'Descompactando pacote .ZIP de Multitracks...'}
                 </div>
               )}
 
