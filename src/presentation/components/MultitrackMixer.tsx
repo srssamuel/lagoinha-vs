@@ -229,7 +229,7 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                   value={currentKey}
                   onChange={(e) => handleSelectTargetKey(e.target.value)}
                   aria-label="Selecionar Tom da Música"
-                  className="bg-slate-950 text-amber-300 text-xs font-mono font-black rounded px-2 py-0.5 border border-amber-500/40 cursor-pointer"
+                  className="bg-slate-950 text-amber-300 text-xs font-mono font-black rounded px-2 py-1.5 min-h-[44px] sm:min-h-0 border border-amber-500/40 cursor-pointer"
                 >
                   {ALL_KEYS.map((k) => (
                     <option key={k} value={k}>
@@ -282,7 +282,7 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                   value={ensaioTarget}
                   onChange={(e) => triggerEnsaioMix(e.target.value as StemType, ensaioMode)}
                   aria-label="Selecionar instrumento do EnsaioMix"
-                  className="bg-slate-950 text-slate-200 text-[11px] font-bold rounded px-2 py-1 min-h-[36px] sm:min-h-0 border border-slate-800"
+                  className="bg-slate-950 text-slate-200 text-[11px] font-bold rounded px-2 py-1.5 min-h-[44px] sm:min-h-0 border border-slate-800"
                 >
                   <option value="guitars">Guitarras (EG 1/2/3)</option>
                   <option value="violao">Violão Acústico</option>

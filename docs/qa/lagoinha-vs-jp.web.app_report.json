@@ -1,36 +1,21 @@
 {
   "target": "https://lagoinha-vs-jp.web.app",
-  "timestamp": "2026-10-18T03:57:44.202Z",
-  "overallStatus": "FAILED",
+  "timestamp": "2026-10-18T04:07:36.543Z",
+  "overallStatus": "PASSED",
   "results": [
     {
       "viewport": "mobile",
       "width": 375,
       "height": 667,
-      "status": "FAILED",
-      "problems": [
-        "2 tap target(s) < 44px"
-      ],
+      "status": "PASSED",
+      "problems": [],
       "overflow": false,
       "scrollWidth": 375,
       "clientWidth": 375,
       "consoleErrors": [],
       "pageErrors": [],
       "failedRequests": [],
-      "smallTargets": [
-        {
-          "tag": "select",
-          "label": "Selecionar Tom da Música",
-          "w": 118,
-          "h": 22
-        },
-        {
-          "tag": "select",
-          "label": "Selecionar instrumento do EnsaioMix",
-          "w": 185,
-          "h": 36
-        }
-      ],
+      "smallTargets": [],
       "clipped": [],
       "contrastIssues": [],
       "contrastSampled": 120,
