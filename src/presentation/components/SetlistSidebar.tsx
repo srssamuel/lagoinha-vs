@@ -10,11 +10,14 @@ import {
   ChevronUp,
   ChevronDown,
   RotateCcw,
-  FolderArchive
+  FolderArchive,
+  Download,
+  Upload
 } from 'lucide-react';
 import { TrackStem } from '../../domain/entities/TrackStem';
 import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
+import { IndexedDbStorageService } from '../../infrastructure/storage/IndexedDbStorageService';
 
 interface SetlistSidebarProps {
   songs: Song[];
@@ -25,6 +28,7 @@ interface SetlistSidebarProps {
   onMoveSong: (fromIndex: number, toIndex: number) => void;
   onRestoreDefaultSetlist: () => void;
   onImportCustomSong: (song: Song) => void;
+  onImportFullSetlist?: (songs: Song[]) => void;
 }
 
 export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
@@ -35,9 +39,11 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
   onRemoveSong,
   onMoveSong,
   onRestoreDefaultSetlist,
-  onImportCustomSong
+  onImportCustomSong,
+  onImportFullSetlist
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [zipProgressText, setZipProgressText] = useState<string>('');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -70,7 +76,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         f.type === 'application/x-zip-compressed'
     );
 
-    // Caso 1: Pacote Multitrack completo em .ZIP (ex: "O Nosso General (Versão Mateus Brito) 140Bpm - B.zip")
+    // Caso 1: Pacote Multitrack completo em .ZIP
     if (zipFile) {
       setIsExtractingZip(true);
       setZipProgressText('Lendo pacote .ZIP...');
@@ -102,7 +108,6 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           });
         });
 
-        // Ordena os stems na sequência padrão de palco: Click, Guia, Bateria, Loop, Baixo, Violão, Guitarras, Teclas, Pad, Vocals
         const orderRank: Record<TrackStem['type'], number> = {
           click: 1,
           guide: 2,
@@ -136,6 +141,9 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           stems
         });
 
+        // Salva no IndexedDB para persistência offline
+        void IndexedDbStorageService.saveCustomSong(newSong);
+
         onImportCustomSong(newSong);
       } catch (err) {
         console.error('Erro ao extrair pacote Multitrack .ZIP:', err);
@@ -157,7 +165,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
             detectedDuration = secs;
           }
         } catch {
-          // Ignora falha de leitura de header
+          // Ignora falha de leitura
         }
       }
     }
@@ -210,6 +218,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       stems
     });
 
+    void IndexedDbStorageService.saveCustomSong(newSong);
     onImportCustomSong(newSong);
   };
 
@@ -218,6 +227,30 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
     if (!files || files.length === 0) return;
     await processImportedFiles(Array.from(files));
     e.target.value = '';
+  };
+
+  const handleJsonSetlistUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const importedSongs = IndexedDbStorageService.importSetlistFromJson(text);
+      if (importedSongs.length > 0) {
+        if (onImportFullSetlist) {
+          onImportFullSetlist(importedSongs);
+        } else {
+          importedSongs.forEach((s) => onImportCustomSong(s));
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao importar setlist JSON:', err);
+    }
+    e.target.value = '';
+  };
+
+  const handleExportSetlist = () => {
+    const json = IndexedDbStorageService.exportSetlistToJson(songs, 'Culto de Celebração');
+    IndexedDbStorageService.downloadJsonFile(json, `setlist-lagoinha-${Date.now()}.json`);
   };
 
   const handleDrop = async (e: React.DragEvent<HTMLElement>) => {
@@ -382,8 +415,8 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         )}
       </div>
 
-      {/* Botão de Importar Multitracks Locais (.ZIP ou WAV/MP3) com Drag & Drop */}
-      <div className="p-4 border-t border-stage-border bg-stage-card/40">
+      {/* Painel Inferior: Importação de Multitracks (.ZIP / WAV) + Backup JSON */}
+      <div className="p-3 border-t border-stage-border bg-stage-card/40 space-y-2">
         <input
           type="file"
           ref={fileInputRef}
@@ -392,11 +425,19 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           className="hidden"
           onChange={(e) => void handleFileUpload(e)}
         />
+        <input
+          type="file"
+          ref={jsonFileInputRef}
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => void handleJsonSetlistUpload(e)}
+        />
+
         <button
           type="button"
           disabled={isExtractingZip}
           onClick={() => fileInputRef.current?.click()}
-          className="w-full py-2.5 px-3 rounded-xl border border-dashed border-amber-500/50 hover:border-amber-400 bg-stage-surface text-amber-300 hover:text-white text-xs font-bold flex flex-col items-center justify-center gap-1 transition disabled:opacity-50"
+          className="w-full py-2.5 px-3 rounded-xl border border-dashed border-amber-500/50 hover:border-amber-400 bg-stage-surface text-amber-300 hover:text-white text-xs font-bold flex flex-col items-center justify-center gap-0.5 transition disabled:opacity-50"
           title="Suba ou arraste um arquivo .ZIP de Multitrack (ex: O Nosso General 140Bpm - B.zip) ou vários arquivos .WAV/.MP3"
         >
           {isExtractingZip ? (
@@ -404,15 +445,38 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
               {zipProgressText || 'Extraindo pacote Multitrack .ZIP...'}
             </span>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <FolderArchive className="w-4 h-4 text-amber-400 shrink-0" />
               <span>Importar Track (.ZIP / WAV / MP3)</span>
             </div>
           )}
           <span className="text-[9px] font-mono text-slate-400">
-            Aceita pacote .ZIP completo ou stems soltos
+            Arraste ou clique para selecionar
           </span>
         </button>
+
+        {/* Barra de Backup do Setlist (JSON) */}
+        <div className="grid grid-cols-2 gap-1.5 pt-1">
+          <button
+            type="button"
+            onClick={handleExportSetlist}
+            className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-blue-400 text-slate-300 hover:text-white text-[10px] font-bold flex items-center justify-center gap-1 transition"
+            title="Exportar repertório atual em arquivo .json"
+          >
+            <Download className="w-3 h-3 text-blue-400" />
+            <span>Exportar JSON</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => jsonFileInputRef.current?.click()}
+            className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-emerald-400 text-slate-300 hover:text-white text-[10px] font-bold flex items-center justify-center gap-1 transition"
+            title="Importar repertório a partir de arquivo .json"
+          >
+            <Upload className="w-3 h-3 text-emerald-400" />
+            <span>Importar JSON</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

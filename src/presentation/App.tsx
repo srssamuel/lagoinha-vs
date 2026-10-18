@@ -21,12 +21,15 @@ import { VstPluginRackModal } from './components/VstPluginRackModal';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
 import { VstPluginRackService } from '../domain/services/VstPluginRackService';
 import { StemType, StemDspConfig } from '../domain/entities/TrackStem';
+import { WebMidiHardwareService } from '../infrastructure/midi/WebMidiHardwareService';
+import { IndexedDbStorageService } from '../infrastructure/storage/IndexedDbStorageService';
 
 export const App: React.FC = () => {
   // Serviços de Autenticação e Áudio
   const authService = useMemo(() => new FirebaseAuthService(), []);
   const audioEngine = useMemo(() => new WebAudioEngine(), []);
   const padEngine = useMemo(() => new PolyphonicAmbientPad(), []);
+  const midiService = useMemo(() => WebMidiHardwareService.getInstance(), []);
 
   // Estado de Usuário Autenticado
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getCurrentUser());
@@ -52,6 +55,19 @@ export const App: React.FC = () => {
   const [selectedVstStemId, setSelectedVstStemId] = useState<string | null>(null);
 
   const currentSong = songs[currentSongIndex] ?? null;
+
+  // Carrega músicas customizadas salvas previamente no IndexedDB
+  useEffect(() => {
+    void IndexedDbStorageService.loadCustomSongs().then((saved) => {
+      if (saved.length > 0) {
+        setSongs((prev) => {
+          const existingIds = new Set(prev.map((s) => s.id));
+          const toAdd = saved.filter((s) => !existingIds.has(s.id));
+          return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+        });
+      }
+    });
+  }, []);
 
   // Inscrição no estado de autenticação
   useEffect(() => {
@@ -106,6 +122,65 @@ export const App: React.FC = () => {
       handleSelectSong(currentSongIndex - 1);
     }
   }, [currentSongIndex]);
+
+  // Integração com Pedaleiras e Controladores USB MIDI Reais
+  useEffect(() => {
+    void midiService.init();
+
+    const unbindPlay = midiService.registerActionHandler('play-pause', () => {
+      if (audioEngine.getState().isPlaying) {
+        audioEngine.pause();
+      } else {
+        audioEngine.play();
+      }
+    });
+
+    const unbindNextSong = midiService.registerActionHandler('next-song', handleNextSong);
+    const unbindPrevSong = midiService.registerActionHandler('prev-song', handlePrevSong);
+
+    const unbindNextSec = midiService.registerActionHandler('next-sec', () => {
+      if (!currentSong) return;
+      const activeId = engineState.activeSectionId;
+      const currentIdx = currentSong.sections.findIndex((s) => s.id === activeId);
+      const nextSec = currentSong.sections[currentIdx + 1];
+      if (nextSec) {
+        audioEngine.queueSectionJump(nextSec.id);
+      }
+    });
+
+    const unbindPrevSec = midiService.registerActionHandler('prev-sec', () => {
+      if (!currentSong) return;
+      const activeId = engineState.activeSectionId;
+      const currentIdx = currentSong.sections.findIndex((s) => s.id === activeId);
+      const prevSec = currentSong.sections[Math.max(0, currentIdx - 1)];
+      if (prevSec) {
+        audioEngine.queueSectionJump(prevSec.id);
+      }
+    });
+
+    const unbindLoop = midiService.registerActionHandler('loop-sec', () => {
+      audioEngine.toggleSectionLoop();
+    });
+
+    const unbindSoloClick = midiService.registerActionHandler('solo-click', () => {
+      audioEngine.toggleSoloClick();
+    });
+
+    const unbindPanic = midiService.registerActionHandler('panic', () => {
+      audioEngine.panic();
+    });
+
+    return () => {
+      unbindPlay();
+      unbindNextSong();
+      unbindPrevSong();
+      unbindNextSec();
+      unbindPrevSec();
+      unbindLoop();
+      unbindSoloClick();
+      unbindPanic();
+    };
+  }, [midiService, audioEngine, currentSong, engineState.activeSectionId, handleNextSong, handlePrevSong]);
 
   // Teclas de Atalho de Palco
   useEffect(() => {
@@ -167,7 +242,7 @@ export const App: React.FC = () => {
     setSongs([...songs]);
   };
 
-  // Alternar Pitch Lock de um canal específico (se o usuário quiser travar/destravar manualmente)
+  // Alternar Pitch Lock de um canal específico
   const handleTogglePitchLock = (stemId: string) => {
     if (!currentSong) return;
     const target = currentSong.stems.find((s) => s.id === stemId);
@@ -248,6 +323,10 @@ export const App: React.FC = () => {
   const handleRemoveSong = (index: number) => {
     if (index < 0 || index >= songs.length) return;
     audioEngine.stop();
+    const targetSong = songs[index];
+    if (targetSong) {
+      void IndexedDbStorageService.deleteCustomSong(targetSong.id);
+    }
     const nextSongs = songs.filter((_, i) => i !== index);
     setSongs(nextSongs);
     if (nextSongs.length === 0) {
@@ -322,6 +401,13 @@ export const App: React.FC = () => {
     setCurrentSongIndex(songs.length);
   };
 
+  // Importar setlist completo via JSON
+  const handleImportFullSetlist = (importedSongs: Song[]) => {
+    audioEngine.stop();
+    setSongs(importedSongs);
+    setCurrentSongIndex(0);
+  };
+
   // Adicionar música do Banco de VS na Nuvem
   const handleAddCloudSong = (cloudSong: Song) => {
     setSongs((prev) => [...prev, cloudSong]);
@@ -378,7 +464,7 @@ export const App: React.FC = () => {
 
       {/* Área Central: Setlist à Esquerda + Timeline & Mixer no Centro */}
       <div className="flex flex-col-reverse lg:flex-row flex-1 min-w-0 lg:overflow-hidden">
-        {/* Sidebar com o Repertório do Culto */}
+        {/* Sidebar com o Repertório do Culto e Backup JSON */}
         <SetlistSidebar
           songs={songs}
           currentSongIndex={currentSongIndex}
@@ -388,11 +474,12 @@ export const App: React.FC = () => {
           onMoveSong={handleMoveSong}
           onRestoreDefaultSetlist={handleRestoreDefaultSetlist}
           onImportCustomSong={handleImportCustomSong}
+          onImportFullSetlist={handleImportFullSetlist}
         />
 
         {/* Console Principal */}
         <main className="flex-1 flex flex-col min-w-0 lg:overflow-hidden">
-          {/* Waveform Estilo Fader Club com Fatias Coloridas de Seção */}
+          {/* Waveform com Picos Reais de Áudio e Tooltip Interativo */}
           <WaveformDisplay
             currentSong={currentSong}
             currentTime={engineState.currentTime}
@@ -461,7 +548,7 @@ export const App: React.FC = () => {
         onClose={() => setIsRoutingModalOpen(false)}
       />
 
-      {/* Modal de Mapeamento MIDI e Teclado de Palco */}
+      {/* Modal de Mapeamento MIDI e Pedaleiras USB */}
       <MidiModal
         isOpen={isMidiModalOpen}
         onClose={() => setIsMidiModalOpen(false)}

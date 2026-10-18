@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Song } from '../../domain/entities/Song';
 
 interface WaveformDisplayProps {
@@ -20,30 +20,85 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
   onSeek,
   onSelectSection
 }) => {
-  // Gera formato de onda pseudo-aleatório consistente por música
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [hoverX, setHoverX] = useState<number | null>(null);
+
+  // Calcula picos reais a partir do buffer decodificado da música (ex: Bateria ou Mix),
+  // ou gera perfil dinâmico de culto se ainda não decodificado
   const waveformBars = useMemo(() => {
-    const barsCount = 120;
+    const barsCount = 130;
+    if (!currentSong) return [];
+
+    // Tenta encontrar o buffer da bateria ou baixo ou primeiro stem carregado
+    const referenceStem =
+      currentSong.stems.find((s) => s.type === 'drums' && s.audioBuffer) ||
+      currentSong.stems.find((s) => s.type === 'bass' && s.audioBuffer) ||
+      currentSong.stems.find((s) => s.audioBuffer);
+
+    if (referenceStem?.audioBuffer) {
+      const buffer = referenceStem.audioBuffer;
+      const channelData = buffer.getChannelData(0);
+      const blockSize = Math.floor(channelData.length / barsCount);
+      const peaks: number[] = [];
+
+      for (let i = 0; i < barsCount; i++) {
+        let max = 0;
+        const start = i * blockSize;
+        const end = Math.min(start + blockSize, channelData.length);
+        // Amostragem RMS a cada 16 samples para máxima performance
+        for (let j = start; j < end; j += 16) {
+          const val = Math.abs(channelData[j] ?? 0);
+          if (val > max) max = val;
+        }
+        peaks.push(Math.max(0.12, Math.min(1.0, max * 1.8)));
+      }
+      return peaks;
+    }
+
+    // Perfil dinâmico de palco enquanto o arquivo de áudio carrega
     const bars: number[] = [];
-    const seed = currentSong?.bpm || 120;
+    const seed = currentSong.bpm || 120;
     for (let i = 0; i < barsCount; i++) {
-      // Simula dinâmica de culto (intro suave, versos médios, refrões altos com bateria pesada)
       const phase = (i / barsCount) * Math.PI * 4;
-      const baseHeight = 0.25 + 0.35 * Math.abs(Math.sin(phase));
+      const baseHeight = 0.28 + 0.35 * Math.abs(Math.sin(phase));
       const variation = 0.15 * Math.sin(i * 13 + seed);
       bars.push(Math.min(1.0, Math.max(0.12, baseHeight + variation)));
     }
     return bars;
-  }, [currentSong?.id, currentSong?.bpm]);
+  }, [currentSong?.id, currentSong?.bpm, currentSong?.stems]);
 
   if (!currentSong || duration <= 0) return null;
 
   const playheadPercent = Math.min(100, (currentTime / duration) * 100);
 
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
+    setHoverTime(ratio * duration);
+    setHoverX(x);
+  };
+
+  const handleMouseLeave = () => {
+    setHoverTime(null);
+    setHoverX(null);
+  };
+
+  const hoverSection = hoverTime !== null ? currentSong.getActiveSection(hoverTime) : null;
+
   return (
-    <div className="bg-stage-surface/95 border-b border-stage-border px-6 py-2 select-none relative">
+    <div className="bg-stage-surface/95 border-b border-stage-border px-5 py-2 select-none relative">
       {/* Waveform Canvas & Slices Container */}
       <div
-        className="relative h-20 bg-slate-950/80 rounded-xl overflow-hidden border border-stage-border/60 cursor-pointer shadow-inner"
+        className="relative h-20 bg-slate-950/90 rounded-xl overflow-hidden border border-stage-border/60 cursor-pointer shadow-inner"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const clickX = e.clientX - rect.left;
@@ -51,14 +106,13 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
           onSeek(ratio * duration);
         }}
       >
-        {/* Fatias Coloridas de Seção no Fundo (Estilo Fader Club / Multitracks Elite) */}
+        {/* Fatias Coloridas de Seção no Fundo (Estilo MultiTracks Playback / Fader Club) */}
         <div className="absolute inset-0 flex pointer-events-none">
           {currentSong.sections.map((sec, idx) => {
             const widthPercent = (sec.duration / duration) * 100;
             const isActive = activeSectionId === sec.id;
             const isQueued = queuedSectionId === sec.id;
 
-            // Cores alternadas e vivas de palco
             const sectionColors = [
               'bg-blue-600/15 border-blue-500/30 text-blue-300',
               'bg-indigo-600/15 border-indigo-500/30 text-indigo-300',
@@ -85,12 +139,12 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
                   onSelectSection(sec.id);
                 }}
               >
-                {/* Tag Curta de Seção (ex: V1, R8, P9 estilo Fader Club) */}
+                {/* Tag Curta de Seção */}
                 <div className="flex items-center justify-between text-[9px] font-mono font-black tracking-wider">
                   <span className="bg-slate-900/80 px-1 py-0.2 rounded border border-white/10 uppercase">
                     {sec.type === 'chorus' ? `R${idx + 1}` : sec.type === 'bridge' ? `P${idx + 1}` : `V${idx + 1}`}
                   </span>
-                  <span className="text-[8px] opacity-70 truncate ml-1">{sec.name}</span>
+                  <span className="text-[8px] opacity-75 truncate ml-1">{sec.name}</span>
                 </div>
               </div>
             );
@@ -110,12 +164,25 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
                 style={{
                   height: `${bar * 100}%`,
                   backgroundColor: isPlayed ? '#60a5fa' : '#334155',
-                  boxShadow: isPlayed ? '0 0 6px rgba(96, 165, 250, 0.5)' : 'none'
+                  boxShadow: isPlayed ? '0 0 6px rgba(96, 165, 250, 0.4)' : 'none'
                 }}
               />
             );
           })}
         </div>
+
+        {/* Linha e Tooltip de Hover */}
+        {hoverX !== null && hoverTime !== null && (
+          <div
+            className="absolute top-0 bottom-0 w-[1px] bg-white/50 pointer-events-none z-20"
+            style={{ left: `${hoverX}px` }}
+          >
+            <div className="absolute top-1 left-2 bg-slate-900/95 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-mono text-slate-200 shadow-xl whitespace-nowrap">
+              <span>{formatTime(hoverTime)}</span>
+              {hoverSection && <span className="text-amber-300 ml-1.5">• {hoverSection.name}</span>}
+            </div>
+          </div>
+        )}
 
         {/* Playhead Scrubber / Agulha de Reprodução em Tempo Real */}
         <div

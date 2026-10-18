@@ -1,7 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Song } from '../../domain/entities/Song';
 import { ChordTransposer } from '../../domain/services/ChordTransposer';
-import { X, FileText, Hash, Music, Minus, Plus, Play } from 'lucide-react';
+import {
+  X,
+  FileText,
+  Hash,
+  Music,
+  Minus,
+  Plus,
+  Play,
+  Printer,
+  ScrollText,
+  Pause
+} from 'lucide-react';
 
 interface CifraProModalProps {
   isOpen: boolean;
@@ -36,9 +47,9 @@ const CHARTS_BY_SONG_ID: Record<string, SectionChartData[]> = {
       lyrics: 'O nosso General é Cristo / Seguimos os Seus passos / Nenhum inimigo nos resistirá!'
     },
     {
-      type: 'turnaround',
+      type: 'interlude',
       chords: 'G#m7   E   B   F#',
-      lyrics: '[Interlúdio Synth Lead + EG 3 + Órgão Hammond]'
+      lyrics: '[Interlúdio Brass/Synth Lead + EG 3 + Órgão Hammond]'
     },
     {
       type: 'verse',
@@ -51,9 +62,9 @@ const CHARTS_BY_SONG_ID: Record<string, SectionChartData[]> = {
       lyrics: 'O nosso General é Cristo / Seguimos os Seus passos / Nenhum inimigo nos resistirá!'
     },
     {
-      type: 'instrumental',
+      type: 'vamp',
       chords: 'E   F#   G#m7   D#m7',
-      lyrics: '[Solo Guitarra EG 3 + Keys EP + Groove Contrabaixo]'
+      lyrics: '[Solo Guitarra EG 3 Lead + Keys EP + Groove Contrabaixo]'
     },
     {
       type: 'bridge',
@@ -160,8 +171,8 @@ const CHARTS_BY_SONG_ID: Record<string, SectionChartData[]> = {
     },
     {
       type: 'bridge',
-      chords: 'C   D   Em   G/B',
-      lyrics: 'Que se abram os céus / O Teu reino vem / Nossa fé está no nosso Deus!'
+      chords: 'C   D   Em   Bm7',
+      lyrics: 'Quem é como o Senhor? Poderoso, Invencível / O Leão da Tribo de Judá rugiu!'
     }
   ]
 };
@@ -176,6 +187,23 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
 }) => {
   const [notationMode, setNotationMode] = useState<'CHORDS' | 'NASHVILLE'>('CHORDS');
   const [capoFret, setCapoFret] = useState<number>(0);
+  const [fontSizePx, setFontSizePx] = useState<number>(16);
+  const [isAutoScrolling, setIsAutoScrolling] = useState<boolean>(false);
+  const [scrollSpeed, setScrollSpeed] = useState<number>(1);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll loop
+  useEffect(() => {
+    if (!isOpen || !isAutoScrolling) return;
+
+    const interval = setInterval(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop += scrollSpeed * 0.8;
+      }
+    }, 40);
+
+    return () => clearInterval(interval);
+  }, [isOpen, isAutoScrolling, scrollSpeed]);
 
   if (!isOpen || !song) return null;
 
@@ -183,11 +211,70 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
   const totalSemitones = song.pitchShiftSemitones - capoFret;
   const capoKey = ChordTransposer.transposeKey(song.currentKey, -capoFret);
 
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const sectionsHtml = song.sections
+      .map((section, idx) => {
+        const chartItem = baseCharts[idx] ?? baseCharts[0];
+        const rawChords = chartItem?.chords ?? 'G   D   Em7   C9';
+        const displayedChords =
+          notationMode === 'NASHVILLE'
+            ? ChordTransposer.toNashvilleLine(rawChords, song.originalKey)
+            : ChordTransposer.transposeChordLine(rawChords, totalSemitones);
+
+        return `
+          <div style="margin-bottom: 18px; page-break-inside: avoid;">
+            <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #475569; margin-bottom: 4px;">
+              [${section.name}]
+            </div>
+            <div style="font-family: monospace; font-size: 16px; font-weight: bold; color: #b45309; letter-spacing: 1px; margin-bottom: 4px;">
+              ${displayedChords}
+            </div>
+            <div style="font-size: 13px; color: #1e293b; line-height: 1.5;">
+              ${chartItem?.lyrics || ''}
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${song.title} — Cifra Pro Lagoinha VS</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; max-width: 800px; margin: 0 auto; color: #0f172a; }
+            h1 { font-size: 22px; margin: 0 0 4px 0; }
+            .meta { font-size: 12px; color: #64748b; margin-bottom: 24px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>${song.title}</h1>
+          <div class="meta">
+            <strong>Artista:</strong> ${song.artist} | 
+            <strong>Tom no Áudio:</strong> ${song.currentKey} ${capoFret > 0 ? `(Capo ${capoFret})` : ''} | 
+            <strong>BPM:</strong> ${song.bpm} | 
+            <strong>Notação:</strong> ${notationMode === 'NASHVILLE' ? 'Graus Nashville' : 'Acordes'}
+          </div>
+          ${sectionsHtml}
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 select-none">
-      <div className="bg-[#121824] border border-stage-border rounded-3xl max-w-4xl w-full p-6 shadow-2xl relative text-slate-100 flex flex-col max-h-[88vh]">
+      <div className="bg-[#121824] border border-stage-border rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl relative text-slate-100 flex flex-col max-h-[90vh]">
         {/* Header estilo Cifra Pro® / ChartBuilder MultiTracks.com.br */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stage-border pb-4 mb-4 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stage-border pb-4 mb-3 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
               <FileText className="w-5 h-5" />
@@ -202,37 +289,49 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-stage-muted">
-                {song.artist} • Tom Original: {song.originalKey} • Tom Atual no Áudio:{' '}
+                {song.artist} • Tom Original: {song.originalKey} • Tom no Áudio:{' '}
                 <strong className="text-amber-300">{song.currentKey}</strong> ({song.bpm} BPM)
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl bg-stage-card border border-stage-border text-stage-muted hover:text-white"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-amber-400 transition flex items-center gap-1.5 text-xs font-bold"
+              title="Imprimir ou Salvar PDF da Cifra"
+            >
+              <Printer className="w-4 h-4 text-amber-300" />
+              <span className="hidden sm:inline">Imprimir / PDF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl bg-stage-card border border-stage-border text-stage-muted hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Barra de Ferramentas Cifra Pro®: Transposição de Áudio + Cifra, Sistema Nashville e Capotraste */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 border border-stage-border rounded-2xl p-3 mb-4 shrink-0">
+        {/* Barra de Ferramentas Cifra Pro®: Transposição, Nashville, Capo, Zoom de Fonte e Auto-Scroll */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-900/90 border border-stage-border rounded-2xl p-2.5 mb-3 shrink-0">
           {/* 1. Transpositor de Tom (Áudio + Cifra simultâneos) */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold uppercase text-slate-300">
               Tom (Áudio + Cifra):
             </span>
             <button
               type="button"
               onClick={() => onPitchShiftChange(song.pitchShiftSemitones - 1)}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
               title="Baixar 1 semitom (-1) no áudio e na cifra"
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
-            <span className="px-3 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 font-mono text-xs font-black text-amber-300 min-w-[76px] text-center">
+            <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/40 font-mono text-xs font-black text-amber-300 min-w-[65px] text-center">
               {song.currentKey}{' '}
               {song.pitchShiftSemitones !== 0 &&
                 `(${song.pitchShiftSemitones > 0 ? '+' : ''}${song.pitchShiftSemitones})`}
@@ -240,70 +339,125 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
             <button
               type="button"
               onClick={() => onPitchShiftChange(song.pitchShiftSemitones + 1)}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
               title="Subir 1 semitom (+1) no áudio e na cifra"
             >
               <Plus className="w-3.5 h-3.5" />
             </button>
-            {song.pitchShiftSemitones !== 0 && (
-              <button
-                type="button"
-                onClick={() => onPitchShiftChange(0)}
-                className="text-[10px] font-mono text-blue-300 hover:underline ml-1"
-              >
-                Original ({song.originalKey})
-              </button>
-            )}
           </div>
 
           {/* 2. Alternador Acordes vs Graus Numéricos Nashville */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setNotationMode('CHORDS')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition ${
                 notationMode === 'CHORDS'
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-slate-300 hover:text-white'
               }`}
             >
-              <Music className="w-3.5 h-3.5" />
+              <Music className="w-3 h-3" />
               <span>Acordes ({capoKey})</span>
             </button>
             <button
               type="button"
               onClick={() => setNotationMode('NASHVILLE')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition ${
                 notationMode === 'NASHVILLE'
-                  ? 'bg-amber-500 text-slate-950'
+                  ? 'bg-amber-500 text-slate-950 font-black'
                   : 'bg-slate-800 text-slate-300 hover:text-white'
               }`}
             >
-              <Hash className="w-3.5 h-3.5" />
+              <Hash className="w-3 h-3" />
               <span>Graus Nashville (1-4-5-6m)</span>
             </button>
           </div>
 
           {/* 3. Capotraste para Violão */}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase text-slate-300">Capo Violão:</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase text-slate-300">Capo:</span>
             <select
               value={capoFret}
               onChange={(e) => setCapoFret(parseInt(e.target.value, 10))}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-200 font-mono"
+              aria-label="Capotraste Violão"
+              className="px-2 py-1 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-200 font-mono"
             >
               <option value={0}>Sem Capo</option>
               {[1, 2, 3, 4, 5].map((fret) => (
                 <option key={fret} value={fret}>
-                  Casa {fret} (Desenho: {ChordTransposer.transposeKey(song.currentKey, -fret)})
+                  Casa {fret} ({ChordTransposer.transposeKey(song.currentKey, -fret)})
                 </option>
               ))}
             </select>
           </div>
+
+          {/* 4. Zoom de Fonte (A- / A+) */}
+          <div className="flex items-center gap-1 bg-slate-800/80 px-2 py-0.5 rounded-xl border border-slate-700">
+            <span className="text-[10px] font-bold text-slate-400">Fonte:</span>
+            <button
+              type="button"
+              onClick={() => setFontSizePx((prev) => Math.max(13, prev - 2))}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 text-xs font-bold"
+              title="Diminuir tamanho da fonte"
+            >
+              A-
+            </button>
+            <span className="font-mono text-xs text-amber-300 font-bold">{fontSizePx}px</span>
+            <button
+              type="button"
+              onClick={() => setFontSizePx((prev) => Math.min(24, prev + 2))}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-700 text-slate-300 text-xs font-bold"
+              title="Aumentar tamanho da fonte"
+            >
+              A+
+            </button>
+          </div>
+
+          {/* 5. Auto-Scroll para Palco */}
+          <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-0.5 rounded-xl border border-slate-700">
+            <button
+              type="button"
+              onClick={() => setIsAutoScrolling(!isAutoScrolling)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-bold transition ${
+                isAutoScrolling
+                  ? 'bg-emerald-500 text-slate-950 font-black'
+                  : 'bg-slate-900 text-slate-300 hover:text-white'
+              }`}
+            >
+              {isAutoScrolling ? (
+                <>
+                  <Pause className="w-3 h-3 fill-current" />
+                  <span>Rolando</span>
+                </>
+              ) : (
+                <>
+                  <ScrollText className="w-3 h-3 text-slate-400" />
+                  <span>Auto-Scroll</span>
+                </>
+              )}
+            </button>
+
+            {isAutoScrolling && (
+              <select
+                value={scrollSpeed}
+                onChange={(e) => setScrollSpeed(parseInt(e.target.value, 10))}
+                aria-label="Velocidade da Rolagem Automática"
+                className="bg-slate-900 text-slate-200 text-[10px] font-bold rounded px-1.5 py-0.5 border border-slate-700 font-mono"
+              >
+                <option value={1}>1x (Lento)</option>
+                <option value={2}>2x (Médio)</option>
+                <option value={3}>3x (Rápido)</option>
+              </select>
+            )}
+          </div>
         </div>
 
         {/* Lista de Seções Sincronizadas com Pulo Quantizado ao Clicar */}
-        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto space-y-3 pr-1 scroll-smooth"
+        >
           {song.sections.map((section, idx) => {
             const chartItem = baseCharts[idx] ?? baseCharts[0];
             const rawChords = chartItem?.chords ?? 'G   D   Em7   C9';
@@ -351,13 +505,19 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
                   </span>
                 </div>
 
-                {/* Linha de Acordes ou Graus Nashville */}
-                <div className="font-mono text-base font-black text-amber-300 tracking-wide mb-1">
+                {/* Linha de Acordes ou Graus Nashville com Zoom Dinâmico */}
+                <div
+                  className="font-mono font-black text-amber-300 tracking-wide mb-1 transition-all"
+                  style={{ fontSize: `${fontSizePx}px` }}
+                >
                   {displayedChords}
                 </div>
 
                 {/* Guia de Letra / Dinâmica da Banda */}
-                <div className="text-xs text-slate-200 leading-relaxed">
+                <div
+                  className="text-slate-200 leading-relaxed transition-all"
+                  style={{ fontSize: `${Math.max(11, fontSizePx - 3)}px` }}
+                >
                   {chartItem?.lyrics}
                 </div>
               </div>
