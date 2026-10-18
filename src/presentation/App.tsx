@@ -17,8 +17,10 @@ import { MidiModal } from './components/MidiModal';
 import { AuthGate } from './components/AuthGate';
 import { CloudVSLibraryModal } from './components/CloudVSLibraryModal';
 import { CifraProModal } from './components/CifraProModal';
+import { VstPluginRackModal } from './components/VstPluginRackModal';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
-import { StemType } from '../domain/entities/TrackStem';
+import { VstPluginRackService } from '../domain/services/VstPluginRackService';
+import { StemType, StemDspConfig } from '../domain/entities/TrackStem';
 
 export const App: React.FC = () => {
   // Serviços de Autenticação e Áudio
@@ -46,6 +48,8 @@ export const App: React.FC = () => {
   const [isMidiModalOpen, setIsMidiModalOpen] = useState<boolean>(false);
   const [isCloudLibraryOpen, setIsCloudLibraryOpen] = useState<boolean>(false);
   const [isCifraModalOpen, setIsCifraModalOpen] = useState<boolean>(false);
+  const [isVstRackOpen, setIsVstRackOpen] = useState<boolean>(false);
+  const [selectedVstStemId, setSelectedVstStemId] = useState<string | null>(null);
 
   const currentSong = songs[currentSongIndex] ?? null;
 
@@ -170,6 +174,36 @@ export const App: React.FC = () => {
     for (const stem of currentSong.stems) {
       audioEngine.setStemVolume(stem.id, stem.volume);
     }
+    setSongs([...songs]);
+  };
+
+  // VST Channel Strip & Smart Auto-Fix DSP (Plugin Boutique Engine)
+  const handleOpenVstRack = (stemId?: string) => {
+    setSelectedVstStemId(stemId || null);
+    setIsVstRackOpen(true);
+  };
+
+  const handleUpdateStemDsp = (stemId: string, partial: Partial<StemDspConfig>) => {
+    if (!currentSong) return;
+    const target = currentSong.stems.find((s) => s.id === stemId);
+    if (target) {
+      target.setDsp(partial);
+      audioEngine.refreshDspChain();
+      setSongs([...songs]);
+    }
+  };
+
+  const handleAutoFixAllStems = () => {
+    if (!currentSong) return;
+    VstPluginRackService.applySmartAutoFixAll(currentSong.stems);
+    audioEngine.refreshDspChain();
+    setSongs([...songs]);
+  };
+
+  const handleResetAllDsp = () => {
+    if (!currentSong) return;
+    VstPluginRackService.resetAllDsp(currentSong.stems);
+    audioEngine.refreshDspChain();
     setSongs([...songs]);
   };
 
@@ -368,7 +402,7 @@ export const App: React.FC = () => {
             onSeek={(secs) => audioEngine.seek(secs)}
           />
 
-          {/* Mixer de Multitracks com Faders de Palco, EnsaioMix e VU Meters Estéreo */}
+          {/* Mixer de Multitracks com Faders de Palco, EnsaioMix, Rack VST e VU Meters Estéreo */}
           {currentSong && (
             <MultitrackMixer
               stems={currentSong.stems}
@@ -382,6 +416,8 @@ export const App: React.FC = () => {
               onToggleSolo={handleToggleSolo}
               onResetMixer={handleResetMixer}
               onApplyEnsaioMix={handleApplyEnsaioMix}
+              onOpenVstRack={handleOpenVstRack}
+              onAutoFixAllStems={handleAutoFixAllStems}
             />
           )}
         </main>
@@ -431,6 +467,19 @@ export const App: React.FC = () => {
         onSelectSection={(secId) => audioEngine.queueSectionJump(secId)}
         onPitchShiftChange={handlePitchShiftChange}
       />
+
+      {/* Modal Rack de Plugins VST & Channel Strip DSP (Plugin Boutique Free FX Engine) */}
+      {currentSong && (
+        <VstPluginRackModal
+          isOpen={isVstRackOpen}
+          stems={currentSong.stems}
+          initialSelectedStemId={selectedVstStemId}
+          onClose={() => setIsVstRackOpen(false)}
+          onUpdateStemDsp={handleUpdateStemDsp}
+          onAutoFixAllStems={handleAutoFixAllStems}
+          onResetAllDsp={handleResetAllDsp}
+        />
+      )}
     </div>
   );
 };

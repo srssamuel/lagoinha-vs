@@ -13,6 +13,16 @@ export type StemType =
 
 export type StemRoutingDestination = 'SPLIT_IEM' | 'SPLIT_PA' | 'STEREO';
 
+export interface StemDspConfig {
+  presetName: string;
+  highPassHz: number;       // 20 Hz to 350 Hz (De-Bleed Low-Cut Filter)
+  eqLowDb: number;          // -12 dB to +12 dB (100 Hz Shelf — TDR SlickEQ)
+  eqMidDb: number;          // -12 dB to +12 dB (1.4 kHz Peak — TDR Nova)
+  eqHighDb: number;         // -12 dB to +12 dB (8.5 kHz Air Shelf — Fresh Air / Nova)
+  driveAmount: number;      // 0.0 to 1.0 (Tube / Tape Saturation — SGA1566 / Softube)
+  compressorEnabled: boolean; // Optical / Multiband Punch Compressor (OTT / MJUC jr.)
+}
+
 export interface TrackStemProps {
   id: string;
   name: string;
@@ -23,6 +33,7 @@ export interface TrackStemProps {
   isSolo: boolean;
   audioBuffer?: AudioBuffer | null;
   audioUrl?: string;
+  dsp?: Partial<StemDspConfig>;
 }
 
 export class TrackStem {
@@ -35,6 +46,7 @@ export class TrackStem {
   public isSolo: boolean;
   public audioBuffer?: AudioBuffer | null;
   public audioUrl?: string;
+  public dsp: StemDspConfig;
 
   constructor(props: TrackStemProps) {
     this.id = props.id;
@@ -46,6 +58,39 @@ export class TrackStem {
     this.isSolo = props.isSolo;
     this.audioBuffer = props.audioBuffer ?? null;
     this.audioUrl = props.audioUrl;
+    this.dsp = {
+      presetName: props.dsp?.presetName ?? 'Flat (Bypass)',
+      highPassHz: props.dsp?.highPassHz ?? 20,
+      eqLowDb: props.dsp?.eqLowDb ?? 0,
+      eqMidDb: props.dsp?.eqMidDb ?? 0,
+      eqHighDb: props.dsp?.eqHighDb ?? 0,
+      driveAmount: props.dsp?.driveAmount ?? 0,
+      compressorEnabled: props.dsp?.compressorEnabled ?? false
+    };
+  }
+
+  public setDsp(partial: Partial<StemDspConfig>): void {
+    this.dsp = {
+      ...this.dsp,
+      ...partial,
+      highPassHz: Math.max(20, Math.min(400, partial.highPassHz ?? this.dsp.highPassHz)),
+      eqLowDb: Math.max(-12, Math.min(12, partial.eqLowDb ?? this.dsp.eqLowDb)),
+      eqMidDb: Math.max(-12, Math.min(12, partial.eqMidDb ?? this.dsp.eqMidDb)),
+      eqHighDb: Math.max(-12, Math.min(12, partial.eqHighDb ?? this.dsp.eqHighDb)),
+      driveAmount: Math.max(0, Math.min(1, partial.driveAmount ?? this.dsp.driveAmount))
+    };
+  }
+
+  public resetDsp(): void {
+    this.dsp = {
+      presetName: 'Flat (Bypass)',
+      highPassHz: 20,
+      eqLowDb: 0,
+      eqMidDb: 0,
+      eqHighDb: 0,
+      driveAmount: 0,
+      compressorEnabled: false
+    };
   }
 
   public setVolume(vol: number): void {

@@ -13,7 +13,8 @@ import {
   Guitar,
   RotateCcw,
   Plus,
-  Minus
+  Minus,
+  Cpu
 } from 'lucide-react';
 import { EnsaioMixMode } from '../../domain/services/EnsaioMixService';
 
@@ -29,6 +30,8 @@ interface MultitrackMixerProps {
   onToggleSolo: (stemId: string) => void;
   onResetMixer: () => void;
   onApplyEnsaioMix?: (targetType: StemType, mode: EnsaioMixMode) => void;
+  onOpenVstRack?: (stemId?: string) => void;
+  onAutoFixAllStems?: () => void;
 }
 
 type MixerFilterGroup = 'ALL' | 'STRINGS' | 'RHYTHM_KEYS' | 'CUES_VOCALS';
@@ -58,7 +61,9 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
   onToggleMute,
   onToggleSolo,
   onResetMixer,
-  onApplyEnsaioMix
+  onApplyEnsaioMix,
+  onOpenVstRack,
+  onAutoFixAllStems
 }) => {
   const [filterGroup, setFilterGroup] = useState<MixerFilterGroup>('ALL');
   const [ensaioTarget, setEnsaioTarget] = useState<StemType>('violao');
@@ -254,6 +259,30 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
             {areStringsSoloed ? 'Cordas em Solo (Sair)' : 'Isolar Cordas'}
           </button>
 
+          {onAutoFixAllStems && (
+            <button
+              type="button"
+              onClick={onAutoFixAllStems}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 flex items-center gap-1 transition"
+              title="Corrige automaticamente vazamento de graves (De-Bleed), devolve brilho agudo (TDR Nova) e ativa compressão OTT nos stems"
+            >
+              <Sparkles className="w-3 h-3 text-emerald-300" />
+              <span>Auto-Fix Stems (DSP)</span>
+            </button>
+          )}
+
+          {onOpenVstRack && (
+            <button
+              type="button"
+              onClick={() => onOpenVstRack()}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 flex items-center gap-1 transition"
+              title="Abrir Rack de Plugins VST (TDR Nova EQ, OTT Compressor, Tube Drive & Catálogo Plugin Boutique)"
+            >
+              <Cpu className="w-3 h-3 text-amber-300" />
+              <span>Rack VST & FX</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -261,7 +290,7 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
               onResetMixer();
             }}
             className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-300 hover:text-white flex items-center gap-1 transition"
-            title="Restaurar todos os volumes para 0.0 dB e limpar Mutes/Solos"
+            title="Restaurar todos os volumes para 0.0 dB e limpar Mutes/Solos/Plugins"
           >
             <RotateCcw className="w-3 h-3" />
             <span>Resetar Mix</span>
@@ -289,6 +318,13 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
           const leftMeterPct = isPlaying && isAudible ? Math.min(100, Math.round(liveLevel * (stem.pan <= 0 ? 100 : 75))) : 0;
           const rightMeterPct = isPlaying && isAudible ? Math.min(100, Math.round(liveLevel * (stem.pan >= 0 ? 100 : 75))) : 0;
           const isBoosted = stem.volume > 1.02;
+          const hasDspActive =
+            stem.dsp.highPassHz > 25 ||
+            stem.dsp.eqLowDb !== 0 ||
+            stem.dsp.eqMidDb !== 0 ||
+            stem.dsp.eqHighDb !== 0 ||
+            stem.dsp.driveAmount > 0 ||
+            stem.dsp.compressorEnabled;
 
           return (
             <div
@@ -315,7 +351,7 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                   </span>
                 </div>
 
-                {/* Badge de Roteamento + Família */}
+                {/* Badge de Roteamento + Família + Botão FX */}
                 <div className="flex items-center justify-center gap-1">
                   <span
                     className={`text-[8px] font-mono px-1.5 py-0.2 rounded uppercase font-semibold ${
@@ -334,6 +370,20 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                     <span className="text-[8px] font-mono px-1 py-0.2 rounded uppercase font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
                       CORDA
                     </span>
+                  )}
+                  {onOpenVstRack && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenVstRack(stem.id)}
+                      className={`text-[8px] font-mono px-1.5 py-0.2 rounded uppercase font-bold border transition ${
+                        hasDspActive
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                          : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-400'
+                      }`}
+                      title={`Abrir Channel Strip VST de ${stem.name} (${stem.dsp.presetName})`}
+                    >
+                      FX
+                    </button>
                   )}
                 </div>
               </div>

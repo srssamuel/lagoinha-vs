@@ -4,9 +4,16 @@ import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
 import { QuantizedSectionService } from '../../application/services/QuantizedSectionService';
 import { ProceduralClickGenerator } from './ProceduralClickGenerator';
+import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 
 interface StemAudioNodes {
   source: AudioBufferSourceNode | null;
+  highPassFilter: BiquadFilterNode;
+  eqLow: BiquadFilterNode;
+  eqMid: BiquadFilterNode;
+  eqHigh: BiquadFilterNode;
+  tubeSaturator: WaveShaperNode;
+  compressor: DynamicsCompressorNode;
   gainNode: GainNode;
   leftGain: GainNode;
   rightGain: GainNode;
@@ -18,6 +25,7 @@ export class WebAudioEngine implements AudioEnginePort {
   private ctx: AudioContext | null = null;
   private currentSong: Song | null = null;
   private masterGain: GainNode | null = null;
+  private masterLimiter: DynamicsCompressorNode | null = null;
   private channelMerger: ChannelMergerNode | null = null;
 
   // Stems audio nodes
@@ -60,10 +68,20 @@ export class WebAudioEngine implements AudioEnginePort {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
 
-    // Canal L e R independentes
+    // Master Brickwall Limiter (inspirado no Limiter №6 / LoudMax da Plugin Boutique)
+    // Impede clipping/distorção digital quando canais são reforçados até +6.0 dB
+    this.masterLimiter = this.ctx.createDynamicsCompressor();
+    this.masterLimiter.threshold.setValueAtTime(-1.0, this.ctx.currentTime);
+    this.masterLimiter.knee.setValueAtTime(0.0, this.ctx.currentTime);
+    this.masterLimiter.ratio.setValueAtTime(20.0, this.ctx.currentTime);
+    this.masterLimiter.attack.setValueAtTime(0.001, this.ctx.currentTime);
+    this.masterLimiter.release.setValueAtTime(0.08, this.ctx.currentTime);
+
+    // Canal L e R independentes -> Master Gain -> Master Brickwall Limiter -> Saída
     this.channelMerger = this.ctx.createChannelMerger(2);
     this.channelMerger.connect(this.masterGain);
-    this.masterGain.connect(this.ctx.destination);
+    this.masterGain.connect(this.masterLimiter);
+    this.masterLimiter.connect(this.ctx.destination);
 
     // Pré-cria buffers de click de reserva para Loop Click
     this.clickBufferAccent = ProceduralClickGenerator.createClickBuffer(this.ctx, true);
@@ -84,9 +102,30 @@ export class WebAudioEngine implements AudioEnginePort {
 
     const ctxRef = this.ctx;
 
-    // Cria nós para cada stem real da música e pré-carrega os arquivos de áudio reais
+    // Cria cadeia DSP completa (Channel Strip) para cada stem real da música
     song.stems.forEach((stem) => {
       if (!this.ctx || !this.channelMerger) return;
+
+      const highPassFilter = this.ctx.createBiquadFilter();
+      highPassFilter.type = 'highpass';
+
+      const eqLow = this.ctx.createBiquadFilter();
+      eqLow.type = 'lowshelf';
+      eqLow.frequency.value = 100;
+
+      const eqMid = this.ctx.createBiquadFilter();
+      eqMid.type = 'peaking';
+      eqMid.frequency.value = 1400;
+      eqMid.Q.value = 1.1;
+
+      const eqHigh = this.ctx.createBiquadFilter();
+      eqHigh.type = 'highshelf';
+      eqHigh.frequency.value = 8500;
+
+      const tubeSaturator = this.ctx.createWaveShaper();
+      tubeSaturator.oversample = '2x';
+
+      const compressor = this.ctx.createDynamicsCompressor();
 
       const gainNode = this.ctx.createGain();
       const leftGain = this.ctx.createGain();
@@ -95,6 +134,15 @@ export class WebAudioEngine implements AudioEnginePort {
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.65;
       const timeDomainData = new Uint8Array(analyser.frequencyBinCount);
+
+      // Cadeia VST Channel Strip:
+      // HighPass (De-Bleed) -> EQ Low -> EQ Mid -> EQ High -> Tube Saturator -> Compressor -> Gain -> Analyser & Split L/R
+      highPassFilter.connect(eqLow);
+      eqLow.connect(eqMid);
+      eqMid.connect(eqHigh);
+      eqHigh.connect(tubeSaturator);
+      tubeSaturator.connect(compressor);
+      compressor.connect(gainNode);
 
       gainNode.connect(analyser);
       gainNode.connect(leftGain);
@@ -106,6 +154,12 @@ export class WebAudioEngine implements AudioEnginePort {
 
       this.stemNodes.set(stem.id, {
         source: null,
+        highPassFilter,
+        eqLow,
+        eqMid,
+        eqHigh,
+        tubeSaturator,
+        compressor,
         gainNode,
         leftGain,
         rightGain,
@@ -128,7 +182,10 @@ export class WebAudioEngine implements AudioEnginePort {
               if (currentNodes && !currentNodes.source) {
                 const src = ctxRef.createBufferSource();
                 src.buffer = decoded;
-                src.connect(currentNodes.gainNode);
+                if (stem.type !== 'click' && stem.type !== 'guide' && src.detune) {
+                  src.detune.value = this.currentSong.pitchShiftSemitones * 100;
+                }
+                src.connect(currentNodes.highPassFilter);
                 const nowOffset = Math.min(this.getCurrentPlaybackTime(), decoded.duration);
                 src.start(0, nowOffset);
                 currentNodes.source = src;
@@ -141,6 +198,7 @@ export class WebAudioEngine implements AudioEnginePort {
       }
     });
 
+    this.refreshDspChain();
     this.applyMixerSettings();
     this.notifyState();
   }
@@ -278,11 +336,54 @@ export class WebAudioEngine implements AudioEnginePort {
     if (!this.currentSong) return;
     this.currentSong.stems.forEach((stem) => {
       stem.resetVolume();
+      stem.resetDsp();
       stem.isMuted = false;
       stem.isSolo = false;
     });
     this.isSoloClickActive = false;
+    this.refreshDspChain();
     this.applyMixerSettings();
+    this.notifyState();
+  }
+
+  public refreshDspChain(): void {
+    if (!this.currentSong || !this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    this.currentSong.stems.forEach((stem) => {
+      const nodes = this.stemNodes.get(stem.id);
+      if (!nodes) return;
+
+      const dsp = stem.dsp;
+      nodes.highPassFilter.frequency.value = dsp.highPassHz;
+      nodes.highPassFilter.frequency.setValueAtTime(dsp.highPassHz, now);
+
+      nodes.eqLow.gain.value = dsp.eqLowDb;
+      nodes.eqLow.gain.setValueAtTime(dsp.eqLowDb, now);
+
+      nodes.eqMid.gain.value = dsp.eqMidDb;
+      nodes.eqMid.gain.setValueAtTime(dsp.eqMidDb, now);
+
+      nodes.eqHigh.gain.value = dsp.eqHighDb;
+      nodes.eqHigh.gain.setValueAtTime(dsp.eqHighDb, now);
+
+      nodes.tubeSaturator.curve = VstPluginRackService.createTubeSaturationCurve(
+        dsp.driveAmount,
+        512
+      );
+
+      if (dsp.compressorEnabled) {
+        nodes.compressor.threshold.setValueAtTime(-18, now);
+        nodes.compressor.knee.setValueAtTime(8, now);
+        nodes.compressor.ratio.setValueAtTime(4.0, now);
+        nodes.compressor.attack.setValueAtTime(0.008, now);
+        nodes.compressor.release.setValueAtTime(0.18, now);
+      } else {
+        nodes.compressor.threshold.setValueAtTime(0, now);
+        nodes.compressor.ratio.setValueAtTime(1.0, now);
+      }
+    });
+
     this.notifyState();
   }
 
@@ -518,14 +619,14 @@ export class WebAudioEngine implements AudioEnginePort {
       const nodes = this.stemNodes.get(stem.id);
       if (!nodes) return;
 
-      // Se o buffer já foi decodificado, inicia reprodução sincronizada
+      // Se o buffer já foi decodificado, inicia reprodução sincronizada passando pelo Channel Strip DSP
       if (stem.audioBuffer) {
         const source = ctxRef.createBufferSource();
         source.buffer = stem.audioBuffer;
         if (stem.type !== 'click' && stem.type !== 'guide' && source.detune) {
           source.detune.value = detuneCents;
         }
-        source.connect(nodes.gainNode);
+        source.connect(nodes.highPassFilter);
 
         const startOffset = Math.min(offset, stem.audioBuffer.duration);
         try {
@@ -553,7 +654,7 @@ export class WebAudioEngine implements AudioEnginePort {
               if (stem.type !== 'click' && stem.type !== 'guide' && src.detune) {
                 src.detune.value = this.currentSong.pitchShiftSemitones * 100;
               }
-              src.connect(nodes.gainNode);
+              src.connect(nodes.highPassFilter);
               src.start(0, Math.min(this.getCurrentPlaybackTime(), decoded.duration));
               nodes.source = src;
             }

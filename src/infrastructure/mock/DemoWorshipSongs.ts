@@ -1,6 +1,7 @@
 import { Song } from '../../domain/entities/Song';
 import { SongSection } from '../../domain/value-objects/SongSection';
 import { TrackStem } from '../../domain/entities/TrackStem';
+import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 
 export class DemoWorshipSongs {
   /**
@@ -16,7 +17,7 @@ export class DemoWorshipSongs {
   }
 
   private static createRealStems(prefix: string, folder: string): TrackStem[] {
-    return [
+    const stems = [
       new TrackStem({
         id: `${prefix}-click`,
         name: 'Click (Metrônomo)',
@@ -108,6 +109,8 @@ export class DemoWorshipSongs {
         audioUrl: `./stems/${folder}/vocals.mp3`
       })
     ];
+    VstPluginRackService.applySmartAutoFixAll(stems);
+    return stems;
   }
 
   public static createACasaESua(): Song {
