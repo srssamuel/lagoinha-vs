@@ -16,6 +16,9 @@ import { RoutingModal } from './components/RoutingModal';
 import { MidiModal } from './components/MidiModal';
 import { AuthGate } from './components/AuthGate';
 import { CloudVSLibraryModal } from './components/CloudVSLibraryModal';
+import { CifraProModal } from './components/CifraProModal';
+import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
+import { StemType } from '../domain/entities/TrackStem';
 
 export const App: React.FC = () => {
   // Serviços de Autenticação e Áudio
@@ -42,6 +45,7 @@ export const App: React.FC = () => {
   const [isRoutingModalOpen, setIsRoutingModalOpen] = useState<boolean>(false);
   const [isMidiModalOpen, setIsMidiModalOpen] = useState<boolean>(false);
   const [isCloudLibraryOpen, setIsCloudLibraryOpen] = useState<boolean>(false);
+  const [isCifraModalOpen, setIsCifraModalOpen] = useState<boolean>(false);
 
   const currentSong = songs[currentSongIndex] ?? null;
 
@@ -151,6 +155,22 @@ export const App: React.FC = () => {
       currentSong.bpm = newBpm;
       setSongs([...songs]);
     }
+  };
+
+  // Transposição de Tom em Tempo Real (Pitch Shift MultiTracks.com.br)
+  const handlePitchShiftChange = (semitones: number) => {
+    audioEngine.setPitchShift(semitones);
+    setSongs([...songs]);
+  };
+
+  // EnsaioMix® (RehearsalMix MultiTracks.com.br: Mix Aumentada / Mix Diminuta)
+  const handleApplyEnsaioMix = (instrument: StemType, mode: EnsaioMixMode) => {
+    if (!currentSong) return;
+    EnsaioMixService.applyEnsaioMix(currentSong.stems, instrument, mode);
+    for (const stem of currentSong.stems) {
+      audioEngine.setStemVolume(stem.id, stem.volume);
+    }
+    setSongs([...songs]);
   };
 
   // Mixer Callbacks
@@ -270,7 +290,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
-      {/* Topo / Header da Estação com Álbuns, BPM, Banco de VS e Perfil */}
+      {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro e Banco de VS */}
       <StageHeader
         songs={songs}
         currentSongIndex={currentSongIndex}
@@ -283,9 +303,11 @@ export const App: React.FC = () => {
         currentUser={currentUser}
         onSelectSongIndex={handleSelectSong}
         onBpmChange={handleBpmChange}
+        onPitchShiftChange={handlePitchShiftChange}
         onMasterVolumeChange={(vol) => audioEngine.setMasterVolume(vol)}
         onOpenRoutingModal={() => setIsRoutingModalOpen(true)}
         onOpenCloudLibrary={() => setIsCloudLibraryOpen(true)}
+        onOpenCifraModal={() => setIsCifraModalOpen(true)}
         onSignOut={() => void authService.signOut()}
       />
 
@@ -346,7 +368,7 @@ export const App: React.FC = () => {
             onSeek={(secs) => audioEngine.seek(secs)}
           />
 
-          {/* Mixer de Multitracks com Faders de Palco e VU Meters Estéreo */}
+          {/* Mixer de Multitracks com Faders de Palco, EnsaioMix e VU Meters Estéreo */}
           {currentSong && (
             <MultitrackMixer
               stems={currentSong.stems}
@@ -359,6 +381,7 @@ export const App: React.FC = () => {
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
               onResetMixer={handleResetMixer}
+              onApplyEnsaioMix={handleApplyEnsaioMix}
             />
           )}
         </main>
@@ -397,6 +420,16 @@ export const App: React.FC = () => {
         canUpload={currentUser.canUploadVS}
         onClose={() => setIsCloudLibraryOpen(false)}
         onAddSongToSetlist={handleAddCloudSong}
+      />
+
+      {/* Modal Cifra Pro® & Mapa Dinâmico Sincronizado (ChartBuilder MultiTracks.com.br) */}
+      <CifraProModal
+        isOpen={isCifraModalOpen}
+        song={currentSong}
+        activeSectionId={engineState.activeSectionId}
+        onClose={() => setIsCifraModalOpen(false)}
+        onSelectSection={(secId) => audioEngine.queueSectionJump(secId)}
+        onPitchShiftChange={handlePitchShiftChange}
       />
     </div>
   );

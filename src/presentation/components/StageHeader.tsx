@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, Radio, Music2, ShieldCheck, Minus, Plus, Cloud, LogOut, User as UserIcon } from 'lucide-react';
+import { Volume2, Radio, Music2, ShieldCheck, Minus, Plus, Cloud, LogOut, User as UserIcon, FileText } from 'lucide-react';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { User } from '../../domain/entities/User';
@@ -16,9 +16,11 @@ interface StageHeaderProps {
   currentUser: User | null;
   onSelectSongIndex: (idx: number) => void;
   onBpmChange: (newBpm: number) => void;
+  onPitchShiftChange: (semitones: number) => void;
   onMasterVolumeChange: (vol: number) => void;
   onOpenRoutingModal: () => void;
   onOpenCloudLibrary: () => void;
+  onOpenCifraModal: () => void;
   onSignOut: () => void;
 }
 
@@ -34,16 +36,18 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
   currentUser,
   onSelectSongIndex,
   onBpmChange,
+  onPitchShiftChange,
   onMasterVolumeChange,
   onOpenRoutingModal,
   onOpenCloudLibrary,
+  onOpenCifraModal,
   onSignOut
 }) => {
   return (
     <header className="bg-stage-surface border-b border-stage-border px-6 py-2.5 flex flex-wrap items-center justify-between gap-4 shadow-xl">
       {/* Brand & Church Identity */}
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/20 ring-1 ring-white/10 shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 ring-1 ring-white/10 shrink-0">
           <Music2 className="w-5 h-5 text-white" />
         </div>
         <div>
@@ -67,15 +71,16 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
           const isSelected = currentSongIndex === idx;
           return (
             <button
+              type="button"
               key={song.id}
               onClick={() => onSelectSongIndex(idx)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all shrink-0 active:scale-95 ${
                 isSelected
                   ? 'bg-blue-600/30 border-blue-400 text-white shadow-md shadow-blue-500/20 ring-1 ring-blue-400/50'
-                  : 'bg-stage-card border-stage-border text-slate-400 hover:text-white hover:bg-slate-800'
+                  : 'bg-stage-card border-stage-border text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center text-[10px] font-black text-slate-300 font-mono">
+              <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-200 font-mono">
                 {idx + 1}
               </div>
               <div className="text-left">
@@ -94,12 +99,38 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
       {/* Musical Stage Telemetry */}
       {currentSong && (
         <div className="flex flex-wrap items-center gap-3 sm:gap-4 bg-stage-card/70 border border-stage-border px-3.5 py-1.5 rounded-2xl shadow-inner max-w-full">
-          {/* Tom / Key */}
-          <div className="text-center">
-            <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">Tom</span>
-            <span className="text-lg font-black text-stage-amber font-mono">
-              {currentSong.currentKey}
+          {/* Tom / Key com Transposição em Tempo Real (-6 a +6 semitons) */}
+          <div className="text-center flex flex-col items-center">
+            <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">
+              Tom (Pitch)
             </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => onPitchShiftChange(currentSong.pitchShiftSemitones - 1)}
+                className="w-5 h-5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition"
+                title="Baixar 1 semitom (-1) no áudio e na cifra"
+              >
+                <Minus className="w-3 h-3" />
+              </button>
+
+              <span
+                onClick={() => onPitchShiftChange(0)}
+                className="text-lg font-black text-stage-amber font-mono min-w-[30px] cursor-pointer"
+                title={`Tom Original: ${currentSong.originalKey} (Clique para restaurar)`}
+              >
+                {currentSong.currentKey}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => onPitchShiftChange(currentSong.pitchShiftSemitones + 1)}
+                className="w-5 h-5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center transition"
+                title="Subir 1 semitom (+1) no áudio e na cifra"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+            </div>
           </div>
 
           <div className="w-px h-7 bg-stage-border/60" />
@@ -109,6 +140,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
             <span className="text-[9px] text-stage-muted uppercase tracking-wider block font-semibold">BPM</span>
             <div className="flex items-center gap-1.5">
               <button
+                type="button"
                 onClick={() => onBpmChange(Math.max(40, currentSong.bpm - 1))}
                 className="w-5 h-5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition"
                 title="Diminuir 1 BPM"
@@ -121,6 +153,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
               </span>
 
               <button
+                type="button"
                 onClick={() => onBpmChange(Math.min(240, currentSong.bpm + 1))}
                 className="w-5 h-5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition"
                 title="Aumentar 1 BPM"
@@ -154,10 +187,22 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
         </div>
       )}
 
-      {/* Cloud VS Button, Output Routing & User Profile */}
+      {/* Cifra Pro, Cloud VS Button, Output Routing & User Profile */}
       <div className="flex flex-wrap items-center gap-2 max-w-full">
+        {/* Botão Cifra Pro® & Mapa Dinâmico (MultiTracks ChartBuilder) */}
+        <button
+          type="button"
+          onClick={onOpenCifraModal}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-bold transition active:scale-95"
+          title="Abrir Cifra Pro® Sincronizada e Graus Nashville"
+        >
+          <FileText className="w-3.5 h-3.5 text-amber-300" />
+          <span>CIFRA PRO®</span>
+        </button>
+
         {/* Botão Banco de VS (Google Cloud) */}
         <button
+          type="button"
           onClick={onOpenCloudLibrary}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-[11px] font-bold transition active:scale-95 shadow-md shadow-blue-600/10"
           title="Abrir Banco de Multitracks na Nuvem"

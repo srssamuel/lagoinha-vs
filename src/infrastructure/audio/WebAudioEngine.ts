@@ -286,6 +286,24 @@ export class WebAudioEngine implements AudioEnginePort {
     this.notifyState();
   }
 
+  public setPitchShift(semitones: number): void {
+    if (!this.currentSong) return;
+    this.currentSong.setPitchShift(semitones);
+    if (this.ctx) {
+      const now = this.ctx.currentTime;
+      const cents = this.currentSong.pitchShiftSemitones * 100;
+      this.currentSong.stems.forEach((stem) => {
+        if (stem.type === 'click' || stem.type === 'guide') return;
+        const nodes = this.stemNodes.get(stem.id);
+        if (nodes?.source?.detune) {
+          nodes.source.detune.value = cents;
+          nodes.source.detune.setValueAtTime(cents, now);
+        }
+      });
+    }
+    this.notifyState();
+  }
+
   public queueSectionJump(sectionId: string): void {
     if (!this.currentSong) return;
     this.queuedSectionId = sectionId;
@@ -494,6 +512,7 @@ export class WebAudioEngine implements AudioEnginePort {
 
     const song = this.currentSong;
     const ctxRef = this.ctx;
+    const detuneCents = song.pitchShiftSemitones * 100;
 
     song.stems.forEach((stem) => {
       const nodes = this.stemNodes.get(stem.id);
@@ -503,6 +522,9 @@ export class WebAudioEngine implements AudioEnginePort {
       if (stem.audioBuffer) {
         const source = ctxRef.createBufferSource();
         source.buffer = stem.audioBuffer;
+        if (stem.type !== 'click' && stem.type !== 'guide' && source.detune) {
+          source.detune.value = detuneCents;
+        }
         source.connect(nodes.gainNode);
 
         const startOffset = Math.min(offset, stem.audioBuffer.duration);
@@ -528,6 +550,9 @@ export class WebAudioEngine implements AudioEnginePort {
             if (this.isPlaying && this.currentSong?.id === song.id && !nodes.source) {
               const src = ctxRef.createBufferSource();
               src.buffer = decoded;
+              if (stem.type !== 'click' && stem.type !== 'guide' && src.detune) {
+                src.detune.value = this.currentSong.pitchShiftSemitones * 100;
+              }
               src.connect(nodes.gainNode);
               src.start(0, Math.min(this.getCurrentPlaybackTime(), decoded.duration));
               nodes.source = src;

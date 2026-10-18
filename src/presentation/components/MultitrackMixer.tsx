@@ -15,6 +15,7 @@ import {
   Plus,
   Minus
 } from 'lucide-react';
+import { EnsaioMixMode } from '../../domain/services/EnsaioMixService';
 
 interface MultitrackMixerProps {
   stems: TrackStem[];
@@ -27,6 +28,7 @@ interface MultitrackMixerProps {
   onToggleMute: (stemId: string) => void;
   onToggleSolo: (stemId: string) => void;
   onResetMixer: () => void;
+  onApplyEnsaioMix?: (targetType: StemType, mode: EnsaioMixMode) => void;
 }
 
 type MixerFilterGroup = 'ALL' | 'STRINGS' | 'RHYTHM_KEYS' | 'CUES_VOCALS';
@@ -55,9 +57,12 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
   onPanChange,
   onToggleMute,
   onToggleSolo,
-  onResetMixer
+  onResetMixer,
+  onApplyEnsaioMix
 }) => {
   const [filterGroup, setFilterGroup] = useState<MixerFilterGroup>('ALL');
+  const [ensaioTarget, setEnsaioTarget] = useState<StemType>('violao');
+  const [ensaioMode, setEnsaioMode] = useState<EnsaioMixMode>('PADRAO');
   const hasAnySolo = stems.some((s) => s.isSolo);
 
   const formatDb = (volume: number) => {
@@ -95,9 +100,15 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
     });
   };
 
+  const triggerEnsaioMix = (target: StemType, mode: EnsaioMixMode) => {
+    setEnsaioTarget(target);
+    setEnsaioMode(mode);
+    onApplyEnsaioMix?.(target, mode);
+  };
+
   return (
-    <div className="flex-1 bg-[#0b0e17] p-4 lg:p-5 overflow-x-auto select-none flex flex-col justify-between">
-      {/* Barra Superior do Console: Filtros de Cordas/Instrumentos + Presets Rápidos de Palco */}
+    <div className="flex-1 bg-[#0c0c0e] p-4 lg:p-5 overflow-x-auto select-none flex flex-col justify-between">
+      {/* Barra Superior do Console: Filtros de Cordas/Instrumentos + EnsaioMix® + Presets de Palco */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5 mr-2">
@@ -112,7 +123,7 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
               filterGroup === 'ALL'
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
             Todos ({stems.length})
@@ -135,7 +146,7 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
               filterGroup === 'RHYTHM_KEYS'
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
             Bateria & Teclas
@@ -146,15 +157,60 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
               filterGroup === 'CUES_VOCALS'
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'
             }`}
           >
             Click, Guia & Voz
           </button>
         </div>
 
-        {/* Atalhos Rápidos de Palco para Apartar Violão / Guitarra / Cordas */}
+        {/* EnsaioMix® (RehearsalMix MultiTracks.com.br) + Atalhos de Palco */}
         <div className="flex flex-wrap items-center gap-1.5">
+          {onApplyEnsaioMix && (
+            <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-lg px-2 py-0.5">
+              <span className="text-[10px] font-mono font-bold text-amber-300 uppercase">
+                EnsaioMix®:
+              </span>
+              <select
+                value={ensaioTarget}
+                onChange={(e) => triggerEnsaioMix(e.target.value as StemType, ensaioMode)}
+                aria-label="Selecionar instrumento do EnsaioMix"
+                className="bg-slate-950 text-slate-200 text-[11px] font-bold rounded px-2 py-1.5 min-h-[44px] sm:min-h-0 border border-slate-800"
+              >
+                <option value="violao">Violão Acústico</option>
+                <option value="guitars">Guitarra Elétrica</option>
+                <option value="bass">Baixo (Bass)</option>
+                <option value="drums">Bateria (Drums)</option>
+                <option value="keys">Teclado / Piano</option>
+                <option value="vocals">Backing Vocals</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => triggerEnsaioMix(ensaioTarget, 'AUMENTADA')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                  ensaioMode === 'AUMENTADA'
+                    ? 'bg-amber-500 text-slate-950 font-black'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+                title="Mix Aumentada (MultiTracks EnsaioMix): coloca este instrumento em destaque (+4.3dB) acima da banda para estudo"
+              >
+                Mix Aumentada (+)
+              </button>
+              <button
+                type="button"
+                onClick={() => triggerEnsaioMix(ensaioTarget, 'DIMINUTA')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                  ensaioMode === 'DIMINUTA'
+                    ? 'bg-rose-600 text-white font-black'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+                title="Mix Diminuta / Minus One (MultiTracks EnsaioMix): remove apenas este instrumento para você tocar por cima"
+              >
+                Mix Diminuta (-)
+              </button>
+            </div>
+          )}
+
           {violaoStem && (
             <button
               type="button"
@@ -200,7 +256,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
 
           <button
             type="button"
-            onClick={onResetMixer}
+            onClick={() => {
+              setEnsaioMode('PADRAO');
+              onResetMixer();
+            }}
             className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-300 hover:text-white flex items-center gap-1 transition"
             title="Restaurar todos os volumes para 0.0 dB e limpar Mutes/Solos"
           >

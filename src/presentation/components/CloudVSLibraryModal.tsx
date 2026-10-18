@@ -24,18 +24,18 @@ interface CloudVSLibraryModalProps {
 
 const EXTERNAL_REPOSITORIES = [
   {
-    name: 'MultiTracks.com.br (Catálogo Oficial Gospel & Worship)',
-    url: 'https://www.multitracks.com.br/songs/',
-    badge: 'OFICIAL WORSHIP',
+    name: 'MultiTracks.com.br — Conteúdo Gratuito (MultiTrack Gratuita do Mês & Pads)',
+    url: 'https://www.multitracks.com.br/products/free/',
+    badge: 'CONTEÚDO GRATUITO OFICIAL',
     description:
-      'Maior acervo mundial de multitracks originais de estúdio (Casa Worship, Gabriel Guedes, Isaías Saad, Lagoinha, Elevation, Bethel) com canais isolados de Violão, Guitarra, Baixo, Bateria, Keys, Click e Guia.'
+      'Página oficial de recursos gratuitos da MultiTracks.com.br: inclui a MultiTrack Gratuita do Mês (Free Play), Pacotes de Pads Ambiente gratuitos e recursos de teste que podem ser importados diretamente no Lagoinha VS.'
   },
   {
-    name: 'Loop Community — Prime Multitracks & Community Stems',
-    url: 'https://loopcommunity.com/en-us/tracks',
-    badge: 'PRODUTORES & COMUNIDADE',
+    name: 'MultiTracks.com.br — Catálogo Completo Gospel & Worship (Brasil)',
+    url: 'https://www.multitracks.com.br/songs/',
+    badge: 'CATÁLOGO OFICIAL WORSHIP',
     description:
-      'Repositório global de produtores de louvor com pacotes de stems WAV/MP3 prontos para importar diretamente no Lagoinha VS.'
+      'Maior acervo mundial de multitracks originais de estúdio (Casa Worship, Gabriel Guedes, Isaías Saad, Lagoinha, Elevation, Bethel) com canais isolados de Violão, Guitarra, Baixo, Bateria, Keys, Click e Guia.'
   },
   {
     name: 'Cambridge MT — Open Multitrack Download Library (500+ Projetos WAV Grátis)',
@@ -50,6 +50,13 @@ const EXTERNAL_REPOSITORIES = [
     badge: 'MULTITRACKS DE ESTÚDIO GRÁTIS',
     description:
       'Sessões multitrack reais gravadas ao vivo em estúdio com microfones Telefunken, disponibilizadas gratuitamente em arquivos WAV stem-por-stem.'
+  },
+  {
+    name: 'Loop Community — Prime Multitracks & Community Stems',
+    url: 'https://loopcommunity.com/en-us/tracks',
+    badge: 'PRODUTORES & COMUNIDADE',
+    description:
+      'Repositório global de produtores de louvor com pacotes de stems WAV/MP3 prontos para importar diretamente no Lagoinha VS.'
   },
   {
     name: 'Worship Backing Band — MultiTrack Player Stems',

@@ -1,6 +1,6 @@
 {
   "target": "http://localhost:3000",
-  "timestamp": "2026-10-18T01:51:57.271Z",
+  "timestamp": "2026-10-18T02:30:28.717Z",
   "overallStatus": "PASSED",
   "results": [
     {
@@ -28,7 +28,7 @@
       ],
       "slopWarnings": [
         "dark navy body background rgb(10, 13, 20) (check: not the #090d16 + glow default)",
-        "2 purple/indigo gradient surfaces"
+        "1 purple/indigo gradient surfaces"
       ],
       "screenshot": "C:\\Projetos IA\\02_PROJETOS_ATIVOS\\lagoinha-vs\\docs\\qa\\localhost_mobile_375x667.png"
     },
@@ -57,7 +57,7 @@
       ],
       "slopWarnings": [
         "dark navy body background rgb(10, 13, 20) (check: not the #090d16 + glow default)",
-        "2 purple/indigo gradient surfaces"
+        "1 purple/indigo gradient surfaces"
       ],
       "screenshot": "C:\\Projetos IA\\02_PROJETOS_ATIVOS\\lagoinha-vs\\docs\\qa\\localhost_tablet_768x1024.png"
     },
@@ -86,7 +86,7 @@
       ],
       "slopWarnings": [
         "dark navy body background rgb(10, 13, 20) (check: not the #090d16 + glow default)",
-        "2 purple/indigo gradient surfaces"
+        "1 purple/indigo gradient surfaces"
       ],
       "screenshot": "C:\\Projetos IA\\02_PROJETOS_ATIVOS\\lagoinha-vs\\docs\\qa\\localhost_desktop_1440x900.png"
     }

@@ -1,5 +1,6 @@
 import { SongSection } from '../value-objects/SongSection';
 import { TrackStem } from './TrackStem';
+import { ChordTransposer } from '../services/ChordTransposer';
 
 export interface TimeSignature {
   beats: number; // ex: 4
@@ -17,6 +18,7 @@ export interface SongProps {
   duration: number; // in seconds
   sections: SongSection[];
   stems: TrackStem[];
+  pitchShiftSemitones?: number;
 }
 
 export class Song {
@@ -30,6 +32,7 @@ export class Song {
   public readonly duration: number;
   public readonly sections: SongSection[];
   public readonly stems: TrackStem[];
+  public pitchShiftSemitones: number;
 
   constructor(props: SongProps) {
     if (props.bpm <= 30 || props.bpm >= 300) {
@@ -45,6 +48,13 @@ export class Song {
     this.duration = props.duration;
     this.sections = props.sections;
     this.stems = props.stems;
+    this.pitchShiftSemitones = props.pitchShiftSemitones ?? 0;
+  }
+
+  public setPitchShift(semitones: number): void {
+    const clamped = Math.max(-6, Math.min(6, Math.round(semitones)));
+    this.pitchShiftSemitones = clamped;
+    this.currentKey = ChordTransposer.transposeKey(this.originalKey, clamped);
   }
 
   /**

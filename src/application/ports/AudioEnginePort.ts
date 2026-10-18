@@ -31,6 +31,7 @@ export interface AudioEnginePort {
   toggleStemMute(stemId: string): void;
   toggleStemSolo(stemId: string): void;
   resetMixer(): void;
+  setPitchShift(semitones: number): void;
   queueSectionJump(sectionId: string): void;
   toggleSectionLoop(): void;
   toggleSoloClick(): void;
