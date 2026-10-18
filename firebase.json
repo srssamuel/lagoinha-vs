@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "lagoinha-vs-jp",
     "public": "dist",
     "ignore": [
       "firebase.json",
@@ -10,30 +11,6 @@
       {
         "source": "**",
         "destination": "/index.html"
-      }
-    ],
-    "headers": [
-      {
-        "source": "**/*.@(js|css)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "max-age=31536000"
-          }
-        ]
-      },
-      {
-        "source": "**/*.@(mp3|wav|ogg)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "max-age=604800"
-          },
-          {
-            "key": "Access-Control-Allow-Origin",
-            "value": "*"
-          }
-        ]
       }
     ]
   }
