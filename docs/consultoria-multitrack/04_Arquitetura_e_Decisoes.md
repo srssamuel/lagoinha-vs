@@ -99,11 +99,12 @@ export interface AudioEnginePort {
   // Processamento e Tonalidade (Harmônica)
   setPitchShiftSemitones(semitones: number): void;
 
-  // Hardware e Roteamento Multicanal
+  // Hardware, Roteamento Multicanal e Proteção de Perda de Saída
   detectAudioDevices(): Promise<AudioOutputDeviceInfo[]>;
   setAudioOutputDevice(deviceId: string): Promise<boolean>;
   setRoutingMode(mode: 'stereo' | 'split-lr' | 'multi-4ch'): void;
   testChannelTone(channelIndex: number, durationMs?: number): void;
+  confirmRouteRecovery(): void; // Confirmação explícita do operador após reconexão
 
   // Assinatura de Estado
   subscribeState(callback: (state: AudioEngineState) => void): () => void;
@@ -114,26 +115,45 @@ export interface AudioEnginePort {
 
 ## 4. Orçamento de Recursos e Gerenciamento de Memória (RAM Budget)
 
-### Diagnóstico de Consumo de Memória:
-* Um arquivo `.mp3` comprimido de 5 minutos ocupa cerca de **8 a 12 MB** no disco.
-* Ao ser decodificado via `AudioContext.decodeAudioData()`, ele é transformado em buffers **PCM Float32 (32-bit / 44.1kHz ou 48kHz)**.
-* **Cálculo de 1 Música com 13 stems estéreo:**
-  $$\text{Memória} = 13 \times 2 \times 48.000 \times 300 \times 4 \text{ bytes} \approx 1,50 \text{ GB de RAM pura}$$
+### Diagnóstico de Consumo de Memória Metrológico:
+A representação de áudio em memória durante a reprodução ocorre em **PCM Float32 (32-bit float IEEE, 4 bytes por amostra por canal)**.
+A equação exata de dimensionamento é:
 
-### Política Obrigatória de Otimização de Memória:
-1. **Decodificação Lazy (Just-In-Time):** Apenas a música em execução e a próxima música imediata do setlist são decodificadas na memória RAM.
-2. **Descarte Ativo de Áudio Passado:** Ao transitar para a música seguinte, as referências de buffers da música anterior são imediatamente desconectadas e limpas para liberação pelo Garbage Collector (GC).
-3. **Conversão Mono para Stems Centrais:** Stems que possuem informação mono idêntica em ambos os lados (Click, Guia, Baixo, Bumbo) são convertidos para `AudioBuffer` de canal único (Mono), reduzindo o consumo de memória dessas pistas em **50%**.
-4. **Teto Operacional Garantido:** Consumo total de RAM do processo Chromium limitado a no máximo **1,8 GB**, rodando com folga em computadores com 8 GB ou 16 GB de RAM.
+$$\text{Memória (bytes)} = \text{Duração (s)} \times \text{Taxa (Hz)} \times \text{Canais Físicos} \times 4$$
+
+* **Cálculo de 1 Música de 5 minutos (300 segundos a 48 kHz):**
+  * Stems Estéreo (8 stems $\times$ 2 canais $\times$ 48.000 $\times$ 300 $\times$ 4): **~921,6 MB**
+  * Stems Mono (5 stems $\times$ 1 canal $\times$ 48.000 $\times$ 300 $\times$ 4): **~288,0 MB**
+  * **Total Decodificado por Música em RAM:** **~1,21 GB**
+
+### Política Obrigatória de Otimização de Memória e Preparação:
+1. **Decodificação Lazy (Just-In-Time):** Apenas a música em execução é mantida decodificada como `AudioBuffer` em RAM. A próxima música é mantida como `Blob` comprimido no disco local (IndexedDB) e sua decodificação é disparada em segundo plano apenas 30 segundos antes do término da faixa ativa.
+2. **Descarte Ativo de Áudio Passado:** Ao transitar para a música seguinte, as referências de buffers da música anterior são imediatamente desconectadas e limpas (`dispose()`), forçando liberação rápida pelo Garbage Collector (GC).
+3. **Conversão Mono para Stems Centrais:** Stems rítmicos centrais (Click, Guia, Baixo, Bumbo) são decodificados em canal único (Mono), reduzindo o consumo dessas pistas pela metade.
+4. **Teto Operacional Garantido:** Consumo total de RAM do processo do navegador limitado entre **1,4 GB e 1,8 GB**, operando com folga em computadores com 8 GB de memória.
 
 ---
 
-## 5. Estratégia de Isolamento Multi-Tenant na Nuvem
+## 5. Preparação Offline Verificável e Persistência de Dados
 
-Para a transição de um projeto interno para uma plataforma comercial SaaS:
-1. **Identificador Global de Organização (`churchId` / `tenantId`):**
-   * Cada registro no Firestore e cada arquivo salvo na nuvem é obrigatoriamente associado a um `tenantId`.
-2. **Regras de Segurança no Backend (Firestore Security Rules):**
+Para que o sistema opere com 100% de confiança após reinício sem rede:
+1. **Tratamento de `navigator.storage.persist()`:**
+   * A chamada a `persist()` solicita ao navegador imunidade à purga automática de dados em momentos de pressão de disco.
+   * O sistema **não presume** concessão automática: trata expressamente os estados `persisted = true` (concedido), `persisted = false` (recusado pelo navegador ou heurística não atingida) e ambientes sem suporte à StorageManager API.
+   * Se recusado, o sistema exibe alerta instrutivo ao operador (ex: fixar o app nos favoritos ou instalar como PWA para elevar a heurística de confiança do navegador).
+2. **Armazenamento de Áudio Permanente em IndexedDB:**
+   * Os arquivos de áudio locais (WAV/MP3) importados via ZIP são persistidos como `Blob` binário na store dedicada `audio_blobs` do IndexedDB.
+   * Na reinicialização sem internet, o sistema lê os blobs do IndexedDB e reconstrói as URLs e buffers locais sem depender de requisições de rede.
+3. **Verificação de Prontidão Offline Pré-Culto:**
+   * O sistema implementa uma rotina de verificação que audita se todos os stems e metadados das músicas do setlist estão gravados com integridade e tamanho maior que zero antes de liberar o botão de início de culto.
+
+---
+
+## 6. Estratégia de Isolamento Multi-Tenant na Nuvem e Autorização Local
+
+1. **Identificador Global de Organização (`churchId`):**
+   * Cada registro no Firestore e cada arquivo salvo na nuvem é obrigatoriamente associado a um `churchId`.
+2. **Regras de Segurança no Backend (Firestore & Storage Security Rules):**
    * Nenhum usuário de uma igreja pode ler ou gravar dados de outra congregação:
      ```javascript
      match /churches/{churchId}/setlists/{setlistId} {
@@ -141,5 +161,8 @@ Para a transição de um projeto interno para uma plataforma comercial SaaS:
          request.auth.token.churchId == churchId;
      }
      ```
-3. **Storage Assinado com Expiração:**
-   * O download de stems autorizados é feito através de URLs pré-assinadas temporárias com validade máxima de 60 minutos, impossibilitando raspagem pública de conteúdo.
+3. **Prevenção de Auto-Elevação de Papel:**
+   * Um usuário nunca pode alterar seu próprio campo `role` de `operator` ou `pending` para `admin`. Apenas administradores já autenticados e aprovados daquela organização podem aprovar ou alterar papéis.
+4. **Autorização Local Offline:**
+   * As permissões da equipe são gravadas localmente em uma sessão assinada com carimbo de data/hora e prazo de validade (ex: 7 dias), permitindo operação de culto offline sem consulta remota de autenticação.
+

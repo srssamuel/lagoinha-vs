@@ -8,6 +8,7 @@ export interface UserProps {
   photoURL?: string;
   role: UserRole;
   churchBranch: string;
+  churchId?: string;
   status?: UserStatus;
   instrumentOrMinistry?: string;
   approvedBy?: string;
@@ -22,6 +23,7 @@ export class User {
   public readonly photoURL?: string;
   public role: UserRole;
   public readonly churchBranch: string;
+  public readonly churchId: string;
   public status: UserStatus;
   public readonly instrumentOrMinistry?: string;
   public approvedBy?: string;
@@ -35,11 +37,20 @@ export class User {
     this.photoURL = props.photoURL;
     this.role = props.role;
     this.churchBranch = props.churchBranch || 'Lagoinha João Pessoa';
+    this.churchId = props.churchId || 'lagoinha-jp';
     this.status = props.status || (props.role === 'pending' ? 'pending' : 'active');
     this.instrumentOrMinistry = props.instrumentOrMinistry;
     this.approvedBy = props.approvedBy;
     this.approvedAt = props.approvedAt;
     this.createdAt = props.createdAt || new Date().toISOString();
+  }
+
+  public belongsToChurch(targetChurchId: string): boolean {
+    return this.churchId === targetChurchId;
+  }
+
+  public canManageUser(targetUser: User): boolean {
+    return this.isAdmin && this.isActive && this.belongsToChurch(targetUser.churchId);
   }
 
   public get isAdmin(): boolean {

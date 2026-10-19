@@ -22,6 +22,8 @@ export interface AudioOutputDeviceInfo {
   channelCountEstimate: number;
 }
 
+export type AudioRouteHealth = 'healthy' | 'warning' | 'lost' | 'reconnected';
+
 export interface AudioEngineState {
   isPlaying: boolean;
   currentTime: number;
@@ -43,6 +45,8 @@ export interface AudioEngineState {
   audioHardwareChannels?: number; // Detected physical hardware channels on destination
   availableAudioDevices?: AudioOutputDeviceInfo[];
   selectedAudioDeviceId?: string;
+  routeHealth?: AudioRouteHealth;
+  routeLossReason?: string | null;
 }
 
 export interface AudioEnginePort {
@@ -71,7 +75,8 @@ export interface AudioEnginePort {
   detectAudioDevices(): Promise<AudioOutputDeviceInfo[]>;
   requestDevicePermissions(): Promise<AudioOutputDeviceInfo[]>;
   setAudioOutputDevice(deviceId: string): Promise<boolean>;
+  confirmRouteRecovery(): Promise<boolean>;
+  panic(): void; // Emergency fade out
   getState(): AudioEngineState;
   subscribe(listener: (state: AudioEngineState) => void): () => void;
-  panic(): void; // Emergency fade out
 }

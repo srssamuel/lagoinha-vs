@@ -5,27 +5,30 @@ import { PitchShifterDspNode } from '../../../src/infrastructure/audio/PitchShif
 import { DemoWorshipSongs } from '../../../src/infrastructure/mock/DemoWorshipSongs';
 
 describe('Pitch Lock Rules (Drums/Loops/Click/Guide) & Real ZIP Multitrack Classifier', () => {
-  it('blocks pitch shifting on Drums, Loops, Click, and Guide while enabling it on harmonic stems', () => {
+  it('differentiates harmonic loops from percussive loops, click and cues (ENG-03)', () => {
     const realZipFiles = [
-      { file: 'CLICK_140__1.wav', expectedType: 'click', expectedPitchShiftable: false },
-      { file: 'GUIA_1.wav', expectedType: 'guide', expectedPitchShiftable: false },
-      { file: 'DRUM_1.wav', expectedType: 'drums', expectedPitchShiftable: false },
-      { file: 'Keys Loop_1.wav', expectedType: 'loop', expectedPitchShiftable: false },
-      { file: 'BASS_1.wav', expectedType: 'bass', expectedPitchShiftable: true },
-      { file: 'EG 1_1.wav', expectedType: 'guitars', expectedPitchShiftable: true },
-      { file: 'EG 2_1.wav', expectedType: 'guitars', expectedPitchShiftable: true },
-      { file: 'EG 3_1.wav', expectedType: 'guitars', expectedPitchShiftable: true },
-      { file: 'Keys EP_1.wav', expectedType: 'keys', expectedPitchShiftable: true },
-      { file: 'Keys Orgao_1.wav', expectedType: 'keys', expectedPitchShiftable: true },
-      { file: 'Keys PAD_1.wav', expectedType: 'pad', expectedPitchShiftable: true },
-      { file: 'Keys Lead_1.wav', expectedType: 'keys', expectedPitchShiftable: true },
-      { file: 'vocals_1.wav', expectedType: 'vocals', expectedPitchShiftable: true }
+      { file: 'CLICK_140__1.wav', expectedType: 'click', expectedPitchShiftable: false, expectedPolicy: 'locked' },
+      { file: 'GUIA_1.wav', expectedType: 'guide', expectedPitchShiftable: false, expectedPolicy: 'locked' },
+      { file: 'DRUM_1.wav', expectedType: 'drums', expectedPitchShiftable: false, expectedPolicy: 'percussive' },
+      { file: 'Perc Loop_1.wav', expectedType: 'loop', expectedPitchShiftable: false, expectedPolicy: 'percussive' },
+      { file: 'Shaker Loop.wav', expectedType: 'loop', expectedPitchShiftable: false, expectedPolicy: 'percussive' },
+      { file: 'Keys Loop_1.wav', expectedType: 'keys', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'BASS_1.wav', expectedType: 'bass', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'EG 1_1.wav', expectedType: 'guitars', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'EG 2_1.wav', expectedType: 'guitars', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'EG 3_1.wav', expectedType: 'guitars', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'Keys EP_1.wav', expectedType: 'keys', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'Keys Orgao_1.wav', expectedType: 'keys', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'Keys PAD_1.wav', expectedType: 'pad', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'Keys Lead_1.wav', expectedType: 'keys', expectedPitchShiftable: true, expectedPolicy: 'harmonic' },
+      { file: 'vocals_1.wav', expectedType: 'vocals', expectedPitchShiftable: true, expectedPolicy: 'harmonic' }
     ];
 
     for (const item of realZipFiles) {
       const classified = TrackStem.classifyStemFromFilename(item.file);
       expect(classified.type).toBe(item.expectedType);
       expect(classified.isPitchShiftable).toBe(item.expectedPitchShiftable);
+      expect(classified.pitchPolicy).toBe(item.expectedPolicy);
 
       const stem = new TrackStem({
         id: item.file,
@@ -34,10 +37,37 @@ describe('Pitch Lock Rules (Drums/Loops/Click/Guide) & Real ZIP Multitrack Class
         volume: 1.0,
         pan: 0,
         isMuted: false,
-        isSolo: false
+        isSolo: false,
+        pitchPolicy: classified.pitchPolicy
       });
       expect(stem.isPitchShiftable).toBe(item.expectedPitchShiftable);
+      expect(stem.pitchPolicy).toBe(item.expectedPolicy);
     }
+  });
+
+  it('allows manual override of pitchPolicy per stem and toggling pitch lock', () => {
+    const stem = new TrackStem({
+      id: 'custom-loop',
+      name: 'Custom Loop Ambíguo',
+      type: 'loop',
+      volume: 1.0,
+      pan: 0,
+      isMuted: false,
+      isSolo: false,
+      pitchPolicy: 'percussive'
+    });
+
+    expect(stem.isPitchShiftable).toBe(false);
+
+    // Operador altera a política para harmônico (acompanha o tom)
+    stem.setPitchPolicy('harmonic');
+    expect(stem.isPitchShiftable).toBe(true);
+    expect(stem.pitchPolicy).toBe('harmonic');
+
+    // Operador trava manualmente (alterna para percussivo/não transponível)
+    stem.togglePitchLock();
+    expect(stem.isPitchShiftable).toBe(false);
+    expect(stem.pitchPolicy).toBe('percussive');
   });
 
   it('parses metadata accurately from "O Nosso General (Versão Mateus Brito) 140Bpm - B.zip"', () => {

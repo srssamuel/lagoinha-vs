@@ -1,4 +1,4 @@
-import { AudioEnginePort, AudioEngineState, AudioOutputDeviceInfo } from '../../application/ports/AudioEnginePort';
+import { AudioEnginePort, AudioEngineState, AudioOutputDeviceInfo, AudioRouteHealth } from '../../application/ports/AudioEnginePort';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
@@ -72,6 +72,11 @@ export class WebAudioEngine implements AudioEnginePort {
   private availableAudioDevices: AudioOutputDeviceInfo[] = [];
   private selectedAudioDeviceId: string = 'default';
 
+  // Integridade de Rota de Áudio de Palco (ENG-02)
+  private routeHealth: AudioRouteHealth = 'healthy';
+  private routeLossReason: string | null = null;
+  private deviceChangeDebounceTimer: number | null = null;
+
   constructor() {
     // Lazy AudioContext initialization on first user gesture
   }
@@ -85,6 +90,7 @@ export class WebAudioEngine implements AudioEnginePort {
     this.ctx = new AudioContextClass();
 
     void this.detectAudioDevices();
+    this.setupDeviceChangeListener();
 
     // Detecção e configuração de saídas físicas multicanal (ex: XR18, UMC404HD, Focusrite Scarlett 4i4/18i20)
     const maxChannels = this.ctx.destination.maxChannelCount;
@@ -754,7 +760,9 @@ export class WebAudioEngine implements AudioEnginePort {
       masterRta,
       audioHardwareChannels,
       availableAudioDevices: this.availableAudioDevices,
-      selectedAudioDeviceId: this.selectedAudioDeviceId
+      selectedAudioDeviceId: this.selectedAudioDeviceId,
+      routeHealth: this.routeHealth,
+      routeLossReason: this.routeLossReason
     };
   }
 
@@ -1127,6 +1135,77 @@ export class WebAudioEngine implements AudioEnginePort {
 
     osc.start(now);
     osc.stop(now + (durationMs / 1000));
+  }
+
+  private setupDeviceChangeListener(): void {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', () => {
+        this.handleDeviceChangeEvent();
+      });
+    }
+  }
+
+  public handleDeviceChangeEvent(): void {
+    if (this.deviceChangeDebounceTimer !== null) {
+      clearTimeout(this.deviceChangeDebounceTimer);
+    }
+    this.deviceChangeDebounceTimer = window.setTimeout(() => {
+      void this.evaluateDeviceChange();
+    }, 300);
+  }
+
+  public async evaluateDeviceChange(): Promise<void> {
+    const previousSelectedId = this.selectedAudioDeviceId;
+    const previousHealth = this.routeHealth;
+    await this.detectAudioDevices();
+
+    // Se uma interface específica estava ativa (diferente de 'default' ou vazia)
+    if (previousSelectedId && previousSelectedId !== 'default') {
+      const isStillAvailable = this.availableAudioDevices.some((d) => d.deviceId === previousSelectedId);
+
+      if (!isStillAvailable) {
+        // Dispositivo perdido!
+        if (this.isPlaying) {
+          this.pause();
+        }
+        this.routeHealth = 'lost';
+        this.routeLossReason =
+          'A interface de áudio selecionada foi desconectada fisicamente ou desativada no sistema operacional. ' +
+          'A reprodução foi pausada por segurança para evitar direcionamento do metrônomo para os alto-falantes padrão.';
+        this.notifyState();
+        return;
+      }
+
+      // Se estava perdido e agora retornou na enumeração
+      if (previousHealth === 'lost' && isStillAvailable) {
+        this.routeHealth = 'reconnected';
+        this.routeLossReason =
+          'Interface de áudio detectada novamente. Por segurança litúrgica, clique em "Revalidar Rota de Palco" antes de retomar.';
+        this.notifyState();
+        return;
+      }
+    }
+
+    // Mudança irrelevante (ex: webcam ou microfone plugado/desplugado enquanto a saída selecionada permanece intacta)
+    if (this.routeHealth === 'lost' || this.routeHealth === 'reconnected') {
+      // Mantém o estado de alerta até confirmação explícita do operador
+    } else {
+      this.routeHealth = 'healthy';
+      this.routeLossReason = null;
+    }
+    this.notifyState();
+  }
+
+  public async confirmRouteRecovery(): Promise<boolean> {
+    if (!this.selectedAudioDeviceId) return false;
+    const ok = await this.setAudioOutputDevice(this.selectedAudioDeviceId);
+    if (ok || this.selectedAudioDeviceId === 'default') {
+      this.routeHealth = 'healthy';
+      this.routeLossReason = null;
+      this.notifyState();
+      return true;
+    }
+    return false;
   }
 
   private notifyState(): void {

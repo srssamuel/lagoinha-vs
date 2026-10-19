@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserChurchId() {
+      return getUserData().churchId;
+    }
+
+    function getUserRole() {
+      return getUserData().role;
+    }
+
+    function isActive() {
+      return getUserData().status == 'active';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && isActive() && getUserRole() == 'admin';
+    }
+
+    function isLeaderOrAdmin() {
+      return isAuthenticated() && isActive() && (getUserRole() == 'admin' || getUserRole() == 'leader');
+    }
+
+    function isAudioTechOrHigher() {
+      return isAuthenticated() && isActive() && (getUserRole() in ['admin', 'leader', 'sound_tech']);
+    }
+
+    function isSameChurch(targetChurchId) {
+      return getUserChurchId() == targetChurchId;
+    }
+
+    // Organizações / Congregações
+    match /churches/{churchId} {
+      allow read: if isAuthenticated() && isSameChurch(churchId);
+      allow write: if isAdmin() && isSameChurch(churchId);
+    }
+
+    // Coleção de Usuários
+    match /users/{userId} {
+      // Usuário pode ler seu próprio documento, ou Administrador da mesma congregação
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        (isAdmin() && isSameChurch(resource.data.churchId))
+      );
+
+      // Auto-registro inicial apenas como pending (sem poder auto-atribuir admin ou active)
+      allow create: if isAuthenticated() &&
+        request.auth.uid == userId &&
+        request.resource.data.role == 'pending' &&
+        request.resource.data.status == 'pending';
+
+      // Atualização de perfil: usuário comum só altera nome/foto/instrumento (nunca role, status ou churchId)
+      // Administrador da mesma igreja pode alterar role e status
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'churchId'])) ||
+        (isAdmin() && isSameChurch(resource.data.churchId) && request.resource.data.churchId == resource.data.churchId)
+      );
+
+      allow delete: if isAdmin() && isSameChurch(resource.data.churchId);
+    }
+
+    // Links e Tokens de Convite
+    match /invites/{inviteId} {
+      allow read: if isAuthenticated() && (
+        resource.data.isActive == true ||
+        (isLeaderOrAdmin() && isSameChurch(resource.data.churchId))
+      );
+
+      allow create: if isLeaderOrAdmin() &&
+        isSameChurch(request.resource.data.churchId) &&
+        request.resource.data.createdByUid == request.auth.uid;
+
+      // Consumo de convite ou revogação
+      allow update: if isAuthenticated() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'isActive']) && request.resource.data.usedCount == resource.data.usedCount + 1) ||
+        (isLeaderOrAdmin() && isSameChurch(resource.data.churchId))
+      );
+
+      allow delete: if isAdmin() && isSameChurch(resource.data.churchId);
+    }
+
+    // Músicas e Multitracks (Banco de VS)
+    match /songs/{songId} {
+      allow read: if isAuthenticated() && isSameChurch(resource.data.churchId);
+      allow create: if isAudioTechOrHigher() && isSameChurch(request.resource.data.churchId);
+      allow update: if isAudioTechOrHigher() && isSameChurch(resource.data.churchId);
+      allow delete: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
+    }
+
+    // Setlists do Culto
+    match /setlists/{setlistId} {
+      allow read: if isAuthenticated() && isSameChurch(resource.data.churchId);
+      allow write: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
+    }
+  }
+}

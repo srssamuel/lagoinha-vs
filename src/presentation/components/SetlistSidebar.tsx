@@ -141,8 +141,15 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           stems
         });
 
-        // Salva no IndexedDB para persistência offline
+        // Salva no IndexedDB para persistência offline permanente (metadados + blobs de áudio)
         void IndexedDbStorageService.saveCustomSong(newSong);
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const stem = stems[i];
+          if (entry && stem) {
+            void IndexedDbStorageService.saveStemAudioBlob(songId, stem.id, entry.blob);
+          }
+        }
 
         onImportCustomSong(newSong);
       } catch (err) {

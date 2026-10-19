@@ -498,33 +498,42 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                       : 'ST'}
                   </span>
 
-                  {/* Indicador Explícito de Pitch Lock vs Mudança de Tom por Canal */}
+                  {/* Indicador Explícito de Política de Afinação (PitchPolicy) por Canal */}
                   <button
                     type="button"
                     onClick={() => onTogglePitchLock?.(stem.id)}
-                    className={`text-[8px] font-mono px-1 py-0.2 rounded uppercase font-bold border transition flex items-center gap-0.5 ${
-                      !stem.isPitchShiftable
-                        ? 'bg-rose-500/15 text-rose-300 border-rose-500/35'
+                    className={`text-[8px] font-mono px-1 py-0.5 rounded uppercase font-bold border transition flex items-center gap-0.5 ${
+                      stem.pitchPolicy === 'locked'
+                        ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-not-allowed'
+                        : stem.pitchPolicy === 'percussive'
+                        ? 'bg-rose-500/15 text-rose-300 border-rose-500/35 hover:bg-rose-500/25'
                         : pitchShiftSemitones !== 0
                         ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
                         : 'bg-slate-900 text-cyan-300 border-cyan-500/30 hover:border-cyan-400'
                     }`}
                     title={
-                      !stem.isPitchShiftable
-                        ? `PITCH LOCK ATIVO (${stem.name}): Bateria, Loops, Click e Guia NUNCA sofrem mudança de tom. Clique se desejar destravar.`
-                        : ` CANAL HARMÔNICO (${stem.name}): Muda de tom junto com a música (${
+                      stem.pitchPolicy === 'locked'
+                        ? `PROTEÇÃO LITÚRGICA (${stem.name}): Metrônomo e Guia de palco são imutáveis.`
+                        : stem.pitchPolicy === 'percussive'
+                        ? `CONTEÚDO PERCUSSIVO/RÍTMICO (${stem.name}): Tom travado para preservar transientes e afinação de tambores. Clique para mudar para Harmônico.`
+                        : `CONTEÚDO HARMÔNICO/MELÓDICO (${stem.name}): Acompanha a transposição de tom (${
                             pitchShiftSemitones === 0
                               ? 'Tom Original'
                               : pitchShiftSemitones > 0
                               ? `+${pitchShiftSemitones} st`
                               : `${pitchShiftSemitones} st`
-                          }). Clique para travar em Pitch Lock.`
+                          }). Clique para travar em Percussivo.`
                     }
                   >
-                    {!stem.isPitchShiftable ? (
+                    {stem.pitchPolicy === 'locked' ? (
                       <>
-                        <Lock className="w-2 h-2" />
+                        <Lock className="w-2 h-2 text-slate-400" />
                         <span>FIXO</span>
+                      </>
+                    ) : stem.pitchPolicy === 'percussive' ? (
+                      <>
+                        <Lock className="w-2 h-2 text-rose-400" />
+                        <span>RITMO</span>
                       </>
                     ) : (
                       <span>

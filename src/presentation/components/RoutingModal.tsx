@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
-import { AudioOutputDeviceInfo } from '../../application/ports/AudioEnginePort';
+import { AudioOutputDeviceInfo, AudioRouteHealth } from '../../application/ports/AudioEnginePort';
 import {
   X,
   ShieldCheck,
@@ -16,7 +16,8 @@ import {
   ChevronUp,
   Headphones,
   Sliders,
-  Sparkles
+  Sparkles,
+  AlertOctagon
 } from 'lucide-react';
 
 interface RoutingModalProps {
@@ -25,10 +26,13 @@ interface RoutingModalProps {
   audioHardwareChannels?: number;
   availableDevices?: AudioOutputDeviceInfo[];
   selectedDeviceId?: string;
+  routeHealth?: AudioRouteHealth;
+  routeLossReason?: string | null;
   onSelectMode: (mode: RoutingMode) => void;
   onSelectDevice?: (deviceId: string) => void;
   onRequestDevicePermissions?: () => void;
   onTestChannelTone?: (channelIndex: number) => void;
+  onConfirmRouteRecovery?: () => void;
   onClose: () => void;
 }
 
@@ -38,10 +42,13 @@ export const RoutingModal: React.FC<RoutingModalProps> = ({
   audioHardwareChannels = 2,
   availableDevices = [],
   selectedDeviceId = 'default',
+  routeHealth = 'healthy',
+  routeLossReason,
   onSelectMode,
   onSelectDevice,
   onRequestDevicePermissions,
   onTestChannelTone,
+  onConfirmRouteRecovery,
   onClose
 }) => {
   const [testingChannel, setTestingChannel] = useState<number | null>(null);
@@ -99,6 +106,47 @@ export const RoutingModal: React.FC<RoutingModalProps> = ({
 
         {/* Área Rolável */}
         <div className="space-y-4 overflow-y-auto pr-1 flex-1 mb-4">
+          {/* BANNER DE EMERGÊNCIA: Perda de Interface de Saída (ENG-02) */}
+          {routeHealth === 'lost' && (
+            <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-500/70 text-rose-200 space-y-2 animate-pulse">
+              <div className="flex items-center gap-2">
+                <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0" />
+                <h4 className="text-xs font-black uppercase tracking-wider text-rose-100">
+                  ALERTA DE SEGURANÇA: Interface de Saída Desconectada!
+                </h4>
+              </div>
+              <p className="text-xs text-rose-300/90 leading-relaxed">
+                {routeLossReason ||
+                  'A interface física foi perdida. O player foi pausado automaticamente para impedir vazamento do metrônomo para os alto-falantes do templo.'}
+              </p>
+            </div>
+          )}
+
+          {/* BANNER DE RECONEXÃO: Revalidação Obrigatória pelo Operador */}
+          {routeHealth === 'reconnected' && (
+            <div className="p-4 rounded-2xl bg-amber-950/80 border border-amber-500/70 text-amber-200 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-amber-400 shrink-0" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-100">
+                    Interface Detectada Novamente
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={onConfirmRouteRecovery}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 transition"
+                >
+                  Revalidar Rota de Palco
+                </button>
+              </div>
+              <p className="text-xs text-amber-300/90 leading-relaxed">
+                {routeLossReason ||
+                  'Clique no botão acima para religar as 4 saídas discretas antes de retomar o playback.'}
+              </p>
+            </div>
+          )}
+
           {/* CARD 1: Detecção e Seleção de Interface de Áudio (Física USB vs Virtual) */}
           <div className="p-4 rounded-2xl bg-stage-card/80 border border-stage-border space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
