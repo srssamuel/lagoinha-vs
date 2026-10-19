@@ -725,7 +725,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
             </div>
             <div className="grid grid-cols-5 gap-1 h-10 items-end bg-slate-900/60 p-1 rounded">
               {/* SUB (<60Hz) */}
-              <div className="flex flex-col items-center h-full justify-end">
+              <div
+                className="flex flex-col items-center h-full justify-end cursor-help"
+                title="SUBGRAVE (<60Hz): Peso do bumbo e subgraves eletrônicos"
+              >
                 <div
                   className="w-full bg-indigo-500 rounded-xs transition-all duration-75 min-h-[2px]"
                   style={{ height: `${Math.round((masterRta?.sub || 0) * 100)}%` }}
@@ -733,7 +736,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                 <span className="text-[7px] font-mono text-slate-500 mt-0.5">SUB</span>
               </div>
               {/* LOW (60-250Hz) */}
-              <div className="flex flex-col items-center h-full justify-end">
+              <div
+                className="flex flex-col items-center h-full justify-end cursor-help"
+                title="GRAVES (60-250Hz): Linha de contrabaixo e corpo rítmico"
+              >
                 <div
                   className="w-full bg-blue-500 rounded-xs transition-all duration-75 min-h-[2px]"
                   style={{ height: `${Math.round((masterRta?.low || 0) * 100)}%` }}
@@ -741,7 +747,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                 <span className="text-[7px] font-mono text-slate-500 mt-0.5">LOW</span>
               </div>
               {/* MID (250-2.5k) */}
-              <div className="flex flex-col items-center h-full justify-end">
+              <div
+                className="flex flex-col items-center h-full justify-end cursor-help"
+                title="MÉDIOS (250Hz-2.5kHz): Vocais, guitarras elétricas e piano"
+              >
                 <div
                   className="w-full bg-emerald-500 rounded-xs transition-all duration-75 min-h-[2px]"
                   style={{ height: `${Math.round((masterRta?.mid || 0) * 100)}%` }}
@@ -749,7 +758,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                 <span className="text-[7px] font-mono text-slate-500 mt-0.5">MID</span>
               </div>
               {/* HIGH (2.5k-8k) */}
-              <div className="flex flex-col items-center h-full justify-end">
+              <div
+                className="flex flex-col items-center h-full justify-end cursor-help"
+                title="AGUDOS (2.5kHz-8kHz): Ataque da caixa, estalo e violão"
+              >
                 <div
                   className="w-full bg-amber-500 rounded-xs transition-all duration-75 min-h-[2px]"
                   style={{ height: `${Math.round((masterRta?.high || 0) * 100)}%` }}
@@ -757,7 +769,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
                 <span className="text-[7px] font-mono text-slate-500 mt-0.5">HIGH</span>
               </div>
               {/* AIR (>8k) */}
-              <div className="flex flex-col items-center h-full justify-end">
+              <div
+                className="flex flex-col items-center h-full justify-end cursor-help"
+                title="AR (>8kHz): Pratos da bateria, reverberação e ambiência"
+              >
                 <div
                   className="w-full bg-rose-500 rounded-xs transition-all duration-75 min-h-[2px]"
                   style={{ height: `${Math.round((masterRta?.air || 0) * 100)}%` }}

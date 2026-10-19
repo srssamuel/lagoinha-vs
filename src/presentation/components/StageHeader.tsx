@@ -11,7 +11,8 @@ import {
   User as UserIcon,
   FileText,
   Lock,
-  Cpu
+  Cpu,
+  BookOpen
 } from 'lucide-react';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
@@ -35,6 +36,7 @@ interface StageHeaderProps {
   onOpenCloudLibrary: () => void;
   onOpenCifraModal: () => void;
   onOpenVstRack?: () => void;
+  onOpenHelpGuide?: () => void;
   onSignOut: () => void;
 }
 
@@ -56,6 +58,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
   onOpenCloudLibrary,
   onOpenCifraModal,
   onOpenVstRack,
+  onOpenHelpGuide,
   onSignOut
 }) => {
   return (
@@ -254,7 +257,20 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
           <span>BANCO DE VS</span>
         </button>
 
-        {/* Roteamento de Palco (Split vs Stereo) */}
+        {/* Botão Guia de Palco / Como Operar no Culto */}
+        {onOpenHelpGuide && (
+          <button
+            type="button"
+            onClick={onOpenHelpGuide}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-purple-500/40 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-[11px] font-bold transition active:scale-95 shadow-md shadow-purple-600/10"
+            title="Como Operar no Culto: Manual didático com ligação de cabos, pré-roll, resgate (solo click) e atalhos"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-purple-400" />
+            <span>GUIA DE PALCO</span>
+          </button>
+        )}
+
+        {/* Roteamento de Palco (Split vs Stereo) com Tooltip Didático */}
         <button
           onClick={onOpenRoutingModal}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${
@@ -262,17 +278,21 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
               : 'bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20'
           }`}
-          title="Clique para configurar saídas de áudio"
+          title={
+            routingMode === 'SPLIT_IEM_PA'
+              ? 'Split Estéreo Ativo: Canal L (Fones) = Click + Banda | Canal R (Mesa Som) = Somente Banda (Zero Click)'
+              : 'Modo Estéreo Normal: Pan estéreo livre (Recomendado para ensaio ou gravação)'
+          }
         >
           {routingMode === 'SPLIT_IEM_PA' ? (
             <>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>SPLIT L/R</span>
+              <span>SPLIT L/R (PALCO)</span>
             </>
           ) : (
             <>
               <Radio className="w-3.5 h-3.5 text-blue-400" />
-              <span>STEREO</span>
+              <span>STEREO (ENSAIO)</span>
             </>
           )}
         </button>

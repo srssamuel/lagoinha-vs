@@ -18,6 +18,7 @@ import { AuthGate } from './components/AuthGate';
 import { CloudVSLibraryModal } from './components/CloudVSLibraryModal';
 import { CifraProModal } from './components/CifraProModal';
 import { VstPluginRackModal } from './components/VstPluginRackModal';
+import { HelpGuideModal } from './components/HelpGuideModal';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
 import { VstPluginRackService } from '../domain/services/VstPluginRackService';
 import { StemType, StemDspConfig } from '../domain/entities/TrackStem';
@@ -53,6 +54,7 @@ export const App: React.FC = () => {
   const [isCloudLibraryOpen, setIsCloudLibraryOpen] = useState<boolean>(false);
   const [isCifraModalOpen, setIsCifraModalOpen] = useState<boolean>(false);
   const [isVstRackOpen, setIsVstRackOpen] = useState<boolean>(false);
+  const [isHelpGuideOpen, setIsHelpGuideOpen] = useState<boolean>(false);
   const [selectedVstStemId, setSelectedVstStemId] = useState<string | null>(null);
 
   const currentSong = songs[currentSongIndex] ?? null;
@@ -220,6 +222,9 @@ export const App: React.FC = () => {
       } else if (e.code === 'Escape') {
         e.preventDefault();
         audioEngine.panic();
+      } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        setIsHelpGuideOpen((prev) => !prev);
       } else if (e.code.startsWith('Digit') && currentSong) {
         const num = parseInt(e.code.replace('Digit', ''), 10);
         if (num >= 1 && num <= currentSong.sections.length) {
@@ -447,6 +452,7 @@ export const App: React.FC = () => {
         onOpenCloudLibrary={() => setIsCloudLibraryOpen(true)}
         onOpenCifraModal={() => setIsCifraModalOpen(true)}
         onOpenVstRack={() => handleOpenVstRack()}
+        onOpenHelpGuide={() => setIsHelpGuideOpen(true)}
         onSignOut={() => void authService.signOut()}
       />
 
@@ -601,6 +607,12 @@ export const App: React.FC = () => {
           onResetAllDsp={handleResetAllDsp}
         />
       )}
+
+      {/* Modal Didático de Operação no Culto (Manual de Palco) */}
+      <HelpGuideModal
+        isOpen={isHelpGuideOpen}
+        onClose={() => setIsHelpGuideOpen(false)}
+      />
     </div>
   );
 };

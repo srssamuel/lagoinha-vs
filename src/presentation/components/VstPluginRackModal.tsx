@@ -223,6 +223,61 @@ export const VstPluginRackModal: React.FC<VstPluginRackModalProps> = ({
                 </div>
               </div>
 
+              {/* Seletor Rápido de Presets de Estúdio (1-Clique) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+                <span className="text-[10px] font-mono text-amber-300/80 uppercase font-bold shrink-0">
+                  Presets de Estúdio:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onUpdateStemDsp(activeStem.id, VstPluginRackService.getSmartPresetForStem('violao'))}
+                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-amber-400 text-[10px] font-bold text-slate-300 hover:text-white shrink-0 transition"
+                  title="Preset Violão: Corta embolamento abaixo de 105Hz e devolve o brilho de cordas de aço em 8.5kHz"
+                >
+                  Violão Worship Air
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateStemDsp(activeStem.id, VstPluginRackService.getSmartPresetForStem('guitars'))}
+                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-amber-400 text-[10px] font-bold text-slate-300 hover:text-white shrink-0 transition"
+                  title="Preset Guitarra: Adiciona saturação valvulada SGA1566 e realce em 1.4kHz para cortar a mix"
+                >
+                  Guitarras Presence
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateStemDsp(activeStem.id, VstPluginRackService.getSmartPresetForStem('bass'))}
+                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-amber-400 text-[10px] font-bold text-slate-300 hover:text-white shrink-0 transition"
+                  title="Preset Baixo: Corpo subgrave em 80-100Hz com compressão óptica firme"
+                >
+                  Baixo Gordo Valvulado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateStemDsp(activeStem.id, VstPluginRackService.getSmartPresetForStem('drums'))}
+                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-amber-400 text-[10px] font-bold text-slate-300 hover:text-white shrink-0 transition"
+                  title="Preset Bateria: Punch no bumbo e estalo nos transientes de caixa/pratos"
+                >
+                  Bateria & Loops Punch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateStemDsp(activeStem.id, VstPluginRackService.getSmartPresetForStem('vocals'))}
+                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-amber-400 text-[10px] font-bold text-slate-300 hover:text-white shrink-0 transition"
+                  title="Preset Vocais: Remove ressonâncias anasaladas e adiciona ar sedoso"
+                >
+                  Vozes Silk & Air
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateStemDsp(activeStem.id, VstPluginRackService.getSmartPresetForStem('pad'))}
+                  className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-amber-400 text-[10px] font-bold text-slate-300 hover:text-white shrink-0 transition"
+                  title="Preset Teclados & Pad: Abertura analógica quente e suave para fundos de oração"
+                >
+                  Teclados & Pad Shimmer
+                </button>
+              </div>
+
               {/* Grade de Módulos VST do Canal */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* 1. De-Bleed Surgical High-Pass Filter (TDR Nova) */}
