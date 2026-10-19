@@ -602,9 +602,20 @@ export const App: React.FC = () => {
         isOpen={isRoutingModalOpen}
         routingMode={engineState.routingMode}
         audioHardwareChannels={engineState.audioHardwareChannels}
+        availableDevices={engineState.availableAudioDevices}
+        selectedDeviceId={engineState.selectedAudioDeviceId}
         onSelectMode={(mode) => {
           audioEngine.setRoutingMode(mode);
           setIsRoutingModalOpen(false);
+        }}
+        onSelectDevice={(deviceId) => {
+          void audioEngine.setAudioOutputDevice(deviceId);
+        }}
+        onRequestDevicePermissions={() => {
+          void audioEngine.requestDevicePermissions();
+        }}
+        onTestChannelTone={(channelIndex) => {
+          audioEngine.testChannelTone(channelIndex);
         }}
         onClose={() => setIsRoutingModalOpen(false)}
       />

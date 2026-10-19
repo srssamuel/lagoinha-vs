@@ -1,4 +1,4 @@
-import { AudioEnginePort, AudioEngineState } from '../../application/ports/AudioEnginePort';
+import { AudioEnginePort, AudioEngineState, AudioOutputDeviceInfo } from '../../application/ports/AudioEnginePort';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
@@ -68,6 +68,10 @@ export class WebAudioEngine implements AudioEnginePort {
   private listeners: Set<(state: AudioEngineState) => void> = new Set();
   private animationFrameId: number | null = null;
 
+  // Detecção de Hardware e Canais Físicos/Virtuais
+  private availableAudioDevices: AudioOutputDeviceInfo[] = [];
+  private selectedAudioDeviceId: string = 'default';
+
   constructor() {
     // Lazy AudioContext initialization on first user gesture
   }
@@ -79,6 +83,8 @@ export class WebAudioEngine implements AudioEnginePort {
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AudioContextClass();
+
+    void this.detectAudioDevices();
 
     // Detecção e configuração de saídas físicas multicanal (ex: XR18, UMC404HD, Focusrite Scarlett 4i4/18i20)
     const maxChannels = this.ctx.destination.maxChannelCount;
@@ -746,7 +752,9 @@ export class WebAudioEngine implements AudioEnginePort {
       isCountingIn: this.isCountingIn,
       countInBeat: this.countInBeat,
       masterRta,
-      audioHardwareChannels
+      audioHardwareChannels,
+      availableAudioDevices: this.availableAudioDevices,
+      selectedAudioDeviceId: this.selectedAudioDeviceId
     };
   }
 
@@ -989,6 +997,136 @@ export class WebAudioEngine implements AudioEnginePort {
     };
 
     this.animationFrameId = requestAnimationFrame(loop);
+  }
+
+  public async detectAudioDevices(): Promise<AudioOutputDeviceInfo[]> {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+      this.availableAudioDevices = [
+        {
+          deviceId: 'default',
+          label: 'Dispositivo Padrão do Sistema (WASAPI)',
+          groupId: 'default-group',
+          isVirtual: false,
+          isUsb: false,
+          channelCountEstimate: this.ctx?.destination?.maxChannelCount || 2
+        }
+      ];
+      return this.availableAudioDevices;
+    }
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputs = devices.filter((d) => d.kind === 'audiooutput');
+
+      if (outputs.length === 0) {
+        this.availableAudioDevices = [
+          {
+            deviceId: 'default',
+            label: 'Dispositivo Padrão do Sistema (WASAPI)',
+            groupId: 'default-group',
+            isVirtual: false,
+            isUsb: false,
+            channelCountEstimate: this.ctx?.destination?.maxChannelCount || 2
+          }
+        ];
+        return this.availableAudioDevices;
+      }
+
+      this.availableAudioDevices = outputs.map((d, idx) => {
+        const rawLabel = d.label || `Saída de Áudio ${idx + 1}`;
+        const isVirtual = /(cable|voicemeeter|virtual|vac|loopback|blackhole|dante)/i.test(rawLabel);
+        const isUsb = /(usb|umc|xr18|x32|scarlett|focusrite|behringer|presonus|motu|quad|audiobox|line-level)/i.test(rawLabel);
+
+        return {
+          deviceId: d.deviceId,
+          label: rawLabel,
+          groupId: d.groupId,
+          isVirtual,
+          isUsb,
+          channelCountEstimate: isUsb ? 4 : isVirtual ? 4 : (this.ctx?.destination?.maxChannelCount || 2)
+        };
+      });
+
+      return this.availableAudioDevices;
+    } catch {
+      return this.availableAudioDevices;
+    }
+  }
+
+  public async requestDevicePermissions(): Promise<AudioOutputDeviceInfo[]> {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err) {
+        console.warn('Permissão de áudio não concedida ou cancelada:', err);
+      }
+    }
+    const detected = await this.detectAudioDevices();
+    this.notifyState();
+    return detected;
+  }
+
+  public async setAudioOutputDevice(deviceId: string): Promise<boolean> {
+    this.selectedAudioDeviceId = deviceId;
+    if (this.ctx && 'setSinkId' in this.ctx) {
+      try {
+        await (this.ctx as any).setSinkId(deviceId);
+        const maxCh = this.ctx.destination.maxChannelCount;
+        if (maxCh >= 4) {
+          this.ctx.destination.channelCount = 4;
+          this.ctx.destination.channelCountMode = 'explicit';
+          this.ctx.destination.channelInterpretation = 'discrete';
+        }
+        this.notifyState();
+        return true;
+      } catch (err) {
+        console.warn('Falha ao definir saída de áudio via setSinkId:', err);
+      }
+    }
+    this.notifyState();
+    return false;
+  }
+
+  public testChannelTone(channelIndex: number, durationMs: number = 1200): void {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    const freqs = [440, 554.37, 1000, 880];
+    osc.frequency.value = freqs[channelIndex] || 440;
+    osc.type = channelIndex === 2 ? 'square' : 'sine';
+
+    const now = this.ctx.currentTime;
+    gain.gain.setValueAtTime(0.0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+    gain.gain.setValueAtTime(0.3, now + (durationMs / 1000) - 0.08);
+    gain.gain.linearRampToValueAtTime(0.0001, now + (durationMs / 1000));
+
+    osc.connect(gain);
+
+    if (this.finalMerger) {
+      if (this.routingMode === 'MULTI_4CH_DISCRETE') {
+        gain.connect(this.finalMerger, 0, channelIndex);
+      } else if (this.routingMode === 'SPLIT_IEM_PA') {
+        if (channelIndex === 2 || channelIndex === 3) {
+          gain.connect(this.finalMerger, 0, 0); // Fones (L)
+        } else {
+          gain.connect(this.finalMerger, 0, 1); // PA (R)
+        }
+      } else {
+        if (channelIndex === 0 || channelIndex === 2) {
+          gain.connect(this.finalMerger, 0, 0);
+        } else {
+          gain.connect(this.finalMerger, 0, 1);
+        }
+      }
+    } else {
+      gain.connect(this.ctx.destination);
+    }
+
+    osc.start(now);
+    osc.stop(now + (durationMs / 1000));
   }
 
   private notifyState(): void {

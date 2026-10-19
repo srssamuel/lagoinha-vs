@@ -13,6 +13,15 @@ export interface MasterRtaData {
   peakR: number;     // 0.0 to 1.5
 }
 
+export interface AudioOutputDeviceInfo {
+  deviceId: string;
+  label: string;
+  groupId: string;
+  isVirtual: boolean;
+  isUsb: boolean;
+  channelCountEstimate: number;
+}
+
 export interface AudioEngineState {
   isPlaying: boolean;
   currentTime: number;
@@ -32,6 +41,8 @@ export interface AudioEngineState {
   countInBeat: number;     // Current countdown beat (1, 2, 3, 4...)
   masterRta?: MasterRtaData;
   audioHardwareChannels?: number; // Detected physical hardware channels on destination
+  availableAudioDevices?: AudioOutputDeviceInfo[];
+  selectedAudioDeviceId?: string;
 }
 
 export interface AudioEnginePort {
@@ -56,6 +67,10 @@ export interface AudioEnginePort {
   toggleSoloClick(): void;
   toggleLoopClick(): void;
   setCountInBars(bars: number): void;
+  testChannelTone(channelIndex: number, durationMs?: number): void;
+  detectAudioDevices(): Promise<AudioOutputDeviceInfo[]>;
+  requestDevicePermissions(): Promise<AudioOutputDeviceInfo[]>;
+  setAudioOutputDevice(deviceId: string): Promise<boolean>;
   getState(): AudioEngineState;
   subscribe(listener: (state: AudioEngineState) => void): () => void;
   panic(): void; // Emergency fade out

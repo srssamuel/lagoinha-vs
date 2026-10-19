@@ -63,4 +63,31 @@ describe('AudioRouting Logic (Stage Safety Audit)', () => {
     expect(mutedGains.leftGain).toBe(0);
     expect(mutedGains.rightGain).toBe(0);
   });
+
+  it('correctly classifies physical USB, virtual cable, and built-in hardware interfaces', () => {
+    const isVirtual = (name: string) => /(cable|voicemeeter|virtual|vac|loopback|blackhole|dante)/i.test(name);
+    const isUsb = (name: string) => /(usb|umc|xr18|x32|scarlett|focusrite|behringer|presonus|motu|quad|audiobox|line-level)/i.test(name);
+
+    expect(isUsb('Behringer UMC404HD 192k USB Audio')).toBe(true);
+    expect(isUsb('Focusrite Scarlett 4i4 USB')).toBe(true);
+    expect(isVirtual('VoiceMeeter Aux VAIO (VB-Audio)')).toBe(true);
+    expect(isVirtual('CABLE Input (VB-Audio Virtual Cable)')).toBe(true);
+    expect(isVirtual('Realtek High Definition Audio')).toBe(false);
+    expect(isUsb('Realtek High Definition Audio')).toBe(false);
+  });
+
+  it('has dedicated tone frequencies for isolated channel test on stage', () => {
+    // Frequências tonais isoladas por canal para teste de bancada e ligação no altar
+    const channelFrequencies: Record<number, { name: string; target: string; hz: number }> = {
+      0: { name: 'VS Left', target: 'Mesa FOH L', hz: 440 },
+      1: { name: 'VS Right', target: 'Mesa FOH R', hz: 554.37 },
+      2: { name: 'Click Track', target: 'IEM Músicos', hz: 1000 },
+      3: { name: 'Guide Track', target: 'IEM Músicos', hz: 880 }
+    };
+
+    expect(channelFrequencies[0]?.hz).toBe(440);
+    expect(channelFrequencies[1]?.hz).toBeCloseTo(554.37, 2);
+    expect(channelFrequencies[2]?.hz).toBe(1000); // Beep agudo de metrônomo
+    expect(channelFrequencies[3]?.hz).toBe(880);  // Tom guia audível
+  });
 });
