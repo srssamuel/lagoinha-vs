@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { CloudSong } from '../../domain/entities/CloudSong';
 import { DemoCloudVSLibrary } from '../../infrastructure/mock/DemoCloudVSLibrary';
 import { Song } from '../../domain/entities/Song';
 import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
+import { GoogleDriveStorageService } from '../../infrastructure/storage/GoogleDriveStorageService';
+import { GoogleDriveConfig } from '../../domain/entities/GoogleDriveConfig';
 import {
   X,
   Search,
@@ -13,7 +15,11 @@ import {
   HardDrive,
   UploadCloud,
   Globe,
-  ExternalLink
+  ExternalLink,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  FolderOpen
 } from 'lucide-react';
 
 interface CloudVSLibraryModalProps {
@@ -78,8 +84,18 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   const [songs, setSongs] = useState<CloudSong[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'catalog' | 'upload' | 'repositories'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'gdrive' | 'upload' | 'repositories'>('catalog');
   const [addedSongIds, setAddedSongIds] = useState<Set<string>>(new Set());
+
+  // Google Drive Central Storage State
+  const [driveService] = useState(() => new GoogleDriveStorageService());
+  const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig | null>(null);
+  const [driveFolderInput, setDriveFolderInput] = useState(
+    'https://drive.google.com/drive/folders/1Lagoinha-Multitracks-JP-Official'
+  );
+  const [driveSongs, setDriveSongs] = useState<CloudSong[]>([]);
+  const [isSyncingDrive, setIsSyncingDrive] = useState(false);
+  const [driveSyncMessage, setDriveSyncMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Upload Form State
   const [newTitle, setNewTitle] = useState('');
@@ -97,6 +113,48 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
       void repository.searchSongs(searchQuery, selectedKey).then(setSongs);
     }
   }, [isOpen, searchQuery, selectedKey, repository]);
+
+  // Carrega configuração salva do Google Drive
+  useEffect(() => {
+    void driveService.getConfig().then((cfg) => {
+      if (cfg) {
+        setDriveConfig(cfg);
+        if (cfg.sharedUrl) {
+          setDriveFolderInput(cfg.sharedUrl);
+        }
+      }
+    });
+  }, [driveService]);
+
+  const loadDriveSongs = useCallback(
+    async (folderUrlOrId?: string) => {
+      setIsSyncingDrive(true);
+      setDriveSyncMessage(null);
+      try {
+        const target = folderUrlOrId || driveFolderInput;
+        const list = await driveService.syncDriveFolder(target);
+        setDriveSongs(list);
+        setDriveSyncMessage({
+          text: `Sincronizado! ${list.length} multitracks oficiais conectadas ao Google Drive.`,
+          type: 'success'
+        });
+      } catch (err: any) {
+        setDriveSyncMessage({
+          text: `Erro ao sincronizar: ${err?.message || 'Link ou ID inválido'}`,
+          type: 'error'
+        });
+      } finally {
+        setIsSyncingDrive(false);
+      }
+    },
+    [driveService, driveFolderInput]
+  );
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'gdrive' && driveSongs.length === 0) {
+      void loadDriveSongs();
+    }
+  }, [isOpen, activeTab, driveSongs.length, loadDriveSongs]);
 
   const handleSelectSong = async (cloudSong: CloudSong) => {
     const playbackSong = await repository.convertCloudSongToPlaybackSong(cloudSong);
@@ -218,7 +276,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
           </button>
         </div>
 
-        {/* Abas: Catálogo na Nuvem | Subir Novo VS | Repositórios Reais de Multitracks */}
+        {/* Abas: Catálogo na Nuvem | Google Drive Lagoinha | Subir Novo VS | Repositórios Reais de Multitracks */}
         <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
           <button
             type="button"
@@ -229,7 +287,23 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                 : 'bg-stage-card text-slate-400 hover:text-white'
             }`}
           >
-            Catálogo Lagoinha ({songs.length} Músicas)
+            Catálogo Geral ({songs.length} Músicas)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('gdrive');
+              if (driveSongs.length === 0) void loadDriveSongs();
+            }}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              activeTab === 'gdrive'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-1 ring-emerald-400/40'
+                : 'bg-stage-card text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10'
+            }`}
+          >
+            <HardDrive className="w-3.5 h-3.5" />
+            <span>Google Drive Lagoinha ({driveSongs.length > 0 ? driveSongs.length : 3})</span>
           </button>
 
           {canUpload && (
@@ -260,6 +334,155 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
             <span>Repositórios Externos de Multitracks</span>
           </button>
         </div>
+
+        {/* Conteúdo Aba Google Drive Lagoinha */}
+        {activeTab === 'gdrive' && (
+          <div className="flex-1 flex flex-col overflow-hidden space-y-3">
+            {/* Header de Sincronização da Pasta do Google Drive */}
+            <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                    <HardDrive className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                      {driveConfig?.folderName || 'Pasta Oficial Google Drive — Louvor Lagoinha JP'}
+                      <span className="text-[9px] font-mono px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        SEM CUSTOS DE NUVEM
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Todos os membros e líderes sincronizam a mesma pasta. Stems baixados ficam salvos em cache local seguro (IndexedDB) para o culto.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono bg-emerald-950/50 px-2.5 py-1 rounded-xl border border-emerald-500/30">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Cache Offline Seguro</span>
+                </div>
+              </div>
+
+              {/* Input de URL da Pasta + Botão de Sincronização */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <FolderOpen className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={driveFolderInput}
+                    onChange={(e) => setDriveFolderInput(e.target.value)}
+                    placeholder="Cole o link ou ID da pasta do Google Drive da igreja..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-stage-border text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void loadDriveSongs()}
+                  disabled={isSyncingDrive}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-md shadow-emerald-600/30 shrink-0 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingDrive ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingDrive ? 'Sincronizando...' : 'Sincronizar Pasta'}</span>
+                </button>
+              </div>
+
+              {/* Feedback de Sincronização */}
+              {driveSyncMessage && (
+                <div
+                  className={`mt-2 flex items-center gap-2 text-xs rounded-xl px-3 py-1.5 ${
+                    driveSyncMessage.type === 'success'
+                      ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                  }`}
+                >
+                  {driveSyncMessage.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  )}
+                  <span>{driveSyncMessage.text}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Lista de Multitracks do Google Drive */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {driveSongs.map((song) => {
+                const isAdded = addedSongIds.has(song.id);
+
+                return (
+                  <div
+                    key={song.id}
+                    className="p-3.5 rounded-2xl bg-stage-card border border-emerald-500/20 hover:border-emerald-500/50 flex items-center justify-between gap-4 transition"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-400">
+                        <Music2 className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-white truncate">
+                            {song.title}
+                          </h4>
+                          <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded shrink-0">
+                            Tom {song.originalKey}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded shrink-0">
+                            {song.bpm} BPM
+                          </span>
+                        </div>
+                        <p className="text-xs text-stage-muted truncate">
+                          {song.artist} • {song.stemsCount} Stems Isolados (Bateria, Baixo, Guitarras, Keys, Click & Guia)
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[9px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800/40 px-1.5 py-0.2 rounded flex items-center gap-1">
+                            <HardDrive className="w-2.5 h-2.5" />
+                            Google Drive
+                          </span>
+                          <span className="text-[9px] text-slate-400">
+                            Caminho: {song.storageFolder || 'gdrive://oficial'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleSelectSong(song)}
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition active:scale-95 shrink-0 ${
+                        isAdded
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/30'
+                      }`}
+                    >
+                      {isAdded ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Adicionado ao Culto</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Carregar no Setlist</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Dica Didática para a Equipe de Louvor */}
+            <div className="p-3 rounded-2xl bg-slate-900 border border-stage-border text-[11px] text-slate-400 shrink-0">
+              <strong className="text-white font-semibold block mb-0.5">
+                💡 Como organizar as multitracks no Google Drive da Lagoinha:
+              </strong>
+              Para adicionar uma nova música, basta arrastar o arquivo <span className="font-mono text-emerald-400">.ZIP</span> com os stems para a pasta compartilhada e clicar em <span className="font-bold text-white">&ldquo;Sincronizar Pasta&rdquo;</span>. Qualquer líder ou técnico de som tem acesso imediato.
+            </div>
+          </div>
+        )}
 
         {/* Conteúdo Aba Catálogo */}
         {activeTab === 'catalog' && (

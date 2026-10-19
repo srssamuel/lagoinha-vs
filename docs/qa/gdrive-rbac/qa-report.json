@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-10-19T14:59:16.431Z",
+  "url": "https://lagoinha-vs-jp.web.app",
+  "totalConsoleErrors": 0,
+  "consoleErrors": [],
+  "status": "PASSED",
+  "screenshots": [
+    "01-stage-desktop-admin-badge.png",
+    "02-gdrive-library-tab-desktop.png",
+    "03-gdrive-song-added.png",
+    "04-admin-modal-pending-approvals.png",
+    "05-admin-user-approved.png",
+    "06-admin-active-members.png",
+    "07-admin-invite-link-generated.png",
+    "08-pending-approval-modal.png",
+    "09-tablet-stage-768x1024.png",
+    "10-mobile-stage-375x667.png"
+  ]
+}

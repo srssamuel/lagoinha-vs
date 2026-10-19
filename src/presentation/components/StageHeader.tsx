@@ -13,7 +13,8 @@ import {
   Lock,
   Cpu,
   BookOpen,
-  Layers
+  Layers,
+  Users
 } from 'lucide-react';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
@@ -38,6 +39,8 @@ interface StageHeaderProps {
   onOpenCifraModal: () => void;
   onOpenVstRack?: () => void;
   onOpenHelpGuide?: () => void;
+  onOpenAdminModal?: () => void;
+  pendingUsersCount?: number;
   onSignOut: () => void;
 }
 
@@ -60,6 +63,8 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
   onOpenCifraModal,
   onOpenVstRack,
   onOpenHelpGuide,
+  onOpenAdminModal,
+  pendingUsersCount = 0,
   onSignOut
 }) => {
   return (
@@ -268,6 +273,24 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
           >
             <BookOpen className="w-3.5 h-3.5 text-purple-400" />
             <span>GUIA DE PALCO</span>
+          </button>
+        )}
+
+        {/* Botão Gestão de Usuários / Aprovações & Convites (Admin / Líder) */}
+        {(currentUser?.isAdmin || currentUser?.canApproveUsers) && onOpenAdminModal && (
+          <button
+            type="button"
+            onClick={onOpenAdminModal}
+            className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-[11px] font-bold transition active:scale-95 shadow-md shadow-rose-500/10"
+            title="Gestão de Usuários: Aprovar Novos Membros, Permissões e Gerar Links de Convite"
+          >
+            <Users className="w-3.5 h-3.5 text-rose-400" />
+            <span>ADMIN EQUIPE</span>
+            {pendingUsersCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black animate-pulse">
+                {pendingUsersCount}
+              </span>
+            )}
           </button>
         )}
 

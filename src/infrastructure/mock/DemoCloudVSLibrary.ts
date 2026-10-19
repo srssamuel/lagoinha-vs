@@ -7,9 +7,12 @@ import { DemoWorshipSongs } from './DemoWorshipSongs';
 
 const FOLDER_BY_CLOUD_ID: Record<string, string> = {
   'cloud-o-nosso-general': 'o-nosso-general',
+  'gdrive-o-nosso-general': 'o-nosso-general',
   'cloud-casa-e-sua': 'song-casa-sua',
+  'gdrive-a-casa-e-sua': 'song-casa-sua',
   'cloud-ruja-o-leao': 'song-ruja-o-leao',
   'cloud-bondade-de-deus': 'cloud-bondade-deus',
+  'gdrive-bondade-de-deus': 'cloud-bondade-deus',
   'cloud-santo-pra-sempre': 'cloud-santo-pra-sempre',
   'cloud-vitorioso-es': 'song-vitorioso-es',
   'cloud-ousado-amor': 'song-ousado-amor'
@@ -226,7 +229,7 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
   }
 
   public async convertCloudSongToPlaybackSong(cloudSong: CloudSong): Promise<Song> {
-    if (cloudSong.id === 'cloud-o-nosso-general') {
+    if (cloudSong.id === 'cloud-o-nosso-general' || cloudSong.id === 'gdrive-o-nosso-general' || cloudSong.id.includes('general')) {
       const preset = DemoWorshipSongs.getPresetSongs().find(
         (s) => s.id === 'o-nosso-general'
       );

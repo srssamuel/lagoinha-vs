@@ -19,6 +19,8 @@ import { CloudVSLibraryModal } from './components/CloudVSLibraryModal';
 import { CifraProModal } from './components/CifraProModal';
 import { VstPluginRackModal } from './components/VstPluginRackModal';
 import { HelpGuideModal } from './components/HelpGuideModal';
+import { AdminUsersModal } from './components/AdminUsersModal';
+import { PendingApprovalModal } from './components/PendingApprovalModal';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
 import { VstPluginRackService } from '../domain/services/VstPluginRackService';
 import { StemType, StemDspConfig } from '../domain/entities/TrackStem';
@@ -55,7 +57,22 @@ export const App: React.FC = () => {
   const [isCifraModalOpen, setIsCifraModalOpen] = useState<boolean>(false);
   const [isVstRackOpen, setIsVstRackOpen] = useState<boolean>(false);
   const [isHelpGuideOpen, setIsHelpGuideOpen] = useState<boolean>(false);
+  const [isAdminUsersModalOpen, setIsAdminUsersModalOpen] = useState<boolean>(false);
+  const [pendingUsersCount, setPendingUsersCount] = useState<number>(0);
   const [selectedVstStemId, setSelectedVstStemId] = useState<string | null>(null);
+
+  const refreshPendingCount = useCallback(async () => {
+    if (currentUser?.isAdmin || currentUser?.canApproveUsers) {
+      const pending = await authService.listPendingUsers();
+      setPendingUsersCount(pending.length);
+    } else {
+      setPendingUsersCount(0);
+    }
+  }, [authService, currentUser]);
+
+  useEffect(() => {
+    void refreshPendingCount();
+  }, [refreshPendingCount]);
 
   const currentSong = songs[currentSongIndex] ?? null;
 
@@ -431,6 +448,24 @@ export const App: React.FC = () => {
     return <AuthGate authService={authService} onAuthenticated={setCurrentUser} />;
   }
 
+  // Se o cadastro estiver pendente de aprovação pela liderança
+  if (currentUser.isPending) {
+    return (
+      <PendingApprovalModal
+        user={currentUser}
+        authService={authService}
+        onRefreshApproval={() => {
+          const u = authService.getCurrentUser();
+          setCurrentUser(u);
+        }}
+        onSignOut={() => {
+          void authService.signOut();
+          setCurrentUser(null);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
       {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro, Plugins VST e Banco de VS */}
@@ -453,6 +488,8 @@ export const App: React.FC = () => {
         onOpenCifraModal={() => setIsCifraModalOpen(true)}
         onOpenVstRack={() => handleOpenVstRack()}
         onOpenHelpGuide={() => setIsHelpGuideOpen(true)}
+        onOpenAdminModal={() => setIsAdminUsersModalOpen(true)}
+        pendingUsersCount={pendingUsersCount}
         onSignOut={() => void authService.signOut()}
       />
 
@@ -613,6 +650,15 @@ export const App: React.FC = () => {
       <HelpGuideModal
         isOpen={isHelpGuideOpen}
         onClose={() => setIsHelpGuideOpen(false)}
+      />
+
+      {/* Modal de Gestão de Usuários, Aprovações e Convites (Admin / Líder) */}
+      <AdminUsersModal
+        isOpen={isAdminUsersModalOpen}
+        currentUser={currentUser}
+        authService={authService}
+        onClose={() => setIsAdminUsersModalOpen(false)}
+        onUsersUpdated={() => void refreshPendingCount()}
       />
     </div>
   );

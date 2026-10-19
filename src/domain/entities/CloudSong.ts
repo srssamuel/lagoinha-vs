@@ -22,6 +22,10 @@ export interface CloudSongProps {
   uploadedBy: string;
   uploadedAt: string;
   storageFolder: string;
+  source?: 'google_drive' | 'cloud_preset' | 'local_upload';
+  driveFileId?: string;
+  driveFolderId?: string;
+  driveDownloadUrl?: string;
 }
 
 export class CloudSong {
@@ -38,6 +42,10 @@ export class CloudSong {
   public readonly uploadedBy: string;
   public readonly uploadedAt: string;
   public readonly storageFolder: string;
+  public readonly source: 'google_drive' | 'cloud_preset' | 'local_upload';
+  public readonly driveFileId?: string;
+  public readonly driveFolderId?: string;
+  public readonly driveDownloadUrl?: string;
 
   constructor(props: CloudSongProps) {
     this.id = props.id;
@@ -53,5 +61,9 @@ export class CloudSong {
     this.uploadedBy = props.uploadedBy;
     this.uploadedAt = props.uploadedAt;
     this.storageFolder = props.storageFolder;
+    this.source = props.source || 'cloud_preset';
+    this.driveFileId = props.driveFileId;
+    this.driveFolderId = props.driveFolderId;
+    this.driveDownloadUrl = props.driveDownloadUrl;
   }
 }
