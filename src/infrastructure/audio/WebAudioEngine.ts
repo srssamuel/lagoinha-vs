@@ -28,6 +28,8 @@ export class WebAudioEngine implements AudioEnginePort {
   private currentSong: Song | null = null;
   private masterGain: GainNode | null = null;
   private masterLimiter: DynamicsCompressorNode | null = null;
+  private masterAnalyser: AnalyserNode | null = null;
+  private masterFreqData: Uint8Array<ArrayBuffer> | null = null;
   private channelMerger: ChannelMergerNode | null = null;
 
   // Stems audio nodes
@@ -43,6 +45,12 @@ export class WebAudioEngine implements AudioEnginePort {
   private isSoloClickActive: boolean = false;
   private isLoopClickActive: boolean = false;
   private masterVolume: number = 1.0;
+
+  // Pre-Roll Count-In (Contagem Prévia de 1 ou 2 compassos)
+  private countInBars: number = 0; // 0 = Off, 1 = 1 Bar, 2 = 2 Bars
+  private isCountingIn: boolean = false;
+  private countInBeat: number = 1;
+  private countInTimerId: number | null = null;
 
   // Metronome click scheduler (used only when no real click stem file is present or during Loop Click)
   private clickTimerId: number | null = null;
@@ -79,11 +87,18 @@ export class WebAudioEngine implements AudioEnginePort {
     this.masterLimiter.attack.setValueAtTime(0.001, this.ctx.currentTime);
     this.masterLimiter.release.setValueAtTime(0.08, this.ctx.currentTime);
 
-    // Canal L e R independentes -> Master Gain -> Master Brickwall Limiter -> Saída
+    // Master FFT Analyser (RTA Spectrum Analyzer 64 bins)
+    this.masterAnalyser = this.ctx.createAnalyser();
+    this.masterAnalyser.fftSize = 128;
+    this.masterAnalyser.smoothingTimeConstant = 0.72;
+    this.masterFreqData = new Uint8Array(this.masterAnalyser.frequencyBinCount);
+
+    // Canal L e R independentes -> Master Gain -> Master Brickwall Limiter -> Master Analyser -> Saída
     this.channelMerger = this.ctx.createChannelMerger(2);
     this.channelMerger.connect(this.masterGain);
     this.masterGain.connect(this.masterLimiter);
-    this.masterLimiter.connect(this.ctx.destination);
+    this.masterLimiter.connect(this.masterAnalyser);
+    this.masterAnalyser.connect(this.ctx.destination);
 
     // Pré-cria buffers de click de reserva para Loop Click
     this.clickBufferAccent = ProceduralClickGenerator.createClickBuffer(this.ctx, true);
@@ -215,6 +230,12 @@ export class WebAudioEngine implements AudioEnginePort {
       void this.ctx.resume();
     }
 
+    // Se houver contagem prévia configurada (1 ou 2 compassos) e a música estiver no início (tempo 0)
+    if (this.countInBars > 0 && this.pausedAtTime === 0 && !this.isCountingIn) {
+      this.startPreRollCountIn();
+      return;
+    }
+
     this.isPlaying = true;
     this.playbackStartTime = this.ctx.currentTime - this.pausedAtTime;
 
@@ -234,12 +255,66 @@ export class WebAudioEngine implements AudioEnginePort {
     this.notifyState();
   }
 
+  private startPreRollCountIn(): void {
+    if (!this.ctx || !this.currentSong) return;
+
+    this.isPlaying = true;
+    this.isCountingIn = true;
+    this.countInBeat = 1;
+
+    const bpm = this.currentSong.bpm;
+    const secondsPerBeat = 60 / bpm;
+    const beatsPerBar = this.currentSong.timeSignature.beats;
+    const totalBeats = this.countInBars * beatsPerBar;
+    let beatsRemaining = totalBeats;
+
+    const tick = () => {
+      if (!this.isPlaying || !this.isCountingIn || !this.ctx) return;
+
+      const currentCount = totalBeats - beatsRemaining + 1;
+      const beatInCurrentBar = ((currentCount - 1) % beatsPerBar) + 1;
+      this.countInBeat = currentCount;
+      this.scheduleClick(this.ctx.currentTime, beatInCurrentBar === 1);
+      this.notifyState();
+
+      beatsRemaining--;
+
+      if (beatsRemaining > 0) {
+        this.countInTimerId = window.setTimeout(tick, secondsPerBeat * 1000);
+      } else {
+        this.countInTimerId = window.setTimeout(() => {
+          if (!this.isPlaying || !this.ctx) return;
+          this.isCountingIn = false;
+          this.playbackStartTime = this.ctx.currentTime;
+          this.pausedAtTime = 0;
+
+          const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
+          if (!clickStem?.audioUrl) {
+            this.setupMetronomeSchedule();
+          }
+
+          this.applyMixerSettings();
+          this.startAudioSources(0);
+          this.startStateLoop();
+          this.notifyState();
+        }, secondsPerBeat * 1000);
+      }
+    };
+
+    tick();
+  }
+
   public pause(): void {
     if (!this.isPlaying || !this.ctx) return;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    if (this.countInTimerId !== null) {
+      clearTimeout(this.countInTimerId);
+      this.countInTimerId = null;
+    }
+    this.isCountingIn = false;
     this.pausedAtTime = this.getCurrentPlaybackTime();
     this.stopAudioSources();
     this.stopMetronome();
@@ -252,6 +327,11 @@ export class WebAudioEngine implements AudioEnginePort {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    if (this.countInTimerId !== null) {
+      clearTimeout(this.countInTimerId);
+      this.countInTimerId = null;
+    }
+    this.isCountingIn = false;
     this.stopAudioSources();
     this.stopMetronome();
     this.isPlaying = false;
@@ -261,6 +341,11 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   public seek(timeInSeconds: number): void {
+    if (this.countInTimerId !== null) {
+      clearTimeout(this.countInTimerId);
+      this.countInTimerId = null;
+    }
+    this.isCountingIn = false;
     const target = Math.max(0, Math.min(this.currentSong?.duration || 0, timeInSeconds));
     const wasPlaying = this.isPlaying;
 
@@ -335,6 +420,15 @@ export class WebAudioEngine implements AudioEnginePort {
       this.applyMixerSettings();
       this.notifyState();
     }
+  }
+
+  public clearAllSolos(): void {
+    if (!this.currentSong) return;
+    this.currentSong.stems.forEach((stem) => {
+      stem.isSolo = false;
+    });
+    this.applyMixerSettings();
+    this.notifyState();
   }
 
   public resetMixer(): void {
@@ -434,6 +528,11 @@ export class WebAudioEngine implements AudioEnginePort {
     this.notifyState();
   }
 
+  public setCountInBars(bars: number): void {
+    this.countInBars = Math.max(0, Math.min(2, Math.round(bars)));
+    this.notifyState();
+  }
+
   public panic(): void {
     if (this.masterGain && this.ctx) {
       const now = this.ctx.currentTime;
@@ -497,6 +596,78 @@ export class WebAudioEngine implements AudioEnginePort {
       });
     }
 
+    let sub = 0;
+    let low = 0;
+    let mid = 0;
+    let high = 0;
+    let air = 0;
+
+    if (this.masterAnalyser && this.masterFreqData && this.isPlaying) {
+      try {
+        this.masterAnalyser.getByteFrequencyData(this.masterFreqData);
+        const data = this.masterFreqData;
+        sub = Number(((data[0] ?? 0) / 255).toFixed(2));
+        low = Number((((data[1] ?? 0) + (data[2] ?? 0)) / 510).toFixed(2));
+        let midSum = 0;
+        for (let i = 3; i <= 8; i++) midSum += data[i] ?? 0;
+        mid = Number((midSum / (6 * 255)).toFixed(2));
+        let highSum = 0;
+        for (let i = 9; i <= 20; i++) highSum += data[i] ?? 0;
+        high = Number((highSum / (12 * 255)).toFixed(2));
+        let airSum = 0;
+        for (let i = 21; i < data.length; i++) airSum += data[i] ?? 0;
+        air = Number((airSum / ((data.length - 21) * 255)).toFixed(2));
+      } catch {
+        // Fallback
+      }
+    }
+
+    const gainReductionDb = this.masterLimiter
+      ? Number((this.masterLimiter.reduction || 0).toFixed(1))
+      : 0;
+    const isLimiting = gainReductionDb < -0.2;
+
+    let maxLeft = 0;
+    let maxRight = 0;
+    if (this.currentSong && this.isPlaying) {
+      const hasAnySolo = this.currentSong.hasSoloTrack;
+      this.currentSong.stems.forEach((stem) => {
+        const isAudible =
+          stem.isAudible(hasAnySolo) &&
+          (!this.isSoloClickActive || stem.type === 'click') &&
+          stem.volume > 0;
+        if (!isAudible) return;
+
+        const level = stemLevels[stem.id] ?? stem.volume * 0.5;
+        if (this.routingMode === 'SPLIT_IEM_PA') {
+          if (stem.type === 'click' || stem.type === 'guide') {
+            maxLeft = Math.max(maxLeft, level);
+          } else {
+            maxLeft = Math.max(maxLeft, level * 0.85);
+            maxRight = Math.max(maxRight, level);
+          }
+        } else {
+          const normPan = (stem.pan + 1) / 2;
+          maxLeft = Math.max(maxLeft, level * Math.cos(normPan * (Math.PI / 2)));
+          maxRight = Math.max(maxRight, level * Math.sin(normPan * (Math.PI / 2)));
+        }
+      });
+    }
+    const peakL = Number(Math.min(1.5, maxLeft * this.masterVolume).toFixed(2));
+    const peakR = Number(Math.min(1.5, maxRight * this.masterVolume).toFixed(2));
+
+    const masterRta = {
+      sub,
+      low,
+      mid,
+      high,
+      air,
+      gainReductionDb,
+      isLimiting,
+      peakL,
+      peakR
+    };
+
     return {
       isPlaying: this.isPlaying,
       currentTime,
@@ -510,7 +681,11 @@ export class WebAudioEngine implements AudioEnginePort {
       isSoloClickActive: this.isSoloClickActive,
       isLoopClickActive: this.isLoopClickActive,
       masterVolume: this.masterVolume,
-      stemLevels
+      stemLevels,
+      countInBars: this.countInBars,
+      isCountingIn: this.isCountingIn,
+      countInBeat: this.countInBeat,
+      masterRta
     };
   }
 

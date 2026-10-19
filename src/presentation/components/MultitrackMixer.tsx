@@ -20,6 +20,7 @@ import {
   Music2
 } from 'lucide-react';
 import { EnsaioMixMode } from '../../domain/services/EnsaioMixService';
+import { MasterRtaData } from '../../application/ports/AudioEnginePort';
 
 interface MultitrackMixerProps {
   stems: TrackStem[];
@@ -30,10 +31,14 @@ interface MultitrackMixerProps {
   originalKey?: string;
   currentKey?: string;
   pitchShiftSemitones?: number;
+  masterVolume?: number;
+  masterRta?: MasterRtaData;
   onVolumeChange: (stemId: string, vol: number) => void;
   onPanChange: (stemId: string, pan: number) => void;
   onToggleMute: (stemId: string) => void;
   onToggleSolo: (stemId: string) => void;
+  onClearAllSolos?: () => void;
+  onMasterVolumeChange?: (vol: number) => void;
   onResetMixer: () => void;
   onPitchShiftChange?: (semitones: number) => void;
   onTogglePitchLock?: (stemId: string) => void;
@@ -70,10 +75,14 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
   originalKey = 'B',
   currentKey = 'B',
   pitchShiftSemitones = 0,
+  masterVolume = 1.0,
+  masterRta,
   onVolumeChange,
   onPanChange,
   onToggleMute,
   onToggleSolo,
+  onClearAllSolos,
+  onMasterVolumeChange,
   onResetMixer,
   onPitchShiftChange,
   onTogglePitchLock,
@@ -402,6 +411,18 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
               <span>Resetar Mix</span>
             </button>
 
+            {hasAnySolo && onClearAllSolos && (
+              <button
+                type="button"
+                onClick={onClearAllSolos}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-amber-500 text-slate-950 hover:bg-amber-400 flex items-center gap-1 shadow-lg shadow-amber-500/25 animate-pulse transition"
+                title="Limpar todos os canais em Solo e voltar à mixagem completa da banda"
+              >
+                <VolumeX className="w-3 h-3" />
+                <span>Limpar Solos ({stems.filter((s) => s.isSolo).length})</span>
+              </button>
+            )}
+
             {isSoloClickActive && (
               <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full animate-pulse">
                 MODO RESGATE: Apenas Click no Fone
@@ -672,6 +693,155 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
             </div>
           );
         })}
+
+        {/* Divisor Físico de Barramento Master */}
+        <div className="w-[1.5px] bg-slate-800 self-stretch my-1 mx-1.5 shrink-0" />
+
+        {/* Master Output Channel Strip (FOH & Stage Master Bus) */}
+        <div className="w-36 flex flex-col items-center bg-[#10141f] border-2 border-blue-500/40 rounded-2xl p-2.5 shadow-2xl relative shrink-0">
+          {/* Header do Master Bus */}
+          <div className="w-full flex items-center justify-between pb-1 border-b border-slate-800 mb-1.5">
+            <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider flex items-center gap-1">
+              <Sliders className="w-3 h-3 text-blue-400" />
+              <span>MASTER</span>
+            </span>
+            <span
+              className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                masterRta?.isLimiting
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+              }`}
+              title="Master Brickwall Limiter №6 (-1.0 dBFS Ceiling): Impede distorção no PA da igreja"
+            >
+              {masterRta?.isLimiting ? `${masterRta.gainReductionDb}dB GR` : 'LIM №6'}
+            </span>
+          </div>
+
+          {/* RTA 5 Bandas em Tempo Real (Sub, Low, Mid, High, Air) */}
+          <div className="w-full bg-slate-950/90 border border-slate-800 rounded-lg p-1.5 mb-2">
+            <div className="flex items-center justify-between text-[8px] font-mono text-slate-400 mb-1">
+              <span>RTA FFT</span>
+              <span className="text-blue-300 font-bold">{isPlaying ? 'LIVE' : 'IDLE'}</span>
+            </div>
+            <div className="grid grid-cols-5 gap-1 h-10 items-end bg-slate-900/60 p-1 rounded">
+              {/* SUB (<60Hz) */}
+              <div className="flex flex-col items-center h-full justify-end">
+                <div
+                  className="w-full bg-indigo-500 rounded-xs transition-all duration-75 min-h-[2px]"
+                  style={{ height: `${Math.round((masterRta?.sub || 0) * 100)}%` }}
+                />
+                <span className="text-[7px] font-mono text-slate-500 mt-0.5">SUB</span>
+              </div>
+              {/* LOW (60-250Hz) */}
+              <div className="flex flex-col items-center h-full justify-end">
+                <div
+                  className="w-full bg-blue-500 rounded-xs transition-all duration-75 min-h-[2px]"
+                  style={{ height: `${Math.round((masterRta?.low || 0) * 100)}%` }}
+                />
+                <span className="text-[7px] font-mono text-slate-500 mt-0.5">LOW</span>
+              </div>
+              {/* MID (250-2.5k) */}
+              <div className="flex flex-col items-center h-full justify-end">
+                <div
+                  className="w-full bg-emerald-500 rounded-xs transition-all duration-75 min-h-[2px]"
+                  style={{ height: `${Math.round((masterRta?.mid || 0) * 100)}%` }}
+                />
+                <span className="text-[7px] font-mono text-slate-500 mt-0.5">MID</span>
+              </div>
+              {/* HIGH (2.5k-8k) */}
+              <div className="flex flex-col items-center h-full justify-end">
+                <div
+                  className="w-full bg-amber-500 rounded-xs transition-all duration-75 min-h-[2px]"
+                  style={{ height: `${Math.round((masterRta?.high || 0) * 100)}%` }}
+                />
+                <span className="text-[7px] font-mono text-slate-500 mt-0.5">HIGH</span>
+              </div>
+              {/* AIR (>8k) */}
+              <div className="flex flex-col items-center h-full justify-end">
+                <div
+                  className="w-full bg-rose-500 rounded-xs transition-all duration-75 min-h-[2px]"
+                  style={{ height: `${Math.round((masterRta?.air || 0) * 100)}%` }}
+                />
+                <span className="text-[7px] font-mono text-slate-500 mt-0.5">AIR</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Medidores Estéreo Master L/R + Fader Vertical */}
+          <div className="flex items-center justify-center gap-2 w-full my-auto">
+            {/* Medidor Estéreo L / R */}
+            <div className="flex items-center gap-1 h-32 py-1">
+              {/* L */}
+              <div className="w-2 h-full bg-slate-950 rounded-xs overflow-hidden flex flex-col-reverse border border-slate-800">
+                <div
+                  className="w-full transition-all duration-75 rounded-xs"
+                  style={{
+                    height: `${Math.min(100, Math.round(((masterRta?.peakL || 0) / 1.2) * 100))}%`,
+                    backgroundColor: (masterRta?.peakL || 0) > 1.0 ? '#f43f5e' : (masterRta?.peakL || 0) > 0.85 ? '#f59e0b' : '#38bdf8'
+                  }}
+                />
+              </div>
+              {/* R */}
+              <div className="w-2 h-full bg-slate-950 rounded-xs overflow-hidden flex flex-col-reverse border border-slate-800">
+                <div
+                  className="w-full transition-all duration-75 rounded-xs"
+                  style={{
+                    height: `${Math.min(100, Math.round(((masterRta?.peakR || 0) / 1.2) * 100))}%`,
+                    backgroundColor: (masterRta?.peakR || 0) > 1.0 ? '#f43f5e' : (masterRta?.peakR || 0) > 0.85 ? '#f59e0b' : '#34d399'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Fader Master Vertical */}
+            <div className="relative w-8 h-32 flex items-center justify-center">
+              <div
+                className="absolute left-0 right-0 top-1/2 h-[1px] bg-blue-400/60 pointer-events-none"
+                title="0.0 dB (Unity Gain)"
+              />
+              <input
+                type="range"
+                min="0"
+                max="1.5"
+                step="0.01"
+                value={masterVolume}
+                onChange={(e) => onMasterVolumeChange?.(parseFloat(e.target.value))}
+                onDoubleClick={() => onMasterVolumeChange?.(1.0)}
+                className="fader-vertical"
+                aria-label="Volume Master"
+                title={`Volume Master: ${formatDb(masterVolume)} (Duplo clique para 0.0 dB)`}
+              />
+            </div>
+          </div>
+
+          {/* Ajuste Fino Master (- / 0dB / +) */}
+          <div className="flex items-center justify-between gap-1 w-full mt-2">
+            <button
+              type="button"
+              onClick={() => onMasterVolumeChange?.(Math.max(0, Number((masterVolume - 0.1).toFixed(2))))}
+              className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 text-[10px] font-bold"
+              title="Reduzir Master (-0.1)"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onMasterVolumeChange?.(1.0)}
+              className="flex-1 py-0.5 rounded font-mono text-[9px] font-bold bg-blue-600/20 border border-blue-500/40 text-blue-300 hover:bg-blue-600/30 transition text-center"
+              title="Restaurar Ganho Nominal (0.0 dB)"
+            >
+              {formatDb(masterVolume)}
+            </button>
+            <button
+              type="button"
+              onClick={() => onMasterVolumeChange?.(Math.min(1.5, Number((masterVolume + 0.1).toFixed(2))))}
+              className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 hover:border-blue-400 text-slate-200 text-[10px] font-bold"
+              title="Aumentar Master (+0.1)"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

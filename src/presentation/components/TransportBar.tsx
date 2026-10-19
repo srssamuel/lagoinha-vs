@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, SkipBack, SkipForward, Repeat, AlertOctagon, Activity, Headphones, SlidersHorizontal } from 'lucide-react';
+import { Play, Pause, Square, SkipBack, SkipForward, Repeat, AlertOctagon, Activity, Headphones, SlidersHorizontal, Timer } from 'lucide-react';
 
 interface TransportBarProps {
   isPlaying: boolean;
   isLoopingSection: boolean;
   isSoloClickActive: boolean;
   isLoopClickActive: boolean;
+  countInBars?: number;
+  isCountingIn?: boolean;
+  countInBeat?: number;
+  onChangeCountInBars?: (bars: number) => void;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -24,6 +28,10 @@ export const TransportBar: React.FC<TransportBarProps> = ({
   isLoopingSection,
   isSoloClickActive,
   isLoopClickActive,
+  countInBars = 0,
+  isCountingIn = false,
+  countInBeat = 1,
+  onChangeCountInBars,
   onPlay,
   onPause,
   onStop,
@@ -87,13 +95,20 @@ export const TransportBar: React.FC<TransportBarProps> = ({
         <button
           onClick={isPlaying ? onPause : onPlay}
           className={`flex items-center justify-center gap-2 px-5 sm:px-7 py-2.5 rounded-2xl font-black text-xs tracking-wide transition-all shadow-lg active:scale-95 ${
-            isPlaying
+            isCountingIn
+              ? 'bg-amber-400 text-slate-950 shadow-amber-400/40 ring-4 ring-amber-300 animate-pulse'
+              : isPlaying
               ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/25 ring-2 ring-amber-400/40'
               : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-500/25 ring-2 ring-blue-400/40'
           }`}
           title="Reproduzir / Pausar (Barra de Espaço)"
         >
-          {isPlaying ? (
+          {isCountingIn ? (
+            <>
+              <Timer className="w-4 h-4 fill-current animate-bounce" />
+              <span>CONTAGEM: {countInBeat}</span>
+            </>
+          ) : isPlaying ? (
             <>
               <Pause className="w-4 h-4 fill-current" />
               <span>PAUSAR</span>
@@ -114,6 +129,31 @@ export const TransportBar: React.FC<TransportBarProps> = ({
         >
           <Square className="w-4 h-4 fill-current" />
         </button>
+
+        {/* Pre-Roll Count-In (Contagem Prévia) Selector */}
+        {onChangeCountInBars && (
+          <button
+            onClick={() => {
+              const next = countInBars === 0 ? 1 : countInBars === 1 ? 2 : 0;
+              onChangeCountInBars(next);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2.5 rounded-2xl border text-xs font-bold transition active:scale-95 ${
+              countInBars > 0
+                ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                : 'bg-stage-card border-stage-border text-stage-muted hover:text-white hover:bg-slate-800'
+            }`}
+            title="Contagem Prévia (Pre-Roll Count-In): Toca 1 ou 2 compassos de metrônomo antes de soltar a banda para evitar erros de entrada do baterista"
+          >
+            <Timer className="w-3.5 h-3.5 text-amber-400" />
+            <span>
+              {countInBars === 0
+                ? 'CONTAGEM: OFF'
+                : countInBars === 1
+                ? 'PRÉ-ROLL: 1 COMP'
+                : 'PRÉ-ROLL: 2 COMP'}
+            </span>
+          </button>
+        )}
 
         {/* Section Looper */}
         <button

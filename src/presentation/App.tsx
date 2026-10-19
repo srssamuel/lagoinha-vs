@@ -45,6 +45,7 @@ export const App: React.FC = () => {
   const [isPadActive, setIsPadActive] = useState<boolean>(false);
   const [currentPadKey, setCurrentPadKey] = useState<MusicalKey | null>(null);
   const [padVolume, setPadVolume] = useState<number>(0.35);
+  const [isAutoFollowPad, setIsAutoFollowPad] = useState<boolean>(true);
 
   // Modais de Palco
   const [isRoutingModalOpen, setIsRoutingModalOpen] = useState<boolean>(false);
@@ -103,11 +104,17 @@ export const App: React.FC = () => {
     window.addEventListener('click', handleGesture, { once: true });
   }, [padEngine]);
 
-  // Navegação de Músicas
+  // Navegação de Músicas com Pad Crossfade Automático
   const handleSelectSong = (index: number) => {
     if (index >= 0 && index < songs.length) {
       audioEngine.stop();
       setCurrentSongIndex(index);
+      const targetSong = songs[index];
+      if (targetSong && isAutoFollowPad && isPadActive) {
+        const rootKey = (targetSong.currentKey.replace('m', '') as MusicalKey) || 'C';
+        padEngine.crossfadeTo(rootKey, padVolume);
+        setCurrentPadKey(rootKey);
+      }
     }
   };
 
@@ -443,12 +450,16 @@ export const App: React.FC = () => {
         onSignOut={() => void authService.signOut()}
       />
 
-      {/* Barra de Transporte (Play, Pause, Solo Click, Loop, MIDI) */}
+      {/* Barra de Transporte com Métricas de Andamento, Pré-Roll e Pedaleira */}
       <TransportBar
         isPlaying={engineState.isPlaying}
         isLoopingSection={engineState.isLoopingSection}
         isSoloClickActive={engineState.isSoloClickActive}
         isLoopClickActive={engineState.isLoopClickActive}
+        countInBars={engineState.countInBars}
+        isCountingIn={engineState.isCountingIn}
+        countInBeat={engineState.countInBeat}
+        onChangeCountInBars={(bars) => audioEngine.setCountInBars(bars)}
         onPlay={() => audioEngine.play()}
         onPause={() => audioEngine.pause()}
         onStop={() => audioEngine.stop()}
@@ -501,7 +512,7 @@ export const App: React.FC = () => {
             onSeek={(secs) => audioEngine.seek(secs)}
           />
 
-          {/* Mixer de Multitracks com Faders de Palco, Mudança de Tom c/ Pitch Lock, EnsaioMix, Rack VST e VU Meters Estéreo */}
+          {/* Mixer de Multitracks com Faders de Palco, Master Bus RTA, Mudança de Tom c/ Pitch Lock, EnsaioMix, Rack VST e VU Meters Estéreo */}
           {currentSong && (
             <MultitrackMixer
               stems={currentSong.stems}
@@ -512,10 +523,14 @@ export const App: React.FC = () => {
               originalKey={currentSong.originalKey}
               currentKey={currentSong.currentKey}
               pitchShiftSemitones={currentSong.pitchShiftSemitones}
+              masterVolume={engineState.masterVolume}
+              masterRta={engineState.masterRta}
               onVolumeChange={handleVolumeChange}
               onPanChange={handlePanChange}
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
+              onClearAllSolos={() => audioEngine.clearAllSolos()}
+              onMasterVolumeChange={(vol) => audioEngine.setMasterVolume(vol)}
               onResetMixer={handleResetMixer}
               onPitchShiftChange={handlePitchShiftChange}
               onTogglePitchLock={handleTogglePitchLock}
@@ -527,13 +542,15 @@ export const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Barra Inferior: Pad Contínuo para Oração / Transição de Músicas */}
+      {/* Barra Inferior: Pad Contínuo para Oração / Transição de Músicas com Auto-Follow */}
       <AmbientPadBar
         currentPadKey={currentPadKey}
         isPadActive={isPadActive}
         padVolume={padVolume}
+        isAutoFollowEnabled={isAutoFollowPad}
         onSelectKey={handleSelectPadKey}
         onTogglePad={handleTogglePad}
+        onToggleAutoFollow={() => setIsAutoFollowPad((prev) => !prev)}
         onPadVolumeChange={handlePadVolumeChange}
       />
 

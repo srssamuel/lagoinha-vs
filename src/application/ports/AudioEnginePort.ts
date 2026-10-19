@@ -1,6 +1,18 @@
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 
+export interface MasterRtaData {
+  sub: number;       // 20-60 Hz
+  low: number;       // 60-250 Hz
+  mid: number;       // 250-2500 Hz
+  high: number;      // 2500-8000 Hz
+  air: number;       // >8000 Hz
+  gainReductionDb: number; // Limiter №6 GR in dB (-0.0 to -12.0)
+  isLimiting: boolean;
+  peakL: number;     // 0.0 to 1.5
+  peakR: number;     // 0.0 to 1.5
+}
+
 export interface AudioEngineState {
   isPlaying: boolean;
   currentTime: number;
@@ -15,6 +27,10 @@ export interface AudioEngineState {
   isLoopClickActive: boolean;
   masterVolume: number;
   stemLevels?: Record<string, number>;
+  countInBars: number;     // 0 = Off, 1 = 1 Bar, 2 = 2 Bars
+  isCountingIn: boolean;   // True during pre-roll count-in
+  countInBeat: number;     // Current countdown beat (1, 2, 3, 4...)
+  masterRta?: MasterRtaData;
 }
 
 export interface AudioEnginePort {
@@ -30,6 +46,7 @@ export interface AudioEnginePort {
   setStemPan(stemId: string, pan: number): void;
   toggleStemMute(stemId: string): void;
   toggleStemSolo(stemId: string): void;
+  clearAllSolos(): void;
   resetMixer(): void;
   setPitchShift(semitones: number): void;
   refreshDspChain(): void;
@@ -37,6 +54,7 @@ export interface AudioEnginePort {
   toggleSectionLoop(): void;
   toggleSoloClick(): void;
   toggleLoopClick(): void;
+  setCountInBars(bars: number): void;
   getState(): AudioEngineState;
   subscribe(listener: (state: AudioEngineState) => void): () => void;
   panic(): void; // Emergency fade out

@@ -1,0 +1,94 @@
+{
+  "target": "https://lagoinha-vs-jp.web.app",
+  "timestamp": "2026-10-19T01:47:49.715Z",
+  "overallStatus": "PASSED",
+  "results": [
+    {
+      "viewport": "mobile",
+      "width": 375,
+      "height": 667,
+      "status": "PASSED",
+      "problems": [],
+      "overflow": false,
+      "scrollWidth": 375,
+      "clientWidth": 375,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "smallTargets": [],
+      "clipped": [],
+      "contrastIssues": [],
+      "contrastSampled": 120,
+      "contrastBlendSkipped": 0,
+      "srOnlySkipped": 0,
+      "contrastUnparsed": 0,
+      "fonts": [
+        "ui-sans-serif",
+        "ui-monospace"
+      ],
+      "slopWarnings": [
+        "dark navy body background rgb(10, 13, 20) (check: not the #090d16 + glow default)",
+        "1 purple/indigo gradient surfaces"
+      ],
+      "screenshot": "docs\\qa\\audio-specialist\\lagoinha-vs-jp.web.app_mobile_375x667.png"
+    },
+    {
+      "viewport": "tablet",
+      "width": 768,
+      "height": 1024,
+      "status": "PASSED",
+      "problems": [],
+      "overflow": false,
+      "scrollWidth": 768,
+      "clientWidth": 768,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "smallTargets": [],
+      "clipped": [],
+      "contrastIssues": [],
+      "contrastSampled": 120,
+      "contrastBlendSkipped": 0,
+      "srOnlySkipped": 0,
+      "contrastUnparsed": 0,
+      "fonts": [
+        "ui-sans-serif",
+        "ui-monospace"
+      ],
+      "slopWarnings": [
+        "dark navy body background rgb(10, 13, 20) (check: not the #090d16 + glow default)",
+        "1 purple/indigo gradient surfaces"
+      ],
+      "screenshot": "docs\\qa\\audio-specialist\\lagoinha-vs-jp.web.app_tablet_768x1024.png"
+    },
+    {
+      "viewport": "desktop",
+      "width": 1440,
+      "height": 900,
+      "status": "PASSED",
+      "problems": [],
+      "overflow": false,
+      "scrollWidth": 1440,
+      "clientWidth": 1440,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failedRequests": [],
+      "smallTargets": [],
+      "clipped": [],
+      "contrastIssues": [],
+      "contrastSampled": 120,
+      "contrastBlendSkipped": 0,
+      "srOnlySkipped": 0,
+      "contrastUnparsed": 0,
+      "fonts": [
+        "ui-sans-serif",
+        "ui-monospace"
+      ],
+      "slopWarnings": [
+        "dark navy body background rgb(10, 13, 20) (check: not the #090d16 + glow default)",
+        "1 purple/indigo gradient surfaces"
+      ],
+      "screenshot": "docs\\qa\\audio-specialist\\lagoinha-vs-jp.web.app_desktop_1440x900.png"
+    }
+  ]
+}

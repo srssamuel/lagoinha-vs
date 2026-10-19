@@ -6,8 +6,10 @@ interface AmbientPadBarProps {
   currentPadKey: MusicalKey | null;
   isPadActive: boolean;
   padVolume: number;
+  isAutoFollowEnabled?: boolean;
   onSelectKey: (key: MusicalKey) => void;
   onTogglePad: () => void;
+  onToggleAutoFollow?: () => void;
   onPadVolumeChange: (vol: number) => void;
 }
 
@@ -17,8 +19,10 @@ export const AmbientPadBar: React.FC<AmbientPadBarProps> = ({
   currentPadKey,
   isPadActive,
   padVolume,
+  isAutoFollowEnabled = true,
   onSelectKey,
   onTogglePad,
+  onToggleAutoFollow,
   onPadVolumeChange
 }) => {
   return (
@@ -46,6 +50,20 @@ export const AmbientPadBar: React.FC<AmbientPadBarProps> = ({
           <span className="font-mono font-bold text-purple-300 bg-purple-950/60 border border-purple-800/60 px-2 py-0.5 rounded">
             {currentPadKey ? `Tom ${currentPadKey}` : 'Selecione o Tom'}
           </span>
+          {onToggleAutoFollow && (
+            <button
+              type="button"
+              onClick={onToggleAutoFollow}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition ${
+                isAutoFollowEnabled
+                  ? 'bg-purple-600/30 border-purple-400 text-purple-200'
+                  : 'bg-stage-card border-stage-border text-slate-400 hover:text-white'
+              }`}
+              title="Modulação Automática: Ao mudar de música no repertório, o Pad faz crossfade contínuo para o tom da nova música sem silêncio"
+            >
+              {isAutoFollowEnabled ? 'SEGUIR REPERTÓRIO: ON' : 'SEGUIR REPERTÓRIO: OFF'}
+            </button>
+          )}
         </div>
       </div>
 

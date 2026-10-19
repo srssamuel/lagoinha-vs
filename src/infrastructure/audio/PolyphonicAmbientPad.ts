@@ -113,6 +113,26 @@ export class PolyphonicAmbientPad {
     this.masterGain.gain.exponentialRampToValueAtTime(targetVolume, now + 1.8);
   }
 
+  /**
+   * Modula o Pad atmosférico para um novo tom com crossfade contínuo sem cortes
+   */
+  public crossfadeTo(newKey: MusicalKey, targetVolume: number = 0.4): void {
+    if (this.currentKey === newKey && this.isPlaying) return;
+    this.play(newKey, targetVolume);
+  }
+
+  /**
+   * Ajusta o volume do Pad em tempo real com rampa linear livre de estalos
+   */
+  public setVolume(volume: number): void {
+    if (!this.ctx || !this.masterGain) return;
+    const now = this.ctx.currentTime;
+    const clamped = Math.max(0.0001, Math.min(1.0, volume));
+    this.masterGain.gain.cancelScheduledValues(now);
+    this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+    this.masterGain.gain.linearRampToValueAtTime(clamped, now + 0.05);
+  }
+
   public stop(fadeSeconds: number = 2.0): void {
     if (!this.ctx || !this.masterGain || !this.isPlaying) return;
     const now = this.ctx.currentTime;
