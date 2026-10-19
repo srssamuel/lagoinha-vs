@@ -560,10 +560,11 @@ export const App: React.FC = () => {
         onPadVolumeChange={handlePadVolumeChange}
       />
 
-      {/* Modal de Configuração de Roteamento (IEM/PA Split) */}
+      {/* Modal de Configuração de Roteamento (4CH Discreto / IEM / PA Split) */}
       <RoutingModal
         isOpen={isRoutingModalOpen}
         routingMode={engineState.routingMode}
+        audioHardwareChannels={engineState.audioHardwareChannels}
         onSelectMode={(mode) => {
           audioEngine.setRoutingMode(mode);
           setIsRoutingModalOpen(false);

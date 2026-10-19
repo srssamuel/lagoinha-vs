@@ -17,8 +17,10 @@ interface StemAudioNodes {
   tubeSaturator: WaveShaperNode;
   compressor: DynamicsCompressorNode;
   gainNode: GainNode;
-  leftGain: GainNode;
-  rightGain: GainNode;
+  leftGain: GainNode;   // Ch 1 (VS Left / FOH L)
+  rightGain: GainNode;  // Ch 2 (VS Right / FOH R)
+  ch3Gain: GainNode;    // Ch 3 (Click Dedicated IEM)
+  ch4Gain: GainNode;    // Ch 4 (Guide Dedicated IEM)
   analyser: AnalyserNode;
   timeDomainData: Uint8Array<ArrayBuffer>;
 }
@@ -30,7 +32,10 @@ export class WebAudioEngine implements AudioEnginePort {
   private masterLimiter: DynamicsCompressorNode | null = null;
   private masterAnalyser: AnalyserNode | null = null;
   private masterFreqData: Uint8Array<ArrayBuffer> | null = null;
-  private channelMerger: ChannelMergerNode | null = null;
+  private vsMerger: ChannelMergerNode | null = null;
+  private vsSplitter: ChannelSplitterNode | null = null;
+  private finalMerger: ChannelMergerNode | null = null;
+  private channelMerger: ChannelMergerNode | null = null; // backward compatibility
 
   // Stems audio nodes
   private stemNodes: Map<string, StemAudioNodes> = new Map();
@@ -75,6 +80,24 @@ export class WebAudioEngine implements AudioEnginePort {
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AudioContextClass();
 
+    // Detecção e configuração de saídas físicas multicanal (ex: XR18, UMC404HD, Focusrite Scarlett 4i4/18i20)
+    const maxChannels = this.ctx.destination.maxChannelCount;
+    if (maxChannels >= 4) {
+      try {
+        this.ctx.destination.channelCount = 4;
+        this.ctx.destination.channelCountMode = 'explicit';
+        this.ctx.destination.channelInterpretation = 'discrete';
+      } catch (err) {
+        console.warn('Multichannel destination initialization fallback:', err);
+      }
+    } else {
+      try {
+        this.ctx.destination.channelCount = Math.min(2, maxChannels || 2);
+      } catch {
+        // Fallback para dispositivos estéreo padrão
+      }
+    }
+
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
 
@@ -93,12 +116,24 @@ export class WebAudioEngine implements AudioEnginePort {
     this.masterAnalyser.smoothingTimeConstant = 0.72;
     this.masterFreqData = new Uint8Array(this.masterAnalyser.frequencyBinCount);
 
-    // Canal L e R independentes -> Master Gain -> Master Brickwall Limiter -> Master Analyser -> Saída
-    this.channelMerger = this.ctx.createChannelMerger(2);
-    this.channelMerger.connect(this.masterGain);
+    // VS Master Bus (Canais 1 e 2 -> Master Gain -> Limiter -> Analyser -> Splitter)
+    this.vsMerger = this.ctx.createChannelMerger(2);
+    this.vsSplitter = this.ctx.createChannelSplitter(2);
+    this.vsMerger.connect(this.masterGain);
     this.masterGain.connect(this.masterLimiter);
     this.masterLimiter.connect(this.masterAnalyser);
-    this.masterAnalyser.connect(this.ctx.destination);
+    this.masterAnalyser.connect(this.vsSplitter);
+
+    // Final Discrete 4-Channel Merger (Padrão Leandro Machado Lagoinha):
+    // Ch 0 (Out 1): VS Left (Mesa FOH)
+    // Ch 1 (Out 2): VS Right (Mesa FOH)
+    // Ch 2 (Out 3): Click Track (somente monitoração/IEM)
+    // Ch 3 (Out 4): Guide Track (somente monitoração/IEM)
+    this.finalMerger = this.ctx.createChannelMerger(4);
+    this.channelMerger = this.finalMerger; // backward compatibility
+    this.vsSplitter.connect(this.finalMerger, 0, 0); // Out 1 (FOH L)
+    this.vsSplitter.connect(this.finalMerger, 1, 1); // Out 2 (FOH R)
+    this.finalMerger.connect(this.ctx.destination);
 
     // Pré-cria buffers de click de reserva para Loop Click
     this.clickBufferAccent = ProceduralClickGenerator.createClickBuffer(this.ctx, true);
@@ -149,15 +184,17 @@ export class WebAudioEngine implements AudioEnginePort {
       const compressor = this.ctx.createDynamicsCompressor();
 
       const gainNode = this.ctx.createGain();
-      const leftGain = this.ctx.createGain();
-      const rightGain = this.ctx.createGain();
+      const leftGain = this.ctx.createGain();   // Ch 1 (VS L)
+      const rightGain = this.ctx.createGain();  // Ch 2 (VS R)
+      const ch3Gain = this.ctx.createGain();    // Ch 3 (Click Dedicated IEM)
+      const ch4Gain = this.ctx.createGain();    // Ch 4 (Guide Dedicated IEM)
       const analyser = this.ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.65;
       const timeDomainData = new Uint8Array(analyser.frequencyBinCount);
 
       // Cadeia VST Channel Strip:
-      // PitchShifter (Constant-Tempo, Bypass em Bateria/Loops/Click/Guia) -> HighPass (De-Bleed) -> EQ 3 Bandas -> Tube Saturator -> Compressor -> Gain -> Analyser & Split L/R
+      // PitchShifter (Constant-Tempo, Bypass em Bateria/Loops/Click/Guia) -> HighPass (De-Bleed) -> EQ 3 Bandas -> Tube Saturator -> Compressor -> Gain -> Analyser & 4-Channel Distribution
       pitchShifter.output.connect(highPassFilter);
       highPassFilter.connect(eqLow);
       eqLow.connect(eqMid);
@@ -169,10 +206,21 @@ export class WebAudioEngine implements AudioEnginePort {
       gainNode.connect(analyser);
       gainNode.connect(leftGain);
       gainNode.connect(rightGain);
+      gainNode.connect(ch3Gain);
+      gainNode.connect(ch4Gain);
 
-      // Conecta no mixer: leftGain no canal 0 (Left = IEM), rightGain no canal 1 (Right = PA)
-      leftGain.connect(this.channelMerger, 0, 0);
-      rightGain.connect(this.channelMerger, 0, 1);
+      // Conexões de Barramento:
+      // Canais 1 e 2 passam pelo VS Master Bus (Master Gain + Limiter №6 + Analyser)
+      if (this.vsMerger) {
+        leftGain.connect(this.vsMerger, 0, 0);
+        rightGain.connect(this.vsMerger, 0, 1);
+      }
+
+      // Canais 3 e 4 vão DIRETOS para as saídas físicas discretas (Line-Level puro sem limiter de FOH)
+      if (this.finalMerger) {
+        ch3Gain.connect(this.finalMerger, 0, 2); // Out 3: Click Track
+        ch4Gain.connect(this.finalMerger, 0, 3); // Out 4: Guide Track
+      }
 
       this.stemNodes.set(stem.id, {
         source: null,
@@ -186,6 +234,8 @@ export class WebAudioEngine implements AudioEnginePort {
         gainNode,
         leftGain,
         rightGain,
+        ch3Gain,
+        ch4Gain,
         analyser,
         timeDomainData
       });
@@ -639,7 +689,15 @@ export class WebAudioEngine implements AudioEnginePort {
         if (!isAudible) return;
 
         const level = stemLevels[stem.id] ?? stem.volume * 0.5;
-        if (this.routingMode === 'SPLIT_IEM_PA') {
+        if (this.routingMode === 'MULTI_4CH_DISCRETE') {
+          // No modo 4CH discreto, apenas os stems de playback/VS alimentam o VU Master do PA (Canais 1 e 2).
+          // Click (Canal 3) e Guia (Canal 4) não aparecem no VU de PA da congregação.
+          if (stem.type !== 'click' && stem.type !== 'guide') {
+            const normPan = (stem.pan + 1) / 2;
+            maxLeft = Math.max(maxLeft, level * Math.cos(normPan * (Math.PI / 2)));
+            maxRight = Math.max(maxRight, level * Math.sin(normPan * (Math.PI / 2)));
+          }
+        } else if (this.routingMode === 'SPLIT_IEM_PA') {
           if (stem.type === 'click' || stem.type === 'guide') {
             maxLeft = Math.max(maxLeft, level);
           } else {
@@ -668,6 +726,8 @@ export class WebAudioEngine implements AudioEnginePort {
       peakR
     };
 
+    const audioHardwareChannels = this.ctx ? (this.ctx.destination.maxChannelCount || 2) : 2;
+
     return {
       isPlaying: this.isPlaying,
       currentTime,
@@ -685,7 +745,8 @@ export class WebAudioEngine implements AudioEnginePort {
       countInBars: this.countInBars,
       isCountingIn: this.isCountingIn,
       countInBeat: this.countInBeat,
-      masterRta
+      masterRta,
+      audioHardwareChannels
     };
   }
 
@@ -717,15 +778,25 @@ export class WebAudioEngine implements AudioEnginePort {
       const nodes = this.stemNodes.get(stemId);
       if (!nodes) return;
 
+      // Canal 1: VS Left (Mesa FOH / Split L)
       nodes.leftGain.gain.cancelScheduledValues(now);
-      nodes.leftGain.gain.value = gains.leftGain;
-      nodes.leftGain.gain.setValueAtTime(gains.leftGain, now);
-      nodes.leftGain.gain.linearRampToValueAtTime(gains.leftGain, now + 0.015);
+      nodes.leftGain.gain.setValueAtTime(gains.ch1_vsL, now);
+      nodes.leftGain.gain.linearRampToValueAtTime(gains.ch1_vsL, now + 0.015);
 
+      // Canal 2: VS Right (Mesa FOH / Split R)
       nodes.rightGain.gain.cancelScheduledValues(now);
-      nodes.rightGain.gain.value = gains.rightGain;
-      nodes.rightGain.gain.setValueAtTime(gains.rightGain, now);
-      nodes.rightGain.gain.linearRampToValueAtTime(gains.rightGain, now + 0.015);
+      nodes.rightGain.gain.setValueAtTime(gains.ch2_vsR, now);
+      nodes.rightGain.gain.linearRampToValueAtTime(gains.ch2_vsR, now + 0.015);
+
+      // Canal 3: Click Track dedicado (somente monitoração/IEM)
+      nodes.ch3Gain.gain.cancelScheduledValues(now);
+      nodes.ch3Gain.gain.setValueAtTime(gains.ch3_click, now);
+      nodes.ch3Gain.gain.linearRampToValueAtTime(gains.ch3_click, now + 0.015);
+
+      // Canal 4: Guide Track dedicado (somente monitoração/IEM)
+      nodes.ch4Gain.gain.cancelScheduledValues(now);
+      nodes.ch4Gain.gain.setValueAtTime(gains.ch4_guide, now);
+      nodes.ch4Gain.gain.linearRampToValueAtTime(gains.ch4_guide, now + 0.015);
     });
   }
 
@@ -758,7 +829,7 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   private scheduleClick(time: number, isAccent: boolean): void {
-    if (!this.ctx || !this.channelMerger) return;
+    if (!this.ctx || (!this.finalMerger && !this.channelMerger)) return;
 
     const buffer = isAccent ? this.clickBufferAccent : this.clickBufferRegular;
     if (!buffer) return;
@@ -773,11 +844,27 @@ export class WebAudioEngine implements AudioEnginePort {
     clickGain.gain.setValueAtTime(vol, time);
     clickSource.connect(clickGain);
 
-    if (this.routingMode === 'SPLIT_IEM_PA') {
-      clickGain.connect(this.channelMerger, 0, 0);
+    if (this.routingMode === 'MULTI_4CH_DISCRETE') {
+      // Output 3 exclusivo: Click dedicado para monitoração dos músicos (IEM), zero PA FOH
+      if (this.finalMerger) {
+        clickGain.connect(this.finalMerger, 0, 2);
+      }
+    } else if (this.routingMode === 'SPLIT_IEM_PA') {
+      // Canal 1 (Left IEM fones dos músicos)
+      if (this.vsMerger) {
+        clickGain.connect(this.vsMerger, 0, 0);
+      } else if (this.channelMerger) {
+        clickGain.connect(this.channelMerger, 0, 0);
+      }
     } else {
-      clickGain.connect(this.channelMerger, 0, 0);
-      clickGain.connect(this.channelMerger, 0, 1);
+      // Stereo Full: L e R
+      if (this.vsMerger) {
+        clickGain.connect(this.vsMerger, 0, 0);
+        clickGain.connect(this.vsMerger, 0, 1);
+      } else if (this.channelMerger) {
+        clickGain.connect(this.channelMerger, 0, 0);
+        clickGain.connect(this.channelMerger, 0, 1);
+      }
     }
 
     clickSource.start(time);

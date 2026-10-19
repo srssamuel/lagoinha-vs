@@ -31,6 +31,7 @@ export interface AudioEngineState {
   isCountingIn: boolean;   // True during pre-roll count-in
   countInBeat: number;     // Current countdown beat (1, 2, 3, 4...)
   masterRta?: MasterRtaData;
+  audioHardwareChannels?: number; // Detected physical hardware channels on destination
 }
 
 export interface AudioEnginePort {

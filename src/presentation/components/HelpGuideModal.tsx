@@ -70,7 +70,7 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({ isOpen, onClose 
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>1. Ligação dos Cabos (Split)</span>
+            <span>1. Saídas & Cabos (4CH / Split)</span>
           </button>
 
           <button
@@ -157,51 +157,60 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({ isOpen, onClose 
           {/* ABA 1: LIGAÇÃO DOS CABOS */}
           {activeTab === 'cables' && (
             <div className="space-y-4">
+              {/* Padrão Pro 4 Saídas Discretas (Leandro Machado) */}
+              <div className="p-4 rounded-2xl bg-blue-950/40 border border-blue-500/40">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Padrão Oficial Lagoinha: 4 Saídas Discretas (Leandro Machado)</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                    MESA DIGITAL + INTERFACE USB
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Para mesas de som digitais (ex: Behringer X32/XR18, Midas M32, Yamaha TF/QL, Allen & Heath), o software envia <strong>4 saídas line-level mono independentes</strong> através de uma interface de áudio multicanal USB:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-blue-500/30">
+                    <span className="font-bold text-blue-300 block mb-0.5">Canal 1: VS Left (Playback L) ➔ FOH PA</span>
+                    <span className="text-[11px] text-slate-400">Canal esquerdo do playback estéreo enviado para a mesa principal de som.</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-blue-500/30">
+                    <span className="font-bold text-blue-300 block mb-0.5">Canal 2: VS Right (Playback R) ➔ FOH PA</span>
+                    <span className="text-[11px] text-slate-400">Canal direito do playback estéreo enviado para a mesa principal de som.</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-amber-500/30">
+                    <span className="font-bold text-amber-300 block mb-0.5">Canal 3: Click Track ➔ IEM Músicos</span>
+                    <span className="text-[11px] text-slate-400">Metrônomo dedicado exclusivamente para o fone dos músicos. <strong>ZERO no PA</strong>.</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-purple-500/30">
+                    <span className="font-bold text-purple-300 block mb-0.5">Canal 4: Guide Track ➔ IEM Músicos</span>
+                    <span className="text-[11px] text-slate-400">Voz guia, contagens e instruções exclusivamente para os fones. <strong>ZERO no PA</strong>.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modo Alternativo: Cabo em Y para Saída de Fone 2 Canais */}
               <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/30">
                 <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm mb-1">
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Como Ligar o Notebook na Mesa de Som (Split Estéreo Oficial)</span>
+                  <span>Modo Alternativo: Split Estéreo em Y (2 Canais / Sem Interface Externa)</span>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Para que o som do metrônomo (click) e a voz guia nunca vazem para a igreja, o sistema divide a saída estéreo em dois caminhos independentes utilizando um cabo em <strong>Y (P2 macho para 2x P10 macho)</strong> ou uma <strong>Interface USB</strong>:
+                <p className="text-xs text-slate-300 leading-relaxed mb-3">
+                  Quando o notebook é conectado na mesa usando apenas a saída P2 de fone com um cabo em <strong>Y (P2 para 2x P10)</strong>:
                 </p>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Lado Esquerdo L */}
-                <div className="p-4 rounded-2xl bg-slate-900/90 border border-blue-500/40">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black text-blue-400 uppercase tracking-wide">
-                      Canal Esquerdo (L) • FONES DO PALCO (IEM)
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-bold">
-                      Banda & Baterista
-                    </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-blue-500/40 text-xs">
+                    <span className="font-bold text-blue-400 block mb-1">Canal Esquerdo (L) • Fones IEM</span>
+                    <p className="text-slate-300 text-[11px]">Click + Guia + Instrumentos para os fones da banda.</p>
                   </div>
-                  <ul className="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
-                    <li>Contém o <strong>Metrônomo (Click)</strong> alto e claro.</li>
-                    <li>Contém a <strong>Voz Guia</strong> ("Intro 2, 3, 4", "Refrão", "Final").</li>
-                    <li>Contém as <strong>Multitracks da banda</strong> em volume equilibrado para todos tocarem juntos.</li>
-                    <li>Vai para o <strong>amplificador de fones</strong> (ex: Behringer Powerplay).</li>
-                  </ul>
-                </div>
-
-                {/* Lado Direito R */}
-                <div className="p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/40">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black text-emerald-400 uppercase tracking-wide">
-                      Canal Direito (R) • AUDITÓRIO & PA (IGREJA)
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                      Som da Igreja
-                    </span>
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/40 text-xs">
+                    <span className="font-bold text-emerald-400 block mb-1">Canal Direito (R) • Mesa FOH / PA</span>
+                    <p className="text-slate-300 text-[11px]">Apenas as faixas da banda. O Click e a Guia têm <strong>ZERO absoluto</strong>.</p>
                   </div>
-                  <ul className="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
-                    <li>Contém <strong>apenas os instrumentos musicais</strong> da multitrack.</li>
-                    <li>O Click e a Guia têm <strong>VOLUME ZERO ABSOLUTO</strong> neste canal.</li>
-                    <li>A congregação ouve apenas os teclados, violão, guitarras e orquestra com qualidade de estúdio.</li>
-                    <li>Vai direto para um canal da <strong>mesa de som principal (PA)</strong>.</li>
-                  </ul>
                 </div>
               </div>
             </div>

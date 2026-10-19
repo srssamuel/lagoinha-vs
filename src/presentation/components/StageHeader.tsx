@@ -12,7 +12,8 @@ import {
   FileText,
   Lock,
   Cpu,
-  BookOpen
+  BookOpen,
+  Layers
 } from 'lucide-react';
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
@@ -270,28 +271,37 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
           </button>
         )}
 
-        {/* Roteamento de Palco (Split vs Stereo) com Tooltip Didático */}
+        {/* Roteamento de Palco (4CH Discreto vs Split vs Stereo) com Tooltip Didático */}
         <button
           onClick={onOpenRoutingModal}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all ${
-            routingMode === 'SPLIT_IEM_PA'
+            routingMode === 'MULTI_4CH_DISCRETE'
+              ? 'bg-blue-600/20 border-blue-500/50 text-blue-300 hover:bg-blue-600/30 shadow-md shadow-blue-500/10'
+              : routingMode === 'SPLIT_IEM_PA'
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-              : 'bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20'
+              : 'bg-purple-500/10 border-purple-500/30 text-purple-400 hover:bg-purple-500/20'
           }`}
           title={
-            routingMode === 'SPLIT_IEM_PA'
+            routingMode === 'MULTI_4CH_DISCRETE'
+              ? '4 Saídas Discretas Ativas (Padrão Leandro Machado): Ch 1 (VS L FOH) | Ch 2 (VS R FOH) | Ch 3 (Click IEM) | Ch 4 (Guide IEM)'
+              : routingMode === 'SPLIT_IEM_PA'
               ? 'Split Estéreo Ativo: Canal L (Fones) = Click + Banda | Canal R (Mesa Som) = Somente Banda (Zero Click)'
               : 'Modo Estéreo Normal: Pan estéreo livre (Recomendado para ensaio ou gravação)'
           }
         >
-          {routingMode === 'SPLIT_IEM_PA' ? (
+          {routingMode === 'MULTI_4CH_DISCRETE' ? (
+            <>
+              <Layers className="w-3.5 h-3.5 text-blue-400" />
+              <span>4CH DISCRETO</span>
+            </>
+          ) : routingMode === 'SPLIT_IEM_PA' ? (
             <>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>SPLIT L/R (PALCO)</span>
             </>
           ) : (
             <>
-              <Radio className="w-3.5 h-3.5 text-blue-400" />
+              <Radio className="w-3.5 h-3.5 text-purple-400" />
               <span>STEREO (ENSAIO)</span>
             </>
           )}

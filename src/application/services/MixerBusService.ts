@@ -35,10 +35,31 @@ export class MixerBusService {
         stem.volume
       );
 
-      // Verificação fail-safe estrita: Click/Guia NUNCA podem vazar para o PA (Right) no modo Split
+      // Verificação fail-safe estrita em SPLIT_IEM_PA: Click/Guia NUNCA podem vazar para o PA (Right)
       if (routingMode === 'SPLIT_IEM_PA' && (stem.type === 'click' || stem.type === 'guide')) {
-        if (gains.rightGain !== 0) {
+        if (gains.rightGain !== 0 || gains.ch2_vsR !== 0) {
           throw new Error(`SECURITY AUDIT FAIL: Stem "${stem.name}" (${stem.type}) leaked to FOH PA!`);
+        }
+      }
+
+      // Verificação fail-safe estrita em MULTI_4CH_DISCRETE (Padrão Leandro Machado):
+      if (routingMode === 'MULTI_4CH_DISCRETE') {
+        if (stem.type === 'click' || stem.type === 'guide') {
+          // Monitoração NUNCA pode vazar para os canais 1 e 2 do PA / FOH
+          if (gains.ch1_vsL !== 0 || gains.ch2_vsR !== 0) {
+            throw new Error(`SECURITY AUDIT FAIL: Monitor stem "${stem.name}" (${stem.type}) leaked to FOH PA (Ch 1/2)!`);
+          }
+          if (stem.type === 'click' && gains.ch4_guide !== 0) {
+            throw new Error(`SECURITY AUDIT FAIL: Click stem "${stem.name}" leaked to Guide channel (Ch 4)!`);
+          }
+          if (stem.type === 'guide' && gains.ch3_click !== 0) {
+            throw new Error(`SECURITY AUDIT FAIL: Guide stem "${stem.name}" leaked to Click channel (Ch 3)!`);
+          }
+        } else {
+          // Instrumentos de playback NUNCA podem vazar para as saídas 3 (Click) ou 4 (Guide)
+          if (gains.ch3_click !== 0 || gains.ch4_guide !== 0) {
+            throw new Error(`SECURITY AUDIT FAIL: Playback stem "${stem.name}" leaked to Click/Guide discrete outputs!`);
+          }
         }
       }
 
