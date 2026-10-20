@@ -6,6 +6,7 @@
 node_modules/
 dist/
 dist-review/
+Louvor_Lagoinha_GoogleDrive/
 *.zip
 build/
 coverage/
