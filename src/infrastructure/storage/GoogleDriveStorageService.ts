@@ -19,11 +19,11 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         const parsed = JSON.parse(saved);
         this.config = new GoogleDriveConfig(parsed);
       } else {
-        // Configuração inicial padrão recomendada para o Louvor da Lagoinha
+        // Configuração inicial padrão para o Louvor da Lagoinha
         this.config = new GoogleDriveConfig({
-          folderId: '1Lagoinha-Multitracks-JP-Official',
-          folderName: 'Google Drive Oficial — Louvor Lagoinha JP',
-          sharedUrl: 'https://drive.google.com/drive/folders/1Lagoinha-Multitracks-JP-Official',
+          folderId: '',
+          folderName: 'Google Drive Oficial — Louvor Lagoinha',
+          sharedUrl: '',
           lastSyncedAt: new Date().toISOString(),
           autoSyncOnStart: true
         });
@@ -52,14 +52,15 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
    * Sincroniza a pasta do Google Drive com as multitracks da igreja.
    * Suporta URLs de pastas compartilhadas públicas ou IDs diretos.
    */
-  public async syncDriveFolder(folderIdOrUrl: string): Promise<CloudSong[]> {
-    const folderId = GoogleDriveConfig.extractFolderId(folderIdOrUrl) || folderIdOrUrl.trim();
-    if (!folderId) {
-      throw new Error('Link ou ID de pasta do Google Drive inválido.');
-    }
+  public async syncDriveFolder(folderIdOrUrl: string = ''): Promise<CloudSong[]> {
+    const trimmed = (folderIdOrUrl || '').trim();
+    const folderId = GoogleDriveConfig.extractFolderId(trimmed) || trimmed || 'drive-lagoinha-acervo';
 
     if (this.config) {
       this.config.folderId = folderId;
+      if (trimmed.startsWith('http')) {
+        this.config.sharedUrl = trimmed;
+      }
       this.config.lastSyncedAt = new Date().toISOString();
       await this.saveConfig(this.config);
     }
