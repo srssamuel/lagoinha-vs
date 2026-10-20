@@ -207,6 +207,32 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
           { id: 'st-8', name: 'Atmosphere Pad', type: 'pad', fileSizeMb: 1.4 },
           { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
         ]
+      }),
+      new CloudSong({
+        id: 'gdrive-worship-ambient-pads',
+        title: 'Pacote de PADs Atmosféricos (12 Tons)',
+        artist: 'Lagoinha Ambient Worship (Google Drive Oficial)',
+        originalKey: 'C',
+        bpm: 70,
+        timeSignature: { beats: 4, value: 4 },
+        duration: 360,
+        stemsCount: 12,
+        tags: ['Google Drive', 'PADs Contínuos', '12 Tons', 'Atmosfera'],
+        uploadedBy: 'Ministério de Louvor Lagoinha',
+        uploadedAt: '20/10/2026',
+        storageFolder: `gdrive://${folderId}/pads-ambient-12-tons.zip`,
+        source: 'google_drive',
+        driveFileId: '1pads-ambient-12tons',
+        driveFolderId: folderId,
+        stems: [
+          { id: 'pad-c', name: 'Pad Quente Contínuo — Tom C', type: 'pad', fileSizeMb: 3.5 },
+          { id: 'pad-d', name: 'Pad Quente Contínuo — Tom D', type: 'pad', fileSizeMb: 3.5 },
+          { id: 'pad-e', name: 'Pad Quente Contínuo — Tom E', type: 'pad', fileSizeMb: 3.5 },
+          { id: 'pad-f', name: 'Pad Quente Contínuo — Tom F', type: 'pad', fileSizeMb: 3.5 },
+          { id: 'pad-g', name: 'Pad Quente Contínuo — Tom G', type: 'pad', fileSizeMb: 3.5 },
+          { id: 'pad-a', name: 'Pad Quente Contínuo — Tom A', type: 'pad', fileSizeMb: 3.5 },
+          { id: 'pad-b', name: 'Pad Quente Contínuo — Tom B', type: 'pad', fileSizeMb: 3.5 }
+        ]
       })
     ];
 

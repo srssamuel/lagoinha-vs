@@ -13,6 +13,7 @@ const FOLDER_BY_CLOUD_ID: Record<string, string> = {
   'cloud-ruja-o-leao': 'song-ruja-o-leao',
   'cloud-bondade-de-deus': 'cloud-bondade-deus',
   'gdrive-bondade-de-deus': 'cloud-bondade-deus',
+  'gdrive-worship-ambient-pads': 'o-nosso-general',
   'cloud-santo-pra-sempre': 'cloud-santo-pra-sempre',
   'cloud-vitorioso-es': 'song-vitorioso-es',
   'cloud-ousado-amor': 'song-ousado-amor'
