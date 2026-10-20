@@ -405,6 +405,27 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                   <span>{driveSyncMessage.text}</span>
                 </div>
               )}
+
+              {/* Dica Didática para Conectar a Pasta Real do Google Drive */}
+              <div className="mt-2.5 p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-[11px] text-slate-300 flex items-start gap-2.5">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[10px] uppercase shrink-0">
+                  Como Conectar
+                </span>
+                <p className="leading-relaxed">
+                  1. Crie uma pasta no seu <a href="https://drive.google.com" target="_blank" rel="noreferrer" className="text-emerald-400 underline hover:text-emerald-300">Google Drive</a> (ex: <em>Louvor Lagoinha — VS e PADs</em>). <br />
+                  2. Clique com o botão direito na pasta &rarr; <strong>Compartilhar</strong> &rarr; em <em>Acesso Geral</em> marque <strong>&quot;Qualquer pessoa com o link&quot;</strong>. <br />
+                  3. Copie o link da sua pasta, cole no campo acima e clique em <strong>Sincronizar Pasta</strong>.
+                </p>
+              </div>
+
+              {driveFolderInput.includes('1Lagoinha-Multitracks-JP-Official') && (
+                <div className="mt-2 flex items-center gap-2 text-[11px] rounded-xl px-3 py-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Nota:</strong> O endereço acima é um identificador de modelo. Substitua-o pelo link da pasta que você criou no seu Google Drive para que todos os músicos acessem seus arquivos reais.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Lista de Multitracks do Google Drive */}
