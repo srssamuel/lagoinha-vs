@@ -5,7 +5,7 @@ import { ProceduralClickGenerator } from '../../../src/infrastructure/audio/Proc
 import { DemoWorshipSongs } from '../../../src/infrastructure/mock/DemoWorshipSongs';
 
 describe('IndexedDbStorageService — Setlist Serialization & JSON Backup', () => {
-  it('serializes and deserializes songs preserving sections, stems, DSP, and Pitch Lock', () => {
+  it('serializes and deserializes songs preserving sections, stems, DSP, and Pitch Policy (ENG-01 & ENG-03)', () => {
     const originalSong = DemoWorshipSongs.getPresetSongs()[0]!;
     const serialized = IndexedDbStorageService.serializeSong(originalSong);
     expect(serialized.id).toBe(originalSong.id);
@@ -17,8 +17,14 @@ describe('IndexedDbStorageService — Setlist Serialization & JSON Backup', () =
     expect(deserialized.title).toBe(originalSong.title);
     expect(deserialized.bpm).toBe(originalSong.bpm);
     expect(deserialized.stems.length).toBe(originalSong.stems.length);
-    expect(deserialized.stems.find((s) => s.type === 'drums')?.isPitchShiftable).toBe(false);
-    expect(deserialized.stems.find((s) => s.type === 'guitars')?.isPitchShiftable).toBe(true);
+
+    const drumStem = deserialized.stems.find((s) => s.type === 'drums');
+    expect(drumStem?.isPitchShiftable).toBe(false);
+    expect(drumStem?.pitchPolicy).toBe('percussive');
+
+    const guitarStem = deserialized.stems.find((s) => s.type === 'guitars');
+    expect(guitarStem?.isPitchShiftable).toBe(true);
+    expect(guitarStem?.pitchPolicy).toBe('harmonic');
   });
 
   it('exports and imports setlists as valid JSON backup files', () => {
@@ -30,6 +36,49 @@ describe('IndexedDbStorageService — Setlist Serialization & JSON Backup', () =
     const imported = IndexedDbStorageService.importSetlistFromJson(jsonStr);
     expect(imported.length).toBe(songs.length);
     expect(imported[0]?.title).toBe(songs[0]?.title);
+  });
+
+  it('detects browser storage capabilities and handles persistence status', async () => {
+    const support = IndexedDbStorageService.checkStorageSupport();
+    expect(typeof support.hasIndexedDb).toBe('boolean');
+    expect(typeof support.hasStorageManager).toBe('boolean');
+
+    const status = await IndexedDbStorageService.checkPersistenceStatus();
+    expect(typeof status.isPersisted).toBe('boolean');
+    expect(typeof status.supportStorageManager).toBe('boolean');
+  });
+
+  it('correctly verifies offline readiness rejecting un-downloaded cloud URLs (ENG-01)', async () => {
+    const song = DemoWorshipSongs.getPresetSongs()[0]!;
+    // Stems com /stems/ são estáticos empacotados e são offline
+    const bundledReport = await IndexedDbStorageService.verifySongOfflineReadiness(song);
+    expect(bundledReport.totalStems).toBe(song.stems.length);
+    expect(bundledReport.isComplete).toBe(true);
+
+    // Se um stem tiver uma URL remota na nuvem (http), NÃO deve ser considerado pronto offline
+    const cloudSong = IndexedDbStorageService.deserializeSong({
+      ...IndexedDbStorageService.serializeSong(song),
+      id: 'cloud-pending-song',
+      stems: [
+        {
+          id: 'cloud-stem-1',
+          name: 'Guitars Cloud',
+          type: 'guitars',
+          volume: 1,
+          pan: 0,
+          isMuted: false,
+          isSolo: false,
+          isPitchShiftable: true,
+          pitchPolicy: 'harmonic',
+          audioUrl: 'https://storage.googleapis.com/church-stems/guitars.wav'
+        }
+      ]
+    });
+
+    const cloudReport = await IndexedDbStorageService.verifySongOfflineReadiness(cloudSong);
+    expect(cloudReport.isComplete).toBe(false);
+    expect(cloudReport.missingStems.length).toBe(1);
+    expect(cloudReport.missingStems[0]).toContain('Requer download da nuvem');
   });
 });
 

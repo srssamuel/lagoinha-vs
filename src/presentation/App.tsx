@@ -76,18 +76,19 @@ export const App: React.FC = () => {
 
   const currentSong = songs[currentSongIndex] ?? null;
 
-  // Carrega músicas customizadas salvas previamente no IndexedDB
+  // Carrega músicas customizadas salvas previamente no IndexedDB (isoladas por tenant)
   useEffect(() => {
-    void IndexedDbStorageService.loadCustomSongs().then((saved) => {
+    void IndexedDbStorageService.loadCustomSongs(currentUser?.churchId).then((saved) => {
+      const defaultPresetSongs = DemoWorshipSongs.getPresetSongs();
       if (saved.length > 0) {
-        setSongs((prev) => {
-          const existingIds = new Set(prev.map((s) => s.id));
-          const toAdd = saved.filter((s) => !existingIds.has(s.id));
-          return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
-        });
+        const existingIds = new Set(defaultPresetSongs.map((s) => s.id));
+        const toAdd = saved.filter((s) => !existingIds.has(s.id));
+        setSongs([...defaultPresetSongs, ...toAdd]);
+      } else {
+        setSongs(defaultPresetSongs);
       }
     });
-  }, []);
+  }, [currentUser?.churchId]);
 
   // Inscrição no estado de autenticação
   useEffect(() => {
@@ -468,6 +469,44 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
+      {/* Alerta de Segurança de Rota de Áudio de Palco (ENG-02) */}
+      {engineState.routeHealth === 'lost' && (
+        <div className="bg-red-950/90 border-b border-red-500 text-red-100 px-4 py-2 flex items-center justify-between z-50 text-xs sm:text-sm animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="font-bold uppercase tracking-wider bg-red-600 px-2 py-0.5 rounded text-[10px] text-white">Falha de Saída</span>
+            <span>{engineState.routeLossReason || 'A interface de áudio foi desconectada. Reprodução interrompida para proteger PA e fones.'}</span>
+          </div>
+          <button
+            onClick={() => setIsRoutingModalOpen(true)}
+            className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-semibold rounded text-xs transition"
+          >
+            Abrir Roteamento
+          </button>
+        </div>
+      )}
+      {engineState.routeHealth === 'reconnected' && (
+        <div className="bg-amber-950/90 border-b border-amber-500 text-amber-100 px-4 py-2 flex items-center justify-between z-50 text-xs sm:text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-bold uppercase tracking-wider bg-amber-600 px-2 py-0.5 rounded text-[10px] text-white">Interface Reconectada</span>
+            <span>Interface de áudio restabelecida. Revalide a rota física antes de retomar o playback.</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => void audioEngine.confirmRouteRecovery()}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded text-xs transition"
+            >
+              Revalidar Saída Agora
+            </button>
+            <button
+              onClick={() => setIsRoutingModalOpen(true)}
+              className="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs text-amber-200"
+            >
+              Verificar Canais
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro, Plugins VST e Banco de VS */}
       <StageHeader
         songs={songs}
@@ -523,6 +562,7 @@ export const App: React.FC = () => {
           songs={songs}
           currentSongIndex={currentSongIndex}
           isPlaying={engineState.isPlaying}
+          currentUser={currentUser}
           onSelectSong={handleSelectSong}
           onRemoveSong={handleRemoveSong}
           onMoveSong={handleMoveSong}
@@ -604,6 +644,11 @@ export const App: React.FC = () => {
         audioHardwareChannels={engineState.audioHardwareChannels}
         availableDevices={engineState.availableAudioDevices}
         selectedDeviceId={engineState.selectedAudioDeviceId}
+        routeHealth={engineState.routeHealth}
+        routeLossReason={engineState.routeLossReason}
+        onConfirmRouteRecovery={() => {
+          void audioEngine.confirmRouteRecovery();
+        }}
         onSelectMode={(mode) => {
           audioEngine.setRoutingMode(mode);
           setIsRoutingModalOpen(false);

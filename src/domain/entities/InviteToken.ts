@@ -5,6 +5,7 @@ export interface InviteTokenProps {
   token: string;
   targetRole: UserRole;
   churchBranch: string;
+  churchId?: string;
   createdAt?: string;
   expiresAt: string | null; // ISO Date string or null for no expiry
   maxUses?: number;         // Default 1 (single use) or Infinity
@@ -19,6 +20,7 @@ export class InviteToken {
   public readonly token: string;
   public readonly targetRole: UserRole;
   public readonly churchBranch: string;
+  public readonly churchId: string;
   public readonly createdAt: string;
   public readonly expiresAt: string | null;
   public readonly maxUses: number;
@@ -32,6 +34,7 @@ export class InviteToken {
     this.token = props.token;
     this.targetRole = props.targetRole;
     this.churchBranch = props.churchBranch || 'Lagoinha João Pessoa';
+    this.churchId = props.churchId || 'lagoinha-jp';
     this.createdAt = props.createdAt || new Date().toISOString();
     this.expiresAt = props.expiresAt;
     this.maxUses = props.maxUses ?? 1;

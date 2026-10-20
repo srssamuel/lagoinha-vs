@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Song } from '../../domain/entities/Song';
+import { User } from '../../domain/entities/User';
 import { SongSection } from '../../domain/value-objects/SongSection';
 import {
   ListMusic,
@@ -23,6 +24,7 @@ interface SetlistSidebarProps {
   songs: Song[];
   currentSongIndex: number;
   isPlaying: boolean;
+  currentUser?: User | null;
   onSelectSong: (index: number) => void;
   onRemoveSong: (index: number) => void;
   onMoveSong: (fromIndex: number, toIndex: number) => void;
@@ -35,6 +37,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
   songs,
   currentSongIndex,
   isPlaying,
+  currentUser,
   onSelectSong,
   onRemoveSong,
   onMoveSong,
@@ -90,12 +93,12 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         );
 
         let detectedDuration = 0;
-        const stems: TrackStem[] = entries.map((entry, idx) => {
+        const stemBlobPairs = entries.map((entry, idx) => {
           if (entry.durationSeconds && entry.durationSeconds > detectedDuration) {
             detectedDuration = entry.durationSeconds;
           }
           const info = TrackStem.classifyStemFromFilename(entry.filename);
-          return new TrackStem({
+          const stem = new TrackStem({
             id: `zip-stem-${Date.now()}-${idx}`,
             name: info.displayName,
             type: info.type,
@@ -106,6 +109,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
             isPitchShiftable: info.isPitchShiftable,
             audioUrl: URL.createObjectURL(entry.blob)
           });
+          return { stem, blob: entry.blob };
         });
 
         const orderRank: Record<TrackStem['type'], number> = {
@@ -122,7 +126,8 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           vocals: 11,
           fx: 12
         };
-        stems.sort((a, b) => orderRank[a.type] - orderRank[b.type]);
+        stemBlobPairs.sort((a, b) => orderRank[a.stem.type] - orderRank[b.stem.type]);
+        const stems = stemBlobPairs.map((p) => p.stem);
 
         VstPluginRackService.applySmartAutoFixAll(stems);
 
@@ -138,11 +143,15 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           timeSignature: { beats: 4, value: 4 },
           duration,
           sections: buildStandardSections(songId, duration, meta.bpm),
-          stems
+          stems,
+          churchId: currentUser?.churchId || 'lagoinha-jp'
         });
 
-        // Salva no IndexedDB para persistência offline
-        void IndexedDbStorageService.saveCustomSong(newSong);
+        // Salva no IndexedDB para persistência offline permanente (metadados + blobs de áudio pareados)
+        await IndexedDbStorageService.saveCustomSong(newSong);
+        for (const pair of stemBlobPairs) {
+          await IndexedDbStorageService.saveStemAudioBlob(songId, pair.stem.id, pair.blob);
+        }
 
         onImportCustomSong(newSong);
       } catch (err) {
@@ -170,9 +179,9 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       }
     }
 
-    const stems: TrackStem[] = fileArray.map((file, idx) => {
+    const stemBlobPairs = fileArray.map((file, idx) => {
       const info = TrackStem.classifyStemFromFilename(file.name);
-      return new TrackStem({
+      const stem = new TrackStem({
         id: `imported-stem-${Date.now()}-${idx}`,
         name: info.displayName,
         type: info.type,
@@ -183,6 +192,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         isPitchShiftable: info.isPitchShiftable,
         audioUrl: URL.createObjectURL(file)
       });
+      return { stem, blob: file };
     });
 
     const orderRank: Record<TrackStem['type'], number> = {
@@ -199,7 +209,8 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       vocals: 11,
       fx: 12
     };
-    stems.sort((a, b) => orderRank[a.type] - orderRank[b.type]);
+    stemBlobPairs.sort((a, b) => orderRank[a.stem.type] - orderRank[b.stem.type]);
+    const stems = stemBlobPairs.map((p) => p.stem);
 
     VstPluginRackService.applySmartAutoFixAll(stems);
 
@@ -215,10 +226,14 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       timeSignature: { beats: 4, value: 4 },
       duration,
       sections: buildStandardSections(songId, duration, 120),
-      stems
+      stems,
+      churchId: currentUser?.churchId || 'lagoinha-jp'
     });
 
-    void IndexedDbStorageService.saveCustomSong(newSong);
+    await IndexedDbStorageService.saveCustomSong(newSong);
+    for (const pair of stemBlobPairs) {
+      await IndexedDbStorageService.saveStemAudioBlob(songId, pair.stem.id, pair.blob);
+    }
     onImportCustomSong(newSong);
   };
 

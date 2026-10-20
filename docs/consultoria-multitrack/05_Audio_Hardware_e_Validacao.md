@@ -90,15 +90,19 @@ Antes de autorizar o uso em cultos oficiais ou comercialização, o sistema deve
 * **Critério de Sucesso:** Nenhum crash da aba; nenhuma perda de sincronismo entre pistas; travamento estrito na cabeça do compasso musical.
 
 ### Teste 3: Desconexão e Falha Física da Interface USB (20 Ciclos)
-* **Objetivo:** Validar o comportamento do sistema diante de falhas de cabo ou remoção acidental da interface.
-* **Metodologia:** Puxar o cabo USB da interface durante a reprodução da música com faders abertos.
-* **Critério de Sucesso:**
-  * O sistema detecta a desconexão em menos de 100ms.
-  * O áudio é **imediatamente silenciado** (Stop/Pause de proteção).
-  * **PROIBIÇÃO INEGOCIÁVEL:** O sinal do metrônomo NUNCA pode ser redirecionado para o alto-falante padrão do notebook.
-  * Ao reconectar o cabo, o sistema exibe alerta e exige confirmação manual do operador para retomar a execução.
+* **Objetivo:** Validar o comportamento do sistema diante de falhas de cabo ou remoção acidental da interface multicanal.
+* **Limitação Técnica Reconhecida:** O evento `devicechange` informa que o catálogo de dispositivos mudou; ele é assíncrono e não fornece garantia temporal determinística em microssegundos antes de o Windows tentar transferir o fluxo de áudio para a saída padrão (ex: alto-falantes internos do laptop).
+* **Metodologia de Bancada:** Puxar o cabo USB da interface durante a reprodução da música com faders abertos; monitorar a saída física do laptop com osciloscópio / RTA para medir se houve qualquer transiente sonoro residual.
+* **Critério de Sucesso do Software:**
+  * O listener com debounce (300ms) reavalia a enumeração e constata a perda do dispositivo selecionado.
+  * O motor executa **interrupção de emergência (`pause()` e cancelamento de agendamento)**.
+  * **BLOQUEIO DE FALLBACK:** O sistema trava a saída e NÃO redireciona o fluxo para a saída padrão do sistema.
+  * O estado `routeStatus = 'lost'` é publicado para a interface gráfica, exibindo modal de alerta de emergência.
+  * Ao reconectar a interface, o estado transita para `'reconnected'`, exigindo ação explícita do operador para revalidar a rota antes de qualquer retomada.
 
-### Teste 4: Medição de Isolamento e Relação Sinal-Ruído
-* **Objetivo:** Comprovar a ausência de crosstalk (vazamento elétrico/digital) entre os barramentos.
-* **Metodologia:** Enviar sinal máximo (0 dBFS) nos canais de Click e Guia; medir o sinal residual nos canais 1 e 2 (FOH).
-* **Critério de Sucesso:** Sinal residual no barramento digital inferior a **-90 dBFS** (praticamente inaudível e abaixo do ruído ambiente de qualquer templo).
+### Teste 4: Medição de Isolamento e Relação Sinal-Ruído (Validação Física em Bancada)
+* **Objetivo:** Comprovar a ausência de crosstalk (vazamento elétrico/digital) entre os barramentos privados (Click/Guia) e públicos (FOH).
+* **Distinção de Evidências:** Teste unitário prova isolamento no grafo digital (-$\infty$ dBFS). A medição física em bancada analisa vazamento analógico no conversor D/A da interface e cabos P10/XLR balanceados.
+* **Metodologia:** Enviar sinal senoidal em nível de pico (0 dBFS a 1 kHz) exclusivamente nos canais 3 e 4 (Click e Guia); medir com analisador de áudio nas saídas físicas 1 e 2 (FOH L/R) e no barramento Master LR da mesa de som.
+* **Critério de Sucesso:** Sinal residual nas saídas 1 e 2 inferior a **-85 dBFS** (piso de ruído analógico aceitável para sistemas de PA profissionais).
+

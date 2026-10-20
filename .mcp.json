@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "codebase-memory": {
+      "type": "stdio",
+      "command": "C:/Projetos IA/03_LABS_E_EXPERIMENTOS/maestro-upgrade-2026-09-28/infra/cbm/codebase-memory-mcp.exe",
+      "args": ["--tool-profile=analysis"],
+      "env": {
+        "CBM_ALLOWED_ROOT": "C:/Projetos IA/02_PROJETOS_ATIVOS/lagoinha-vs",
+        "CBM_CACHE_DIR": "${LOCALAPPDATA}/maestro/codebase-memory-cache",
+        "DO_NOT_TRACK": "1"
+      }
+    }
+  }
+}

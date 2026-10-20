@@ -23,8 +23,8 @@ export interface AuthPort {
   onAuthStateChanged(callback: (user: User | null) => void): () => void;
 
   // Gestão de Usuários (Painel do Administrador)
-  listPendingUsers(): Promise<User[]>;
-  listAllUsers(): Promise<User[]>;
+  listPendingUsers(churchId?: string): Promise<User[]>;
+  listAllUsers(churchId?: string): Promise<User[]>;
   approveUser(uid: string, assignedRole: UserRole, adminUid: string): Promise<User>;
   rejectUser(uid: string, adminUid: string): Promise<void>;
   updateUserRole(uid: string, newRole: UserRole, adminUid: string): Promise<User>;

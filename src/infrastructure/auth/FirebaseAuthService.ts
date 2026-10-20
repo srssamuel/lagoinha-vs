@@ -14,6 +14,7 @@ interface StoredUserRecord {
   photoURL?: string;
   role: UserRole;
   churchBranch: string;
+  churchId?: string;
   status: UserStatus;
   instrumentOrMinistry?: string;
   approvedBy?: string;
@@ -42,6 +43,7 @@ export class FirebaseAuthService implements AuthPort {
           displayName: 'Leandro Machado',
           role: 'admin',
           churchBranch: 'Lagoinha João Pessoa',
+          churchId: 'lagoinha-jp',
           status: 'active',
           instrumentOrMinistry: 'Direção Musical & FOH',
           createdAt: new Date().toISOString()
@@ -54,6 +56,7 @@ export class FirebaseAuthService implements AuthPort {
           displayName: 'Marcos Silva',
           role: 'pending',
           churchBranch: 'Lagoinha João Pessoa',
+          churchId: 'lagoinha-jp',
           status: 'pending',
           instrumentOrMinistry: 'Guitarra Elétrica',
           createdAt: new Date(Date.now() - 3600 * 1000).toISOString()
@@ -79,6 +82,7 @@ export class FirebaseAuthService implements AuthPort {
           photoURL: parsed.photoURL,
           role: parsed.role as UserRole,
           churchBranch: parsed.churchBranch || 'Lagoinha João Pessoa',
+          churchId: parsed.churchId || 'lagoinha-jp',
           status: parsed.status as UserStatus,
           instrumentOrMinistry: parsed.instrumentOrMinistry
         });
@@ -94,6 +98,7 @@ export class FirebaseAuthService implements AuthPort {
           displayName: 'Leandro Machado',
           role: 'admin',
           churchBranch: 'Lagoinha João Pessoa',
+          churchId: 'lagoinha-jp',
           status: 'active',
           instrumentOrMinistry: 'Direção Musical & FOH'
         });
@@ -110,6 +115,7 @@ export class FirebaseAuthService implements AuthPort {
       displayName: 'Leandro Machado (Google)',
       role: 'admin',
       churchBranch: 'Lagoinha João Pessoa',
+      churchId: 'lagoinha-jp',
       status: 'active'
     });
 
@@ -130,6 +136,7 @@ export class FirebaseAuthService implements AuthPort {
         photoURL: existing.photoURL,
         role: existing.role,
         churchBranch: existing.churchBranch,
+        churchId: existing.churchId || 'lagoinha-jp',
         status: existing.status,
         instrumentOrMinistry: existing.instrumentOrMinistry
       });
@@ -150,6 +157,7 @@ export class FirebaseAuthService implements AuthPort {
       displayName: email.split('@')[0] || 'Membro do Louvor',
       role: isLeadershipEmail ? 'admin' : 'pending',
       churchBranch: 'Lagoinha João Pessoa',
+      churchId: 'lagoinha-jp',
       status: isLeadershipEmail ? 'active' : 'pending'
     });
 
@@ -167,8 +175,10 @@ export class FirebaseAuthService implements AuthPort {
   ): Promise<User> {
     let assignedRole: UserRole = 'pending';
     let assignedStatus: UserStatus = 'pending';
+    let assignedChurchBranch = 'Lagoinha João Pessoa';
+    let assignedChurchId = 'lagoinha-jp';
 
-    // Se informou um token de convite válido, auto-aprova imediatamente com a role do convite!
+    // Se informou um token de convite válido, auto-aprova imediatamente com a role e congregação do convite!
     if (inviteTokenString) {
       const invite = await this.validateInviteToken(inviteTokenString);
       if (invite) {
@@ -176,6 +186,8 @@ export class FirebaseAuthService implements AuthPort {
         this.saveInviteTokenToDb(invite);
         assignedRole = invite.targetRole;
         assignedStatus = 'active';
+        assignedChurchBranch = invite.churchBranch;
+        assignedChurchId = invite.churchId;
       }
     }
 
@@ -184,7 +196,8 @@ export class FirebaseAuthService implements AuthPort {
       email: email.trim().toLowerCase(),
       displayName: displayName.trim(),
       role: assignedRole,
-      churchBranch: 'Lagoinha João Pessoa',
+      churchBranch: assignedChurchBranch,
+      churchId: assignedChurchId,
       status: assignedStatus,
       instrumentOrMinistry: instrumentOrMinistry?.trim()
     });
@@ -201,6 +214,7 @@ export class FirebaseAuthService implements AuthPort {
       displayName,
       role,
       churchBranch: 'Lagoinha João Pessoa',
+      churchId: 'lagoinha-jp',
       status: role === 'pending' ? 'pending' : 'active'
     });
 
@@ -232,28 +246,44 @@ export class FirebaseAuthService implements AuthPort {
 
   // --- MÉTODOS ADMINISTRATIVOS ---
 
-  public async listPendingUsers(): Promise<User[]> {
+  public async listPendingUsers(churchId?: string): Promise<User[]> {
     const users = this.getStoredUsers();
     return Promise.resolve(
       users
         .filter((u) => u.status === 'pending' || u.role === 'pending')
+        .filter((u) => !churchId || (u.churchId || 'lagoinha-jp') === churchId)
         .map((u) => new User(u))
     );
   }
 
-  public async listAllUsers(): Promise<User[]> {
+  public async listAllUsers(churchId?: string): Promise<User[]> {
     const users = this.getStoredUsers();
-    return Promise.resolve(users.map((u) => new User(u)));
+    return Promise.resolve(
+      users
+        .filter((u) => !churchId || (u.churchId || 'lagoinha-jp') === churchId)
+        .map((u) => new User(u))
+    );
   }
 
   public async approveUser(uid: string, assignedRole: UserRole, adminUid: string): Promise<User> {
     const users = this.getStoredUsers();
+    const admin = users.find((u) => u.uid === adminUid);
+    if (!admin || admin.role !== 'admin' || admin.status !== 'active') {
+      throw new Error('Acesso negado: apenas administradores ativos podem aprovar usuários.');
+    }
+
     const idx = users.findIndex((u) => u.uid === uid);
     if (idx === -1) {
       throw new Error(`Usuário não encontrado: ${uid}`);
     }
 
     const record = users[idx]!;
+    const adminChurchId = admin.churchId || 'lagoinha-jp';
+    const targetChurchId = record.churchId || 'lagoinha-jp';
+    if (adminChurchId !== targetChurchId) {
+      throw new Error('Acesso negado: violação de isolamento multi-tenant entre igrejas.');
+    }
+
     record.status = 'active';
     record.role = assignedRole;
     record.approvedBy = adminUid;
@@ -269,20 +299,52 @@ export class FirebaseAuthService implements AuthPort {
     return Promise.resolve(updatedUser);
   }
 
-  public async rejectUser(uid: string, _adminUid: string): Promise<void> {
-    const users = this.getStoredUsers().filter((u) => u.uid !== uid);
-    localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+  public async rejectUser(uid: string, adminUid: string): Promise<void> {
+    const users = this.getStoredUsers();
+    const admin = users.find((u) => u.uid === adminUid);
+    if (!admin || admin.role !== 'admin' || admin.status !== 'active') {
+      throw new Error('Acesso negado: apenas administradores ativos podem rejeitar usuários.');
+    }
+
+    const target = users.find((u) => u.uid === uid);
+    if (!target) return Promise.resolve();
+
+    const adminChurchId = admin.churchId || 'lagoinha-jp';
+    const targetChurchId = target.churchId || 'lagoinha-jp';
+    if (adminChurchId !== targetChurchId) {
+      throw new Error('Acesso negado: violação de isolamento multi-tenant entre igrejas.');
+    }
+
+    const remaining = users.filter((u) => u.uid !== uid);
+    localStorage.setItem(USERS_DB_KEY, JSON.stringify(remaining));
     return Promise.resolve();
   }
 
-  public async updateUserRole(uid: string, newRole: UserRole, _adminUid: string): Promise<User> {
+  public async updateUserRole(uid: string, newRole: UserRole, adminUid: string): Promise<User> {
     const users = this.getStoredUsers();
+    const admin = users.find((u) => u.uid === adminUid);
+
+    // Bloqueia auto-elevação indevida se o usuário solicitante não for admin ativo
+    if (adminUid === uid && (!admin || admin.role !== 'admin')) {
+      throw new Error('Acesso negado: auto-elevação de papel não autorizada.');
+    }
+
+    if (!admin || admin.role !== 'admin' || admin.status !== 'active') {
+      throw new Error('Acesso negado: apenas administradores ativos podem alterar papéis de usuário.');
+    }
+
     const idx = users.findIndex((u) => u.uid === uid);
     if (idx === -1) {
       throw new Error(`Usuário não encontrado: ${uid}`);
     }
 
     const record = users[idx]!;
+    const adminChurchId = admin.churchId || 'lagoinha-jp';
+    const targetChurchId = record.churchId || 'lagoinha-jp';
+    if (adminChurchId !== targetChurchId) {
+      throw new Error('Acesso negado: violação de isolamento multi-tenant entre igrejas.');
+    }
+
     record.role = newRole;
     if (record.status === 'pending' && newRole !== 'pending') {
       record.status = 'active';
@@ -299,6 +361,14 @@ export class FirebaseAuthService implements AuthPort {
   // --- GESTÃO DE LINKS DE CONVITE ---
 
   public async createInviteLink(props: CreateInviteProps): Promise<InviteToken> {
+    if (
+      !props.adminUser ||
+      (!props.adminUser.isAdmin && props.adminUser.role !== 'leader') ||
+      !props.adminUser.isActive
+    ) {
+      throw new Error('Acesso negado: apenas administradores ou líderes ativos podem gerar convites.');
+    }
+
     const randPart = Math.random().toString(36).substring(2, 8);
     const tokenStr = `lagoinha-${props.targetRole}-${randPart}`;
     const expiresAt = props.expiresHours
@@ -309,7 +379,8 @@ export class FirebaseAuthService implements AuthPort {
       id: `inv-${Date.now()}`,
       token: tokenStr,
       targetRole: props.targetRole,
-      churchBranch: 'Lagoinha João Pessoa',
+      churchBranch: props.adminUser.churchBranch || 'Lagoinha João Pessoa',
+      churchId: props.adminUser.churchId || 'lagoinha-jp',
       expiresAt,
       maxUses: props.maxUses ?? 1,
       usedCount: 0,
@@ -368,6 +439,7 @@ export class FirebaseAuthService implements AuthPort {
         photoURL: user.photoURL,
         role: user.role,
         churchBranch: user.churchBranch,
+        churchId: user.churchId,
         status: user.status,
         instrumentOrMinistry: user.instrumentOrMinistry,
         approvedBy: user.approvedBy,
@@ -430,6 +502,7 @@ export class FirebaseAuthService implements AuthPort {
           photoURL: user.photoURL,
           role: user.role,
           churchBranch: user.churchBranch,
+          churchId: user.churchId,
           status: user.status,
           instrumentOrMinistry: user.instrumentOrMinistry
         })

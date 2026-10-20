@@ -36,6 +36,20 @@ O maior risco jurídico de qualquer plataforma de áudio para igrejas reside na 
 * **Cláusula Restritiva:** É expressamente vedado fazer upload desses stems para plataformas públicas, servidores de terceiros ou criar serviços de compartilhamento/distribuição de mixagens derivadas.
 * **Implicação para o Produto:** A plataforma **NÃO PODE** ser promovida como um "servidor aberto de multitracks comerciais". A modalidade comercial deve ser rigorosamente **BYOC (Bring Your Own Content)**: o usuário armazena seus próprios arquivos localmente em sua máquina, e a nuvem da plataforma realiza apenas o backup privado encriptado daquela congregação específica.
 
+### Matriz de Diferenciação das Modalidades de Uso:
+1. **Arquivamento e Backup Privado:**
+   - *Finalidade:* Preservação de dados da congregação contra falhas de hardware local.
+   - *Regra:* Os arquivos brutos (.ZIP, .WAV) são armazenados em bucket encriptado isolado por `churchId`. O download é restrito a administradores e técnicos autorizados daquela congregação.
+2. **Reprodução Local (Palco / Culto Presencial):**
+   - *Finalidade:* Execução em tempo real na máquina do operador durante ensaios e cultos.
+   - *Regra:* Permissão coberta pela licença local de execução litúrgica. Todo o áudio decodificado permanece na RAM e no IndexedDB da máquina local (`audio_blobs`), sem retransmissão para a internet.
+3. **Ensaio Compartilhado (EnsaioMix / Estudo Domiciliar):**
+   - *Finalidade:* Preparação individual de instrumentistas e cantores antes do ensaio geral.
+   - *Regra:* Acesso via credencial autenticada de membro. O áudio é renderizado com stems de prática atenuados/destacados para fins exclusivamente pedagógicos e internos, com URLs de streaming assinadas de curta duração (60 minutos).
+4. **Transmissão Ao Vivo (Live Stream / YouTube):**
+   - *Finalidade:* Envio de áudio para a mesa de transmissão do culto via internet.
+   - *Regra:* O uso de playbacks na transmissão ao vivo requer cobertura específica da congregação (licença CCLI Streaming ou autorização direta dos titulares da obra). O sistema Lagoinha VS isola as saídas 1 e 2 para PA/Transmissão e as saídas 3 e 4 (Click e Guia) estritamente para os fones de ouvido dos músicos, impedindo o vazamento do metrônomo para o sinal do streaming.
+
 ---
 
 ## 2. Titularidade do Software e Propriedade Intelectual (Lei 9.609/98)

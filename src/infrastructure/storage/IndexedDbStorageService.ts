@@ -1,11 +1,28 @@
 import { Song } from '../../domain/entities/Song';
-import { TrackStem } from '../../domain/entities/TrackStem';
+import { TrackStem, PitchPolicy } from '../../domain/entities/TrackStem';
 import { SongSection, SectionType } from '../../domain/value-objects/SongSection';
 
 const DB_NAME = 'lagoinha_vs_database';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_SONGS = 'custom_songs';
 const STORE_SETLISTS = 'saved_setlists';
+const STORE_AUDIO_BLOBS = 'audio_blobs';
+
+export interface StoragePersistenceStatus {
+  isPersisted: boolean;
+  quotaBytes?: number;
+  usageBytes?: number;
+  availableBytes?: number;
+  supportStorageManager: boolean;
+}
+
+export interface OfflineReadinessResult {
+  isComplete: boolean;
+  totalBytes: number;
+  availableStems: number;
+  totalStems: number;
+  missingStems: string[];
+}
 
 export interface SerializedStem {
   id: string;
@@ -15,6 +32,7 @@ export interface SerializedStem {
   pan: number;
   isMuted: boolean;
   isSolo: boolean;
+  pitchPolicy?: PitchPolicy;
   isPitchShiftable: boolean;
   audioUrl?: string;
   dsp?: Record<string, unknown>;
@@ -41,6 +59,7 @@ export interface SerializedSong {
   duration: number;
   sections: SerializedSection[];
   stems: SerializedStem[];
+  churchId?: string;
   updatedAt?: string;
 }
 
@@ -54,6 +73,60 @@ export interface SetlistBackupFile {
 
 export class IndexedDbStorageService {
   private static dbPromise: Promise<IDBDatabase> | null = null;
+
+  public static checkStorageSupport(): { hasIndexedDb: boolean; hasStorageManager: boolean } {
+    const hasIndexedDb = typeof window !== 'undefined' && 'indexedDB' in window;
+    const hasStorageManager =
+      typeof navigator !== 'undefined' &&
+      'storage' in navigator &&
+      typeof navigator.storage?.persist === 'function';
+    return { hasIndexedDb, hasStorageManager };
+  }
+
+  public static async checkPersistenceStatus(): Promise<StoragePersistenceStatus> {
+    const support = this.checkStorageSupport();
+    if (!support.hasStorageManager) {
+      return { isPersisted: false, supportStorageManager: false };
+    }
+
+    try {
+      const isPersisted = await navigator.storage.persisted();
+      let quotaBytes: number | undefined;
+      let usageBytes: number | undefined;
+      let availableBytes: number | undefined;
+
+      if (navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        quotaBytes = estimate.quota;
+        usageBytes = estimate.usage;
+        if (quotaBytes !== undefined && usageBytes !== undefined) {
+          availableBytes = Math.max(0, quotaBytes - usageBytes);
+        }
+      }
+
+      return {
+        isPersisted,
+        quotaBytes,
+        usageBytes,
+        availableBytes,
+        supportStorageManager: true
+      };
+    } catch {
+      return { isPersisted: false, supportStorageManager: true };
+    }
+  }
+
+  public static async requestPersistence(): Promise<boolean> {
+    const support = this.checkStorageSupport();
+    if (!support.hasStorageManager) return false;
+
+    try {
+      const granted = await navigator.storage.persist();
+      return granted;
+    } catch {
+      return false;
+    }
+  }
 
   private static getDb(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
@@ -73,6 +146,9 @@ export class IndexedDbStorageService {
         }
         if (!db.objectStoreNames.contains(STORE_SETLISTS)) {
           db.createObjectStore(STORE_SETLISTS, { keyPath: 'name' });
+        }
+        if (!db.objectStoreNames.contains(STORE_AUDIO_BLOBS)) {
+          db.createObjectStore(STORE_AUDIO_BLOBS, { keyPath: 'key' });
         }
       };
 
@@ -110,10 +186,12 @@ export class IndexedDbStorageService {
         pan: st.pan,
         isMuted: st.isMuted,
         isSolo: st.isSolo,
+        pitchPolicy: st.pitchPolicy,
         isPitchShiftable: st.isPitchShiftable,
         audioUrl: st.audioUrl,
         dsp: { ...st.dsp }
       })),
+      churchId: song.churchId || 'lagoinha-jp',
       updatedAt: new Date().toISOString()
     };
   }
@@ -141,6 +219,7 @@ export class IndexedDbStorageService {
         pan: st.pan,
         isMuted: st.isMuted,
         isSolo: st.isSolo,
+        pitchPolicy: st.pitchPolicy,
         isPitchShiftable: st.isPitchShiftable,
         audioUrl: st.audioUrl
       });
@@ -160,8 +239,124 @@ export class IndexedDbStorageService {
       timeSignature: data.timeSignature || { beats: 4, value: 4 },
       duration: data.duration,
       sections,
-      stems
+      stems,
+      churchId: data.churchId || 'lagoinha-jp'
     });
+  }
+
+  // --- MÉTODOS DE ÁUDIO BINÁRIO (BLOBS) PARA OPERAÇÃO 100% OFFLINE APÓS REINÍCIO ---
+
+  public static async saveStemAudioBlob(songId: string, stemId: string, blob: Blob): Promise<void> {
+    try {
+      const db = await this.getDb();
+      const key = `${songId}_${stemId}`;
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_AUDIO_BLOBS, 'readwrite');
+        const store = tx.objectStore(STORE_AUDIO_BLOBS);
+        const req = store.put({ key, songId, stemId, blob, size: blob.size, mimeType: blob.type });
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Erro ao salvar blob de áudio no IndexedDB:', err);
+    }
+  }
+
+  public static async getStemAudioBlob(songId: string, stemId: string): Promise<Blob | null> {
+    try {
+      const db = await this.getDb();
+      const key = `${songId}_${stemId}`;
+      return await new Promise<Blob | null>((resolve) => {
+        const tx = db.transaction(STORE_AUDIO_BLOBS, 'readonly');
+        const store = tx.objectStore(STORE_AUDIO_BLOBS);
+        const req = store.get(key);
+        req.onsuccess = () => {
+          if (req.result && req.result.blob) {
+            resolve(req.result.blob as Blob);
+          } else {
+            resolve(null);
+          }
+        };
+        req.onerror = () => resolve(null);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  public static async deleteSongAudioBlobs(songId: string): Promise<void> {
+    try {
+      const db = await this.getDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_AUDIO_BLOBS, 'readwrite');
+        const store = tx.objectStore(STORE_AUDIO_BLOBS);
+        const req = store.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            if (cursor.value.songId === songId) {
+              cursor.delete();
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Erro ao deletar blobs de áudio da música:', err);
+    }
+  }
+
+  public static async verifySongOfflineReadiness(song: Song): Promise<OfflineReadinessResult> {
+    let totalBytes = 0;
+    let availableStems = 0;
+    const missingStems: string[] = [];
+
+    for (const stem of song.stems) {
+      const blob = await this.getStemAudioBlob(song.id, stem.id);
+      if (blob && blob.size > 0) {
+        totalBytes += blob.size;
+        availableStems++;
+      } else if (stem.audioUrl && (stem.audioUrl.startsWith('/stems/') || stem.audioUrl.startsWith('./stems/'))) {
+        // Arquivo local estático empacotado no PWA / assets
+        availableStems++;
+      } else if (stem.audioUrl && stem.audioUrl.startsWith('http')) {
+        // URL remota na nuvem (Google Drive/Cloud) — NÃO está offline ainda!
+        missingStems.push(`${stem.name} (Requer download da nuvem para uso offline)`);
+      } else {
+        missingStems.push(`${stem.name} (Binário ausente no IndexedDB — necessária reimportação)`);
+      }
+    }
+
+    return {
+      isComplete: missingStems.length === 0,
+      totalBytes,
+      availableStems,
+      totalStems: song.stems.length,
+      missingStems
+    };
+  }
+
+  public static async rehydrateSongAudioUrls(song: Song): Promise<Song> {
+    for (const stem of song.stems) {
+      // Se já tinha um blob URL antigo e morto de sessão passada, revoga
+      if (stem.audioUrl && stem.audioUrl.startsWith('blob:') && typeof window !== 'undefined' && window.URL) {
+        try {
+          URL.revokeObjectURL(stem.audioUrl);
+        } catch {
+          // ignore
+        }
+        stem.audioUrl = undefined;
+      }
+
+      const blob = await this.getStemAudioBlob(song.id, stem.id);
+      if (blob && typeof window !== 'undefined' && window.URL) {
+        stem.audioUrl = URL.createObjectURL(blob);
+      }
+    }
+    return song;
   }
 
   public static async saveCustomSong(song: Song): Promise<void> {
@@ -180,16 +375,21 @@ export class IndexedDbStorageService {
     }
   }
 
-  public static async loadCustomSongs(): Promise<Song[]> {
+  public static async loadCustomSongs(churchId?: string): Promise<Song[]> {
     try {
       const db = await this.getDb();
       return await new Promise<Song[]>((resolve, reject) => {
         const tx = db.transaction(STORE_SONGS, 'readonly');
         const store = tx.objectStore(STORE_SONGS);
         const req = store.getAll();
-        req.onsuccess = () => {
+        req.onsuccess = async () => {
           const list = (req.result as SerializedSong[]) || [];
-          resolve(list.map((item) => this.deserializeSong(item)));
+          const filtered = churchId
+            ? list.filter((item) => (item.churchId || 'lagoinha-jp') === churchId)
+            : list;
+          const deserialized = filtered.map((item) => this.deserializeSong(item));
+          const rehydrated = await Promise.all(deserialized.map((s) => this.rehydrateSongAudioUrls(s)));
+          resolve(rehydrated);
         };
         req.onerror = () => reject(req.error);
       });
@@ -208,6 +408,7 @@ export class IndexedDbStorageService {
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
       });
+      await this.deleteSongAudioBlobs(songId);
     } catch (err) {
       console.warn('Erro ao deletar música do IndexedDB:', err);
     }

@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSameChurch(churchId) {
+      return getUserData().churchId == churchId;
+    }
+
+    function canUploadAudio(churchId) {
+      return isAuthenticated() &&
+        isSameChurch(churchId) &&
+        getUserData().status == 'active' &&
+        getUserData().role in ['admin', 'leader', 'sound_tech'];
+    }
+
+    // Isolamento multi-tenant de Stems e Multitracks no Storage
+    match /churches/{churchId}/stems/{allPaths=**} {
+      // Leitura permitida apenas para membros autenticados da mesma igreja
+      allow read: if isAuthenticated() && isSameChurch(churchId);
+
+      // Upload permitido apenas para admin, líder ou técnico de som, com limite de 500MB por arquivo
+      allow write: if canUploadAudio(churchId) &&
+        request.resource.size < 500 * 1024 * 1024;
+    }
+
+    // Imagens de capa de álbuns ou avatares
+    match /churches/{churchId}/covers/{imageFile} {
+      allow read: if isAuthenticated() && isSameChurch(churchId);
+      allow write: if canUploadAudio(churchId) &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
+  }
+}
