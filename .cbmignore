@@ -1,0 +1,13 @@
+# codebase-memory-mcp: indexa so o codigo do produto (src/ e tests/).
+# Build, revisao empacotada, documentacao, midia e ferramentas ficam de fora.
+dist/
+dist-review/
+docs/
+public/
+scripts/
+node_modules/
+.playwright-mcp/
+.vercel/
+.cursor/
+*.zip
+*.md
