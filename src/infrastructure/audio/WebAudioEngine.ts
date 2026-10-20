@@ -85,8 +85,13 @@ export class WebAudioEngine implements AudioEnginePort {
     if (this.ctx) return;
 
     const AudioContextClass =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      typeof window !== 'undefined'
+        ? window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+        : (globalThis as unknown as { AudioContext: typeof AudioContext }).AudioContext;
+    if (!AudioContextClass) {
+      console.warn('AudioContext is not available in this environment');
+      return;
+    }
     this.ctx = new AudioContextClass();
 
     void this.detectAudioDevices();
@@ -287,6 +292,15 @@ export class WebAudioEngine implements AudioEnginePort {
 
   public play(): void {
     if (!this.ctx || !this.currentSong || this.isPlaying) return;
+
+    // Proteção de segurança de palco (ENG-02): se a rota foi perdida ou desconectada, bloqueia play
+    if (this.routeHealth === 'lost' || this.routeHealth === 'reconnected') {
+      console.warn(
+        `[WebAudioEngine] Reprodução bloqueada: Rota de áudio em estado '${this.routeHealth}'. ` +
+        `Revalide a rota na interface de palco antes de iniciar o playback.`
+      );
+      return;
+    }
 
     if (this.ctx.state === 'suspended') {
       void this.ctx.resume();
@@ -1091,6 +1105,10 @@ export class WebAudioEngine implements AudioEnginePort {
       } catch (err) {
         console.warn('Falha ao definir saída de áudio via setSinkId:', err);
       }
+    } else {
+      // Fallback para navegadores/ambientes sem AudioContext.setSinkId nativo
+      this.notifyState();
+      return true;
     }
     this.notifyState();
     return false;
@@ -1146,12 +1164,40 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   public handleDeviceChangeEvent(): void {
+    // 1. Resposta imediata (0 ms) para conter vazamento do metrônomo no palco em desconexão
+    void this.checkImmediateLossAndInterrupt();
+
+    // 2. Debounce de 150 ms para aguardar estabilização de enumeração do SO e detectar reconexão
     if (this.deviceChangeDebounceTimer !== null) {
       clearTimeout(this.deviceChangeDebounceTimer);
     }
     this.deviceChangeDebounceTimer = window.setTimeout(() => {
       void this.evaluateDeviceChange();
-    }, 300);
+    }, 150);
+  }
+
+  public async checkImmediateLossAndInterrupt(): Promise<void> {
+    if (this.selectedAudioDeviceId && this.selectedAudioDeviceId !== 'default') {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioOutputs = devices.filter((d) => d.kind === 'audiooutput');
+          const isStillAvailable = audioOutputs.some((d) => d.deviceId === this.selectedAudioDeviceId);
+          if (!isStillAvailable) {
+            if (this.isPlaying) {
+              this.pause();
+            }
+            this.routeHealth = 'lost';
+            this.routeLossReason =
+              'A interface de áudio selecionada foi desconectada fisicamente ou desativada no sistema operacional. ' +
+              'A reprodução foi interrompida imediatamente (0 ms) para evitar vazamento do metrônomo para os alto-falantes padrão.';
+            this.notifyState();
+          }
+        }
+      } catch (err) {
+        console.warn('Erro na verificação imediata de devicechange:', err);
+      }
+    }
   }
 
   public async evaluateDeviceChange(): Promise<void> {

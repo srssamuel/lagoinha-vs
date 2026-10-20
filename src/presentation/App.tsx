@@ -76,18 +76,19 @@ export const App: React.FC = () => {
 
   const currentSong = songs[currentSongIndex] ?? null;
 
-  // Carrega músicas customizadas salvas previamente no IndexedDB
+  // Carrega músicas customizadas salvas previamente no IndexedDB (isoladas por tenant)
   useEffect(() => {
-    void IndexedDbStorageService.loadCustomSongs().then((saved) => {
+    void IndexedDbStorageService.loadCustomSongs(currentUser?.churchId).then((saved) => {
+      const defaultPresetSongs = DemoWorshipSongs.getPresetSongs();
       if (saved.length > 0) {
-        setSongs((prev) => {
-          const existingIds = new Set(prev.map((s) => s.id));
-          const toAdd = saved.filter((s) => !existingIds.has(s.id));
-          return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
-        });
+        const existingIds = new Set(defaultPresetSongs.map((s) => s.id));
+        const toAdd = saved.filter((s) => !existingIds.has(s.id));
+        setSongs([...defaultPresetSongs, ...toAdd]);
+      } else {
+        setSongs(defaultPresetSongs);
       }
     });
-  }, []);
+  }, [currentUser?.churchId]);
 
   // Inscrição no estado de autenticação
   useEffect(() => {
@@ -561,6 +562,7 @@ export const App: React.FC = () => {
           songs={songs}
           currentSongIndex={currentSongIndex}
           isPlaying={engineState.isPlaying}
+          currentUser={currentUser}
           onSelectSong={handleSelectSong}
           onRemoveSong={handleRemoveSong}
           onMoveSong={handleMoveSong}

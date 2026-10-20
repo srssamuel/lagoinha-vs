@@ -59,6 +59,7 @@ export interface SerializedSong {
   duration: number;
   sections: SerializedSection[];
   stems: SerializedStem[];
+  churchId?: string;
   updatedAt?: string;
 }
 
@@ -190,6 +191,7 @@ export class IndexedDbStorageService {
         audioUrl: st.audioUrl,
         dsp: { ...st.dsp }
       })),
+      churchId: song.churchId || 'lagoinha-jp',
       updatedAt: new Date().toISOString()
     };
   }
@@ -237,7 +239,8 @@ export class IndexedDbStorageService {
       timeSignature: data.timeSignature || { beats: 4, value: 4 },
       duration: data.duration,
       sections,
-      stems
+      stems,
+      churchId: data.churchId || 'lagoinha-jp'
     });
   }
 
@@ -316,11 +319,14 @@ export class IndexedDbStorageService {
       if (blob && blob.size > 0) {
         totalBytes += blob.size;
         availableStems++;
-      } else if (stem.audioUrl && (stem.audioUrl.startsWith('http') || stem.audioUrl.startsWith('/stems/'))) {
-        // Stem apontando para arquivo local empacotado no build ou URL válida
+      } else if (stem.audioUrl && (stem.audioUrl.startsWith('/stems/') || stem.audioUrl.startsWith('./stems/'))) {
+        // Arquivo local estático empacotado no PWA / assets
         availableStems++;
+      } else if (stem.audioUrl && stem.audioUrl.startsWith('http')) {
+        // URL remota na nuvem (Google Drive/Cloud) — NÃO está offline ainda!
+        missingStems.push(`${stem.name} (Requer download da nuvem para uso offline)`);
       } else {
-        missingStems.push(stem.name);
+        missingStems.push(`${stem.name} (Binário ausente no IndexedDB — necessária reimportação)`);
       }
     }
 
@@ -335,6 +341,16 @@ export class IndexedDbStorageService {
 
   public static async rehydrateSongAudioUrls(song: Song): Promise<Song> {
     for (const stem of song.stems) {
+      // Se já tinha um blob URL antigo e morto de sessão passada, revoga
+      if (stem.audioUrl && stem.audioUrl.startsWith('blob:') && typeof window !== 'undefined' && window.URL) {
+        try {
+          URL.revokeObjectURL(stem.audioUrl);
+        } catch {
+          // ignore
+        }
+        stem.audioUrl = undefined;
+      }
+
       const blob = await this.getStemAudioBlob(song.id, stem.id);
       if (blob && typeof window !== 'undefined' && window.URL) {
         stem.audioUrl = URL.createObjectURL(blob);
@@ -359,7 +375,7 @@ export class IndexedDbStorageService {
     }
   }
 
-  public static async loadCustomSongs(): Promise<Song[]> {
+  public static async loadCustomSongs(churchId?: string): Promise<Song[]> {
     try {
       const db = await this.getDb();
       return await new Promise<Song[]>((resolve, reject) => {
@@ -368,7 +384,10 @@ export class IndexedDbStorageService {
         const req = store.getAll();
         req.onsuccess = async () => {
           const list = (req.result as SerializedSong[]) || [];
-          const deserialized = list.map((item) => this.deserializeSong(item));
+          const filtered = churchId
+            ? list.filter((item) => (item.churchId || 'lagoinha-jp') === churchId)
+            : list;
+          const deserialized = filtered.map((item) => this.deserializeSong(item));
           const rehydrated = await Promise.all(deserialized.map((s) => this.rehydrateSongAudioUrls(s)));
           resolve(rehydrated);
         };

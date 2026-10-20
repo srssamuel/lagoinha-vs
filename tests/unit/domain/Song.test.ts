@@ -77,6 +77,37 @@ describe('Song Entity & Sections', () => {
     expect(song.getActiveSection(100)).toBeNull();
   });
 
+  it('supports multi-tenant churchId assignment and defaults to lagoinha-jp', () => {
+    const defaultSong = new Song({
+      id: 'default-tenant-song',
+      title: 'Preset Track',
+      artist: 'Lagoinha Worship',
+      originalKey: 'D',
+      currentKey: 'D',
+      bpm: 128,
+      timeSignature: { beats: 4, value: 4 },
+      duration: 200,
+      sections: [],
+      stems: []
+    });
+    expect(defaultSong.churchId).toBe('lagoinha-jp');
+
+    const spSong = new Song({
+      id: 'sp-tenant-song',
+      title: 'Sp Track',
+      artist: 'Lagoinha SP Worship',
+      originalKey: 'E',
+      currentKey: 'E',
+      bpm: 130,
+      timeSignature: { beats: 4, value: 4 },
+      duration: 210,
+      sections: [],
+      stems: [],
+      churchId: 'lagoinha-sp'
+    });
+    expect(spSong.churchId).toBe('lagoinha-sp');
+  });
+
   it('rejects invalid BPMs outside church performance bounds', () => {
     expect(() => {
       new Song({

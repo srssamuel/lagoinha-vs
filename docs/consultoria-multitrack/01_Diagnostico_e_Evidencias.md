@@ -55,6 +55,7 @@ $$\text{Bytes por Stem} = \text{Duração (s)} \times \text{Sample Rate (Hz)} \t
 
 $$\text{Stems Estéreo} = 8 \times 300 \times 48.000 \times 2 \times 4 = 921.600.000 \text{ bytes} \approx 921,6 \text{ MB}$$
 $$\text{Stems Mono} = 5 \times 300 \times 48.000 \times 1 \times 4 = 288.000.000 \text{ bytes} \approx 288,0 \text{ MB}$$
-$$\textbf{Consumo Total de PCM por Música} = 921,6 \text{ MB} + 288,0 \text{ MB} = \mathbf{1.209,6 \text{ MB} (\approx 1,21 \text{ GB})}$$
+$$\textbf{Consumo Total de PCM por Música (Cenário Típico)} = 921,6 \text{ MB} + 288,0 \text{ MB} = \mathbf{1.209,6 \text{ MB} (\approx 1,21 \text{ GB})}$$
+$$\textbf{Teto Máximo (13 Stems Estéreo)} = 13 \times 300 \times 48.000 \times 2 \times 4 = \mathbf{1.497.600.000\text{ bytes} = 1,4976\text{ GB} (\approx 1,395\text{ GiB})}$$
 
-**Conclusão Metrológica:** Manter apenas a música atual carregada em RAM (com pré-carregamento assíncrono da próxima faixa sem decodificação antecipada de todos os buffers) garante que o processo do navegador opere confortavelmente na faixa de **1,4 GB a 1,8 GB de RAM total**, viável em computadores com 8 GB de memória.
+**Conclusão Metrológica:** Manter apenas a música atual carregada em RAM (com pré-carregamento assíncrono da próxima faixa sem decodificação antecipada de todos os buffers e descarte imediato da anterior via `dispose()`) garante que o processo do navegador opere confortavelmente na faixa de **1,4 GB a 1,8 GB de RAM total**, viável em computadores com 8 GB de memória. O número empírico preliminar de $350\text{ MB}$ foi excluído por não representar áudio descompactado em 13 stems.

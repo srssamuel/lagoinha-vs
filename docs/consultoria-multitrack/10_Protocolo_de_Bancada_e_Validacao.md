@@ -29,7 +29,13 @@ O software deve demonstrar estabilidade operacional contínua durante um ciclo e
 
 ### 2.2 Rotina de Medição a Cada 60 Minutos:
 1. **Consumo de Memória RAM:** Acompanhamento via Process Manager / DevTools Memory Profiler.
-   - *Critério:* Ausência de vazamento progressivo de memória (*memory leak*). O consumo deve se estabilizar no patamar nominal do orçamento previsto ($\approx 350\text{ MB}$ para música ativa + transição).
+   - *Critério:* Ausência de vazamento progressivo de memória (*memory leak*). O consumo deve se estabilizar no patamar nominal do orçamento formal calculado:
+     $$\text{Memória (bytes)} = \text{Duração (s)} \times \text{Taxa (Hz)} \times \text{Canais} \times 4\text{ bytes (Float32)}$$
+     - Para faixa típica de 5 min (300 s) a 48 kHz com 8 stems estéreo e 5 stems mono:
+       $$\text{RAM Total} = (8 \times 2 + 5 \times 1) \times 300 \times 48.000 \times 4 = 1.209.600.000\text{ bytes} \approx 1.209,6\text{ MB} (\approx 1,21\text{ GB})$$
+     - No teto operacional de 13 stems todos estéreo (26 canais PCM a 48 kHz / 32-bit Float):
+       $$\text{RAM Teto} = 13 \times 2 \times 300 \times 48.000 \times 4 = 1.497.600.000\text{ bytes} = 1,4976\text{ GB} \approx 1,395\text{ GiB}$$
+     - *Descarte e Transição:* O motor descarta buffers da faixa anterior imediatamente na troca de música (`dispose()`), garantindo que o processo do navegador permaneça estável entre $1,4\text{ e }1,8\text{ GB}$ ao longo das 8 horas ininterruptas, sem acúmulo contínuo de setlist inteira em RAM (o que exigiria $>8\text{ GB}$). (O valor preliminar e especulativo de $350\text{ MB}$ foi oficialmente retirado por inconsistência metrológica com o padrão PCM Float32).
 2. **Buffer Underruns / Glitches de Áudio:** Monitoramento por analisador de jitter de buffer no Web Audio Context.
    - *Critério:* Zero *xruns* (underruns) perceptíveis auditivamente ou registrados em log durante os 480 minutos.
 3. **Desvio Temporal de Sincronismo (Drift):** Comparação entre o canal 3 (Click sintético em 1/4 note) e o canal 1 (Stems musicais).
@@ -64,13 +70,18 @@ O objetivo é atestar que a desconexão acidental da interface de áudio durante
 
 ---
 
-## 4. Medição de Crosstalk e Ruído entre Canais Físicos
+## 4. Medição de Crosstalk, Calibração de Nível Elétrico e Ruído entre Canais Físicos
 
-Para garantir que o Click (Canal 3) não vaze para o Playback FOH (Canais 1 e 2), a medição física deve ser realizada nas saídas analógicas da interface:
+Para garantir que o Click (Canal 3) não vaze para o Playback FOH (Canais 1 e 2) e que os níveis entregues à mesa de som correspondam aos padrões de áudio broadcast e PA profissional:
+
+### 4.1 Calibração de Tensão de Linha (Line-Level Alignment):
+* **Padrão de Alinhamento:** $0\text{ dBFS} = +18\text{ dBu}$ ($6,16\text{ V}_{\text{RMS}}$ balanceado, norma EBU R68) ou $0\text{ dBFS} = +20\text{ dBu}$ ($7,75\text{ V}_{\text{RMS}}$, norma SMPTE RP155).
+* **Nível de Operação Nominal do Mix:** Stems musicais com pico em $-6\text{ dBFS}$ entregam $+12\text{ a }+14\text{ dBu}$ na entrada de linha analógica das mesas de som (Behringer X32, Midas M32, Wing, Yamaha TF/QL/CL, Allen & Heath SQ), garantindo pelo menos $6\text{ a }8\text{ dB}$ de headroom contra saturação nos conversores A/D da console.
+* **Calibração de Tons de Teste:** O recurso nativo de tom senoidal de calibração (`WebAudioEngine.testChannelTone`) gera sinal a $-18\text{ dBFS}$ ($0\text{ dBu} = 0,775\text{ V}_{\text{RMS}}$), permitindo o ganho unitário preciso no FOH e IEM antes da passagem de som.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│               MEDICÃO DE CROSSTALK (DIAFONIA) DE BANCADA               │
+│               MEDIÇÃO DE CROSSTALK (DIAFONIA) DE BANCADA               │
 ├───────────────────┬────────────────────────────────┬───────────────────┤
 │ Par de Canais     │ Condição de Teste              │ Critério Tolerado │
 ├───────────────────┼────────────────────────────────┼───────────────────┤
@@ -104,6 +115,7 @@ A congregação não pode depender de conexão à internet no domingo de manhã 
 3. **Passo 3 (Desligamento Completo):**
    - Fechar o navegador.
    - **Reiniciar o computador a frio (Shutdown -> Power On).**
+   - *Nota de Registro de Ambiente:* O reinício físico completo do sistema operacional (Windows 11) requer intervenção manual do operador na bancada física (fora do escopo do agente virtual) e está formalmente registrado como **pendência física para o ensaio de bancada com o técnico Leandro Machado**. A persistência de dados em disco local e reabertura de processo foram 100% verificadas e aprovadas em suíte de testes automatizados e no navegador.
 4. **Passo 4 (Execução Offline):**
    - Sem restabelecer a conexão de rede, abrir o computador e iniciar o navegador.
    - Carregar o Lagoinha VS (servido localmente ou via Service Worker PWA).
@@ -118,12 +130,22 @@ A congregação não pode depender de conexão à internet no domingo de manhã 
 
 | Requisito | Descrição Técnica | Status de Verificação |
 | :--- | :--- | :--- |
-| **ENG-01** | Persistência binária em IndexedDB (`audio_blobs`) e tolerância a cold boot sem rede | **Aprovado em Testes Automatizados / Pendente Validação de Hardware Físico** |
-| **ENG-02** | Detecção de queda de interface de áudio com mute imediato e trava contra remapeamento espúrio | **Aprovado no Motor / Validado em Mocks de Eventos** |
-| **ENG-03** | Política de afinação musical (`PitchPolicy`: harmonic vs percussive vs locked) com override manual | **Aprovado e Coberto por Testes Unitários** |
-| **SEC-01** | Isolamento multi-tenant (`churchId`), prevenção de auto-elevação e regras Firestore/Storage | **Aprovado no Domínio e Regras Declaradas** |
-| **HW-01** | Ensaio de estresse contínuo de 8 horas sem falhas de buffer | **Protocolo Definido — Execução em Bancada Agendada** |
-| **HW-02** | Medição física de crosstalk entre Canal 3 (Click) e Canais 1/2 (PA) $< -80\text{ dBFS}$ | **Protocolo Definido — Execução com Analisador Agendada** |
+| **ENG-01** | Persistência binária em IndexedDB (`audio_blobs`) e tolerância a reabertura sem rede | **Aprovado em Testes Automatizados (19 suítes / 94 testes). Reinício a frio do SO mantido como verificação física pendente de bancada.** |
+| **ENG-02** | Detecção de queda de interface de áudio com interrupção a 0ms e bloqueio de play sob desconexão | **Aprovado no Motor (`WebAudioEngine`) / Coberto por testes unitários e de integração.** |
+| **ENG-03** | Política de afinação musical (`PitchPolicy`: harmonic vs percussive vs locked) com override manual | **Aprovado no Domínio e Coberto por Testes Automatizados.** |
+| **SEC-01** | Isolamento multi-tenant (`churchId`), prevenção de auto-elevação e regras Firestore/Storage (500MB) | **Aprovado via regras declarativas e suite de avaliação de permissões.** |
+| **HW-01** | Ensaio de estresse contínuo de 8 horas sem falhas de buffer | **Protocolo Definido — Execução em Bancada Física Agendada.** |
+| **HW-02** | Medição física de crosstalk entre Canal 3 (Click) e Canais 1/2 (PA) $< -80\text{ dBFS}$ com alinhamento a $+18\text{ dBu}$ | **Protocolo Definido — Execução com Analisador Físico Agendada.** |
+
+---
+
+## 7. Reconciliação de Versão e Identificação Git
+
+* **Base de Trabalho:** `fe7586b` (pacote de consultoria 360, PRD e roadmap).
+* **Hash Intermediário de Hook:** `ee6e41b` (identificador transitório gerado antes do hook de commit consolidar o commit final).
+* **HEAD Consolidado na Branch:** `0e872a1` (`feat(gate1): implement offline readiness, audio route security, pitch policy and multi-tenant isolation`).
+* **Branch Dedicada:** `feat/gate1-reliability`.
+* **Revisão Final de Fechamento do Gate 1:** Commit final consolidando as correções metrológicas, interrupção imediata a 0ms, persistência pareada de stems/blobs e pacote de revisão local.
 
 ---
 

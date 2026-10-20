@@ -18,6 +18,7 @@ export interface SongProps {
   duration: number; // in seconds
   sections: SongSection[];
   stems: TrackStem[];
+  churchId?: string;
   pitchShiftSemitones?: number;
 }
 
@@ -32,6 +33,7 @@ export class Song {
   public readonly duration: number;
   public readonly sections: SongSection[];
   public readonly stems: TrackStem[];
+  public readonly churchId: string;
   public pitchShiftSemitones: number;
 
   constructor(props: SongProps) {
@@ -48,6 +50,7 @@ export class Song {
     this.duration = props.duration;
     this.sections = props.sections;
     this.stems = props.stems;
+    this.churchId = props.churchId || 'lagoinha-jp';
     this.pitchShiftSemitones = props.pitchShiftSemitones ?? 0;
   }
 

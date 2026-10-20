@@ -121,10 +121,10 @@ A equação exata de dimensionamento é:
 
 $$\text{Memória (bytes)} = \text{Duração (s)} \times \text{Taxa (Hz)} \times \text{Canais Físicos} \times 4$$
 
-* **Cálculo de 1 Música de 5 minutos (300 segundos a 48 kHz):**
-  * Stems Estéreo (8 stems $\times$ 2 canais $\times$ 48.000 $\times$ 300 $\times$ 4): **~921,6 MB**
-  * Stems Mono (5 stems $\times$ 1 canal $\times$ 48.000 $\times$ 300 $\times$ 4): **~288,0 MB**
-  * **Total Decodificado por Música em RAM:** **~1,21 GB**
+* **Cálculo de 1 Música de 5 minutos (300 segundos a 48 kHz / 32-bit Float):**
+  * **Cenário Típico Otimizado:** 8 stems estéreo ($8 \times 2 \times 48.000 \times 300 \times 4 = 921,6\text{ MB}$) + 5 stems mono ($5 \times 1 \times 48.000 \times 300 \times 4 = 288,0\text{ MB}$) = **~1.209,6 MB (~1,21 GB)**.
+  * **Cenário Teto Máximo:** 13 stems todos em estéreo ($13 \times 2 \times 48.000 \times 300 \times 4 = 1.497.600.000\text{ bytes}$) = **1,4976 GB (~1,395 GiB)**.
+  * *Observação Metrológica:* O patamar empírico de $350\text{ MB}$ foi excluído do dimensionamento por ser incompatível com áudio PCM Float32 descompactado em 13 pistas. A gestão de memória repousa no descarte imediato da música anterior (`dispose()`) na transição entre músicas.
 
 ### Política Obrigatória de Otimização de Memória e Preparação:
 1. **Decodificação Lazy (Just-In-Time):** Apenas a música em execução é mantida decodificada como `AudioBuffer` em RAM. A próxima música é mantida como `Blob` comprimido no disco local (IndexedDB) e sua decodificação é disparada em segundo plano apenas 30 segundos antes do término da faixa ativa.
