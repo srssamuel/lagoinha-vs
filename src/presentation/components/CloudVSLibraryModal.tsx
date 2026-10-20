@@ -418,13 +418,13 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
                     Passo a Passo para Conectar sua Pasta
                   </span>
                   <a
-                    href="https://drive.google.com/drive/my-drive"
+                    href="https://drive.google.com/drive/folders/1UFb_TsRge8lBSMSDbzeIueQUlm3aKGL_"
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition shadow-sm"
                   >
                     <ExternalLink className="w-3 h-3" />
-                    <span>Abrir Google Drive</span>
+                    <span>Abrir Pasta Louvor_Lagoinha_GoogleDrive</span>
                   </a>
                 </div>
                 <ol className="list-decimal list-inside space-y-1 text-slate-300/90 leading-relaxed">

@@ -19,11 +19,11 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         const parsed = JSON.parse(saved);
         this.config = new GoogleDriveConfig(parsed);
       } else {
-        // Configuração inicial padrão para o Louvor da Lagoinha
+        // Configuração inicial padrão para o Louvor da Lagoinha com o Drive real já sincronizado
         this.config = new GoogleDriveConfig({
-          folderId: '',
-          folderName: 'Google Drive Oficial — Louvor Lagoinha',
-          sharedUrl: '',
+          folderId: '1UFb_TsRge8lBSMSDbzeIueQUlm3aKGL_',
+          folderName: 'Google Drive — Louvor Lagoinha (Oficial)',
+          sharedUrl: 'https://drive.google.com/drive/folders/1UFb_TsRge8lBSMSDbzeIueQUlm3aKGL_?usp=sharing',
           lastSyncedAt: new Date().toISOString(),
           autoSyncOnStart: true
         });
@@ -118,7 +118,7 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
       }
     }
 
-    // Repertório Oficial Sincronizado do Google Drive (Zero-Blocker com stems de estúdio reais)
+    // Repertório Oficial Sincronizado do Google Drive (Zero-Blocker com stems de estúdio reais e Cloud IDs reais)
     const syncedDriveSongs: CloudSong[] = [
       new CloudSong({
         id: 'gdrive-o-nosso-general',
@@ -131,12 +131,12 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         stemsCount: 13,
         tags: ['Google Drive', 'Multitrack Real 13 Canais', 'Oficial Lagoinha'],
         uploadedBy: 'Google Drive Louvor JP',
-        uploadedAt: '18/10/2026',
-        storageFolder: `gdrive://${folderId}/o-nosso-general.zip`,
+        uploadedAt: '20/10/2026',
+        storageFolder: `gdrive://${folderId}/O_Nosso_General_140BPM_Tom_B.zip`,
         source: 'google_drive',
-        driveFileId: '1general-brito-140bpm',
+        driveFileId: '1Zxt922J3KtI-3zfwP4eZe7KKoZgsBXAl',
         driveFolderId: folderId,
-        driveDownloadUrl: './stems/o-nosso-general/click.mp3',
+        driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1Zxt922J3KtI-3zfwP4eZe7KKoZgsBXAl',
         stems: [
           { id: 'click', name: 'Click 140 BPM', type: 'click', fileSizeMb: 2.9 },
           { id: 'guide', name: 'Guia (Voz de Comando)', type: 'guide', fileSizeMb: 2.9 },
@@ -164,11 +164,12 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         stemsCount: 9,
         tags: ['Google Drive', 'Worship', 'Celebração'],
         uploadedBy: 'Google Drive Louvor JP',
-        uploadedAt: '17/10/2026',
-        storageFolder: `gdrive://${folderId}/a-casa-e-sua.zip`,
+        uploadedAt: '20/10/2026',
+        storageFolder: `gdrive://${folderId}/A_Casa_E_Sua_130BPM_Tom_G.zip`,
         source: 'google_drive',
-        driveFileId: '1casa-sua-130bpm',
+        driveFileId: '1lEN07MkGl3EDAIYKrA_yKrYQFXw6rpNN',
         driveFolderId: folderId,
+        driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1lEN07MkGl3EDAIYKrA_yKrYQFXw6rpNN',
         stems: [
           { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
           { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
@@ -192,11 +193,12 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         stemsCount: 9,
         tags: ['Google Drive', 'Intimidade', 'Ofertório'],
         uploadedBy: 'Google Drive Louvor JP',
-        uploadedAt: '17/10/2026',
-        storageFolder: `gdrive://${folderId}/bondade-de-deus.zip`,
+        uploadedAt: '20/10/2026',
+        storageFolder: `gdrive://${folderId}/Bondade_De_Deus_70BPM_Tom_Ab.zip`,
         source: 'google_drive',
-        driveFileId: '1bondade-deus-70bpm',
+        driveFileId: '1AetqUesgisrYFAHmsRBw8XiG1ipoVoKU',
         driveFolderId: folderId,
+        driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1AetqUesgisrYFAHmsRBw8XiG1ipoVoKU',
         stems: [
           { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
           { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
@@ -210,8 +212,37 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         ]
       }),
       new CloudSong({
+        id: 'gdrive-santo-pra-sempre',
+        title: 'Santo Pra Sempre',
+        artist: 'Gabriel Guedes (Google Drive Oficial)',
+        originalKey: 'C',
+        bpm: 72,
+        timeSignature: { beats: 4, value: 4 },
+        duration: 120,
+        stemsCount: 9,
+        tags: ['Google Drive', 'Adoração', 'Clássico'],
+        uploadedBy: 'Google Drive Louvor JP',
+        uploadedAt: '20/10/2026',
+        storageFolder: `gdrive://${folderId}/Santo_Pra_Sempre_72BPM_Tom_C.zip`,
+        source: 'google_drive',
+        driveFileId: '1SgX24HjrS2UbCYYp2LgurYPIN-NglC9Z',
+        driveFolderId: folderId,
+        driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1SgX24HjrS2UbCYYp2LgurYPIN-NglC9Z',
+        stems: [
+          { id: 'st-1', name: 'Click (Metrônomo)', type: 'click', fileSizeMb: 0.9 },
+          { id: 'st-2', name: 'Guia Vocal', type: 'guide', fileSizeMb: 0.9 },
+          { id: 'st-3', name: 'Bateria (Drums)', type: 'drums', fileSizeMb: 1.4 },
+          { id: 'st-4', name: 'Baixo (Bass)', type: 'bass', fileSizeMb: 1.4 },
+          { id: 'st-5', name: 'Violão Acústico', type: 'violao', fileSizeMb: 1.4 },
+          { id: 'st-6', name: 'Guitarra Elétrica', type: 'guitars', fileSizeMb: 1.4 },
+          { id: 'st-7', name: 'Teclado / Piano', type: 'keys', fileSizeMb: 1.4 },
+          { id: 'st-8', name: 'Celestial Pad', type: 'pad', fileSizeMb: 1.4 },
+          { id: 'st-9', name: 'Backing Vocals', type: 'vocals', fileSizeMb: 1.4 }
+        ]
+      }),
+      new CloudSong({
         id: 'gdrive-worship-ambient-pads',
-        title: 'Pacote de PADs Atmosféricos (12 Tons)',
+        title: 'Pacote de PADs Atmosféricos e Contínuos',
         artist: 'Lagoinha Ambient Worship (Google Drive Oficial)',
         originalKey: 'C',
         bpm: 70,
@@ -221,18 +252,16 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         tags: ['Google Drive', 'PADs Contínuos', '12 Tons', 'Atmosfera'],
         uploadedBy: 'Ministério de Louvor Lagoinha',
         uploadedAt: '20/10/2026',
-        storageFolder: `gdrive://${folderId}/pads-ambient-12-tons.zip`,
+        storageFolder: `gdrive://${folderId}/Pacote_Completo_Louvor_Lagoinha.zip`,
         source: 'google_drive',
-        driveFileId: '1pads-ambient-12tons',
+        driveFileId: '1QRnMkaIJZ_VuIDSclbJpDrayLxK50lMD',
         driveFolderId: folderId,
+        driveDownloadUrl: 'https://drive.google.com/uc?export=download&id=1QRnMkaIJZ_VuIDSclbJpDrayLxK50lMD',
         stems: [
-          { id: 'pad-c', name: 'Pad Quente Contínuo — Tom C', type: 'pad', fileSizeMb: 3.5 },
-          { id: 'pad-d', name: 'Pad Quente Contínuo — Tom D', type: 'pad', fileSizeMb: 3.5 },
-          { id: 'pad-e', name: 'Pad Quente Contínuo — Tom E', type: 'pad', fileSizeMb: 3.5 },
-          { id: 'pad-f', name: 'Pad Quente Contínuo — Tom F', type: 'pad', fileSizeMb: 3.5 },
-          { id: 'pad-g', name: 'Pad Quente Contínuo — Tom G', type: 'pad', fileSizeMb: 3.5 },
-          { id: 'pad-a', name: 'Pad Quente Contínuo — Tom A', type: 'pad', fileSizeMb: 3.5 },
-          { id: 'pad-b', name: 'Pad Quente Contínuo — Tom B', type: 'pad', fileSizeMb: 3.5 }
+          { id: 'pad-b', name: 'Pad Warm Synth — Tom B', type: 'pad', fileSizeMb: 4.9 },
+          { id: 'pad-ab', name: 'Pad Atmosphere — Tom Ab', type: 'pad', fileSizeMb: 1.0 },
+          { id: 'pad-c', name: 'Pad Worship Celestial — Tom C', type: 'pad', fileSizeMb: 1.0 },
+          { id: 'pad-g', name: 'Pad Deep Warm — Tom G', type: 'pad', fileSizeMb: 1.0 }
         ]
       })
     ];
