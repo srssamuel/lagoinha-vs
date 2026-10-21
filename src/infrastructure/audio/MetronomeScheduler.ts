@@ -107,9 +107,11 @@ export class MetronomeScheduler {
     // A grade de tempos do click parte da posição que a música terá no instante de partida.
     const lead = Math.max(0, this.host.getTransportLeadSec?.() ?? 0);
     const posAtStart = lead > 0 ? Math.max(0, Math.round((currentTime + lead) * 1e6) / 1e6) : Math.max(0, currentTime);
-    const totalBeatsElapsed = Math.floor(posAtStart / secondsPerBeat);
-    this.beatInBar = (totalBeatsElapsed % beatsPerBar) + 1;
-    this.nextClickTime = ctx.currentTime + lead + (secondsPerBeat - (posAtStart % secondsPerBeat));
+    // Próximo tempo da grade a partir da posição (inclusive o próprio, se cair exatamente nele: na posição 0
+    // o tempo 1 soa na partida). O rótulo do compasso é o desse tempo, não o do tempo já em curso.
+    const nextBeatIndex = Math.ceil(posAtStart / secondsPerBeat - 1e-9);
+    this.beatInBar = (nextBeatIndex % beatsPerBar) + 1;
+    this.nextClickTime = ctx.currentTime + lead + (nextBeatIndex * secondsPerBeat - posAtStart);
 
     const scheduleWindow = () => {
       const liveCtx = this.host.getCtx();

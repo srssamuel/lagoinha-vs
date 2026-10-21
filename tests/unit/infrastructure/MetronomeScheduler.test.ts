@@ -63,32 +63,32 @@ describe('MetronomeScheduler — metrônomo procedural e contagem prévia', () =
   it('agenda no relógio do AudioContext com lookahead de 150 ms, não no do setTimeout', () => {
     scheduler.start();
     expect(scheduler.isRunning).toBe(true);
-    // Primeiro tempo em 0,5 s; fora da janela de 150 ms a partir de t=0
-    expect(startTimes()).toEqual([]);
+    // Música na posição 0: o tempo 1 (acento) cai no instante de partida, dentro da janela
+    expect(startTimes()).toEqual([0]);
 
-    // O timer rodando sem o relógio de áudio avançar não agenda nada
+    // O timer rodando sem o relógio de áudio avançar não agenda mais nada
     vi.advanceTimersByTime(2000);
-    expect(startTimes()).toEqual([]);
+    expect(startTimes()).toEqual([0]);
 
     g.setTime(0.4); // 0,4 + 0,15 > 0,5 => entra na janela
     vi.advanceTimersByTime(30);
-    expect(startTimes()).toEqual([0.5]);
-    expect(lengths()).toEqual([ACCENT_LEN]); // tempo 1 do compasso => acento
+    expect(startTimes()).toEqual([0, 0.5]);
 
     g.setTime(0.9);
     vi.advanceTimersByTime(30);
     g.setTime(1.4);
     vi.advanceTimersByTime(30);
-    expect(startTimes()).toEqual([0.5, 1.0, 1.5]);
-    expect(lengths()).toEqual([ACCENT_LEN, REGULAR_LEN, REGULAR_LEN]);
+    g.setTime(1.9);
+    vi.advanceTimersByTime(30);
+    expect(startTimes()).toEqual([0, 0.5, 1.0, 1.5, 2.0]);
+    // Acento no tempo 1 de cada compasso (posição 0 e 2,0 s em 4/4 a 120 BPM), não no tempo 2
+    expect(lengths()).toEqual([ACCENT_LEN, REGULAR_LEN, REGULAR_LEN, REGULAR_LEN, ACCENT_LEN]);
   });
 
   it('soma ao click a latência constante que os stems têm no PitchShifter (click no tempo da banda)', () => {
     scheduler.start();
-    g.setTime(0.4);
-    vi.advanceTimersByTime(30);
     expect(rawStartTimes()).toHaveLength(1);
-    expect(rawStartTimes()[0]).toBeCloseTo(0.5 + PITCH_PATH_LATENCY_SEC + CLICK_STRIP_LATENCY_SEC, 9);
+    expect(rawStartTimes()[0]).toBeCloseTo(0 + PITCH_PATH_LATENCY_SEC + CLICK_STRIP_LATENCY_SEC, 9);
     expect(PITCH_PATH_LATENCY_SEC).toBeGreaterThan(0);
   });
 
@@ -101,8 +101,11 @@ describe('MetronomeScheduler — metrônomo procedural e contagem prévia', () =
     g.setTime(10.2);
     vi.advanceTimersByTime(30);
     expect(startTimes()[0]).toBeCloseTo(10.25, 6);
-    // beatInBar inicial = floor(1,25/0,5) % 4 + 1 = 3 => regular
-    expect(lengths()[0]).toBe(REGULAR_LEN);
+    // Próximo tempo da música = 1,5 s = 4º tempo do compasso 1 => regular; o seguinte (2,0 s) abre o compasso 2
+    g.setTime(10.7);
+    vi.advanceTimersByTime(30);
+    expect(startTimes()[1]).toBeCloseTo(10.75, 6);
+    expect(lengths().slice(0, 2)).toEqual([REGULAR_LEN, ACCENT_LEN]);
   });
 
   it('stop() encerra o laço e para de reabastecer a janela', () => {
@@ -253,18 +256,21 @@ describe('MetronomeScheduler — metrônomo procedural e contagem prévia', () =
       scheduler.start();
       g.setTime(10.45);
       vi.advanceTimersByTime(30);
-      // 1º click = when + 1 tempo (0,5 s) = 10,55; sem tratar a margem sairia em 10,50
-      expect(startTimes()[0]).toBeCloseTo(10.55, 9);
+      // 1º click = tempo 1 no instante de partida (when = 10,05); sem tratar a margem sairia em 10,00
+      expect(startTimes()[0]).toBeCloseTo(10.05, 9);
+      expect(startTimes()[1]).toBeCloseTo(10.55, 9);
+      expect(lengths().slice(0, 2)).toEqual([ACCENT_LEN, REGULAR_LEN]);
     });
 
-    it('retomando em 30 s (tempo cheio): 1º click em when + 0,5 s', () => {
+    it('retomando em 30 s (tempo cheio, início do compasso 16): 1º click no próprio when, com acento', () => {
       g.setTime(10);
       playbackTime = 29.95;
       host.getTransportLeadSec = () => 0.05;
       scheduler.start();
       g.setTime(10.45);
       vi.advanceTimersByTime(30);
-      expect(startTimes()[0]).toBeCloseTo(10.55, 9);
+      expect(startTimes()[0]).toBeCloseTo(10.05, 9);
+      expect(lengths()[0]).toBe(ACCENT_LEN); // 30 s = 60 tempos = início de compasso em 4/4
     });
   });
 

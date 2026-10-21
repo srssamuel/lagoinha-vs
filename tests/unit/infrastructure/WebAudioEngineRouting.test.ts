@@ -112,8 +112,7 @@ describe('WebAudioEngine — roteamento IEM/PA com módulos extraídos', () => {
       await engine.loadSong(makeSong(['click', 'drums']));
       engine.setRoutingMode(mode);
       engine.play();
-      g.setTime(0.5); // 1º tempo em 0,55 s entra na janela de 150 ms
-      vi.advanceTimersByTime(30);
+      // Tempo 1 em when (0,05 s) já entra na janela de 150 ms; o relógio fica antes dele (click ainda pendente)
       const clicks = bufferSources();
       expect(clicks.length).toBeGreaterThan(0);
       return clicks;
@@ -230,15 +229,13 @@ describe('WebAudioEngine — roteamento IEM/PA com módulos extraídos', () => {
       }
     });
 
-    it('o click procedural parte do mesmo when: 1º click em when + 1 tempo (+ latências dos stems)', async () => {
+    it('o click procedural parte do mesmo when: tempo 1 em when (+ latências dos stems)', async () => {
       await engine.loadSong(makeSong(['click', 'drums']));
       g.setTime(3);
       engine.play();
-      g.setTime(3.5);
-      vi.advanceTimersByTime(30);
       const first = g.nodes.find((n) => n.kind === 'bufferSource')!;
       const at = (first.start as ReturnType<typeof vi.fn>).mock.calls[0]![0] as number;
-      expect(at).toBeCloseTo(3 + TRANSPORT_START_MARGIN_S + 0.5 + PITCH_PATH_LATENCY_SEC + CLICK_STRIP_LATENCY_SEC, 9);
+      expect(at).toBeCloseTo(3 + TRANSPORT_START_MARGIN_S + PITCH_PATH_LATENCY_SEC + CLICK_STRIP_LATENCY_SEC, 9);
     });
   });
 
