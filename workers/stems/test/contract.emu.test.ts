@@ -6,13 +6,16 @@ import {
   EMULATOR,
   applyMigrations,
   call,
+  callWithEnv,
   clearFirestore,
   generateKeys,
   mintToken,
+  mintUnsigned,
   mockJwks,
   randomBytes,
   seed,
-  sha256Hex
+  sha256Hex,
+  type TestKeys
 } from './helpers';
 
 const MIB = 1024 * 1024;
@@ -28,6 +31,7 @@ async function makeBlob(size = 2048): Promise<Blob> {
 }
 
 const tokens: Record<string, string> = {};
+let keys: TestKeys;
 
 const blobPath = (scope: string, sha: string, tail = '') => `/v1/${scope}/blobs/${sha}${tail}`;
 const A = 'churches/igreja-a';
@@ -54,7 +58,7 @@ async function download(token: string | null, scope: string, sha: string, song =
 
 describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + regras reais)', () => {
   beforeAll(async () => {
-    const keys = await generateKeys();
+    keys = await generateKeys();
     mockJwks(keys);
     await applyMigrations();
     await clearFirestore();
@@ -83,6 +87,8 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
     await seed('churches/igreja-a/members/dave', member('leader', 'pending'));
     await seed('churches/igreja-a/members/eve', member('musician'));
     await seed('churches/igreja-b/members/tecb', member('sound_tech'));
+    await seed('churches/igreja-a/members/adm', member('admin'));
+    tokens.adm = await mintToken(keys, { uid: 'adm' });
     await seed('users/eve', { primaryChurchId: 'igreja-a' });
     await seed('platformAdmins/cura', { since: '2026-10-21' });
 
@@ -488,4 +494,238 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
       expect(res.status).toBe(403);
     });
   });
-});
+  // ---------- revisao de seguranca (commit ad41d6a) ----------
+  describe('revisao de seguranca: regressoes', () => {
+    const putRaw = (token: string, scope: string, sha: string, bytes: Uint8Array) =>
+      call(blobPath(scope, sha), { method: 'PUT', token, headers: { 'content-type': 'audio/wav' }, body: bytes });
+
+    async function multipartAll(token: string, scope: string, sha: string, bytes: Uint8Array) {
+      const create = await call(blobPath(scope, sha, '/multipart'), {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ size: bytes.length })
+      });
+      expect(create.status).toBe(201);
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = await call(blobPath(scope, sha, `/multipart/${encodeURIComponent(uploadId)}/1`), {
+        method: 'PUT',
+        token,
+        body: bytes
+      });
+      const etag = ((await part.json()) as { etag: string }).etag;
+      return call(blobPath(scope, sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ parts: [{ partNumber: 1, etag }] })
+      });
+    }
+
+    async function seedVersion(songId: string, sha: string) {
+      await seed(`churches/igreja-a/library/${songId}`, { title: songId });
+      await seed(`churches/igreja-a/library/${songId}/versions/v1`, { stems: [{ sha256: sha }] });
+    }
+
+    // MEDIO 1
+    it('pre-reserva de hash por multipart com lixo: o PUT verdadeiro regrava, promove para r2-sha256 e baixa certo', async () => {
+      const real = await makeBlob(3000);
+      await seedVersion('song-prereserva', real.sha);
+      const garbage = randomBytes(3000);
+      expect((await multipartAll(tokens.alice!, A, real.sha, garbage)).status).toBe(201);
+      const head = await call(blobPath(A, real.sha), { method: 'HEAD', token: tokens.alice! });
+      expect(head.headers.get('x-integrity')).toBe('client-declared');
+
+      // PUT com conteudo que nao bate nao toca no lixo existente (continua como estava)
+      const wrong = await putRaw(tokens.alice!, A, real.sha, randomBytes(3000));
+      expect(wrong.status).toBe(400);
+      expect((await call(blobPath(A, real.sha), { method: 'HEAD', token: tokens.alice! })).headers.get('x-integrity')).toBe('client-declared');
+
+      const fixed = await putRaw(tokens.alice!, A, real.sha, real.bytes);
+      expect(fixed.status).toBe(201);
+      expect(await fixed.json()).toMatchObject({ promoted: true, integrity: 'r2-sha256' });
+      expect((await call(blobPath(A, real.sha), { method: 'HEAD', token: tokens.alice! })).headers.get('x-integrity')).toBe('r2-sha256');
+      const file = await download(tokens.bob!, A, real.sha, 'song-prereserva', 'v1');
+      expect(await sha256Hex(await file.arrayBuffer())).toBe(real.sha);
+      // verificado de verdade: o terceiro PUT nao regrava
+      expect((await putRaw(tokens.alice!, A, real.sha, real.bytes)).status).toBe(200);
+    });
+
+    it('exclusao de blob: so admin da igreja; some do R2, do registro e das origens', async () => {
+      const blob = await makeBlob(900);
+      expect((await upload(tokens.alice!, A, blob)).status).toBe(201);
+      await call(blobPath(A, blob.sha, '/sources'), {
+        method: 'POST',
+        token: tokens.alice!,
+        body: JSON.stringify({ kind: 'app', sourceId: 'del-me' })
+      });
+      for (const who of ['alice', 'bob', 'carol', 'tecb']) {
+        expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens[who]! })).status).toBe(403);
+      }
+      expect(await env.STEMS.head(`churches/igreja-a/blobs/${blob.sha}`)).not.toBeNull();
+      expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(204);
+      expect(await env.STEMS.head(`churches/igreja-a/blobs/${blob.sha}`)).toBeNull();
+      expect(await env.REGISTRY.prepare('SELECT 1 FROM blobs WHERE sha256 = ?1').bind(blob.sha).first()).toBeNull();
+      expect(await env.REGISTRY.prepare('SELECT 1 FROM sources WHERE sha256 = ?1').bind(blob.sha).first()).toBeNull();
+      expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(404);
+      // admin da A nao apaga na B
+      const other = await makeBlob(500);
+      expect((await upload(tokens.tecb!, B, other)).status).toBe(201);
+      expect((await call(blobPath(B, other.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(403);
+    });
+
+    it('exclusao no catalogo: so curador', async () => {
+      const blob = await makeBlob(700);
+      expect((await upload(tokens.cura!, CATALOG, blob)).status).toBe(201);
+      expect((await call(blobPath(CATALOG, blob.sha), { method: 'DELETE', token: tokens.eve! })).status).toBe(403);
+      expect((await call(blobPath(CATALOG, blob.sha), { method: 'DELETE', token: tokens.cura! })).status).toBe(204);
+    });
+
+    // MEDIO 2
+    it('partes nao passam do size declarado (413) e o reenvio da mesma parte nao conta em dobro', async () => {
+      const sha = (await makeBlob()).sha;
+      const create = await call(blobPath(A, sha, '/multipart'), { method: 'POST', token: tokens.alice!, body: JSON.stringify({ size: 6 * MIB }) });
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = (n: number, bytes: Uint8Array) =>
+        call(blobPath(A, sha, `/multipart/${encodeURIComponent(uploadId)}/${n}`), { method: 'PUT', token: tokens.alice!, body: bytes });
+      expect((await part(1, randomBytes(5 * MIB))).status).toBe(200);
+      expect((await part(1, randomBytes(5 * MIB))).status).toBe(200); // reenvio substitui
+      const over = await part(2, randomBytes(2 * MIB)); // 5 + 2 > 6
+      expect(over.status).toBe(413);
+      expect(await over.json()).toEqual({ error: 'parts_exceed_size' });
+      expect((await part(2, randomBytes(1 * MIB))).status).toBe(200); // 5 + 1 = 6
+      await call(blobPath(A, sha, `/multipart/${encodeURIComponent(uploadId)}`), { method: 'DELETE', token: tokens.alice! });
+    });
+
+    it('no maximo 3 uploads abertos por uid (429); abortar libera', async () => {
+      const ids: Array<{ sha: string; id: string }> = [];
+      for (let i = 0; i < 3; i += 1) {
+        const sha = (await makeBlob()).sha;
+        const res = await call(blobPath(B, sha, '/multipart'), { method: 'POST', token: tokens.tecb!, body: JSON.stringify({ size: 100 }) });
+        expect(res.status).toBe(201);
+        ids.push({ sha, id: ((await res.json()) as { uploadId: string }).uploadId });
+      }
+      const extra = (await makeBlob()).sha;
+      const blocked = await call(blobPath(B, extra, '/multipart'), { method: 'POST', token: tokens.tecb!, body: JSON.stringify({ size: 100 }) });
+      expect(blocked.status).toBe(429);
+      const first = ids[0]!;
+      expect((await call(blobPath(B, first.sha, `/multipart/${encodeURIComponent(first.id)}`), { method: 'DELETE', token: tokens.tecb! })).status).toBe(204);
+      const again = await call(blobPath(B, extra, '/multipart'), { method: 'POST', token: tokens.tecb!, body: JSON.stringify({ size: 100 }) });
+      expect(again.status).toBe(201);
+      ids.push({ sha: extra, id: ((await again.json()) as { uploadId: string }).uploadId });
+      for (const { sha, id } of ids.slice(1)) {
+        await call(blobPath(B, sha, `/multipart/${encodeURIComponent(id)}`), { method: 'DELETE', token: tokens.tecb! });
+      }
+    });
+
+    // BAIXO 3
+    it('reserva ativa por (escopo, hash): PUT, complete e exclusao concorrentes recebem 409 e nada e escrito', async () => {
+      const blob = await makeBlob(1500);
+      const reserve = (createdAt: string) =>
+        env.REGISTRY.prepare('INSERT OR REPLACE INTO reservations (scope, sha256, holder, created_at) VALUES (?1, ?2, ?3, ?4)')
+          .bind('church:igreja-a', blob.sha, 'outro-escritor', createdAt)
+          .run();
+      await reserve(new Date().toISOString());
+      const put = await putRaw(tokens.alice!, A, blob.sha, blob.bytes);
+      expect(put.status).toBe(409);
+      expect(await put.json()).toEqual({ error: 'in_progress' });
+      expect(await env.STEMS.head(`churches/igreja-a/blobs/${blob.sha}`)).toBeNull();
+      expect((await multipartAll(tokens.alice!, A, blob.sha, blob.bytes)).status).toBe(409);
+      expect(await env.STEMS.head(`churches/igreja-a/blobs/${blob.sha}`)).toBeNull();
+
+      // reserva vencida (Worker que caiu no meio) pode ser retomada, e e liberada no fim
+      await reserve(new Date(Date.now() - 60 * 60 * 1000).toISOString());
+      expect((await putRaw(tokens.alice!, A, blob.sha, blob.bytes)).status).toBe(201);
+      expect(await env.REGISTRY.prepare('SELECT 1 FROM reservations WHERE sha256 = ?1').bind(blob.sha).first()).toBeNull();
+
+      // com o blob verificado, nem a exclusao concorrente passa por cima de uma reserva ativa
+      await reserve(new Date().toISOString());
+      expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(409);
+      expect(await env.STEMS.head(`churches/igreja-a/blobs/${blob.sha}`)).not.toBeNull();
+    });
+
+    it('complete com tamanho divergente nao apaga objeto ja verificado por PUT', async () => {
+      const blob = await makeBlob(1200);
+      const create = await call(blobPath(A, blob.sha, '/multipart'), { method: 'POST', token: tokens.alice!, body: JSON.stringify({ size: 1201 }) });
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/1`), { method: 'PUT', token: tokens.alice!, body: blob.bytes });
+      const etag = ((await part.json()) as { etag: string }).etag;
+      // o PUT verdadeiro chega antes do complete
+      expect((await putRaw(tokens.alice!, A, blob.sha, blob.bytes)).status).toBe(201);
+      const done = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
+        method: 'POST',
+        token: tokens.alice!,
+        body: JSON.stringify({ parts: [{ partNumber: 1, etag }] })
+      });
+      expect(done.status).toBe(409);
+      const stored = await env.STEMS.get(`churches/igreja-a/blobs/${blob.sha}`);
+      expect(await sha256Hex(await stored!.arrayBuffer())).toBe(blob.sha);
+    });
+
+    // BAIXO 4
+    it('Range: invalido, insatisfazivel ou multiplo = 416; valido e recortado; falha do R2 = 502', async () => {
+      const blob = await makeBlob(100);
+      await seedVersion('song-range', blob.sha);
+      expect((await upload(tokens.alice!, A, blob)).status).toBe(201);
+      const get = (range: string) => download(tokens.bob!, A, blob.sha, 'song-range', 'v1', { range });
+      for (const bad of ['bytes=abc', 'bytes=0-1,3-4', 'bytes=100-', 'bytes=500-600', 'bytes=5-2', 'bytes=-0', 'bytes=-', 'items=0-5', 'bytes=0-1-2']) {
+        const res = await get(bad);
+        expect(res.status, bad).toBe(416);
+        expect(res.headers.get('content-range'), bad).toBe('bytes */100');
+      }
+      const clipped = await get('bytes=90-9999');
+      expect(clipped.status).toBe(206);
+      expect(clipped.headers.get('content-range')).toBe('bytes 90-99/100');
+      expect(new Uint8Array(await clipped.arrayBuffer())).toEqual(blob.bytes.slice(90));
+      const open = await get('bytes=0-');
+      expect(open.status).toBe(206);
+      expect((await open.arrayBuffer()).byteLength).toBe(100);
+
+      const broken = { get: async () => { throw new Error('r2 fora do ar'); } };
+      const res = await callWithEnv({ STEMS: broken }, `${blobPath(A, blob.sha)}?song=song-range&version=v1`, {
+        token: tokens.bob!,
+        headers: { range: 'bytes=0-9' }
+      });
+      expect(res.status).toBe(502);
+    });
+
+    // BAIXO 5
+    it('JSON acima de 64 KB e recusado (content-length e corpo em stream)', async () => {
+      const sha = (await makeBlob()).sha;
+      const big = JSON.stringify({ size: 10, lixo: 'x'.repeat(70 * 1024) });
+      const withLength = await call(blobPath(A, sha, '/multipart'), { method: 'POST', token: tokens.alice!, headers: { 'content-length': String(big.length) }, body: big });
+      expect(withLength.status).toBe(413);
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(big));
+          controller.close();
+        }
+      });
+      const chunked = await call(blobPath(A, sha, '/multipart'), { method: 'POST', token: tokens.alice!, body: stream });
+      expect(chunked.status).toBe(413);
+      expect(await env.REGISTRY.prepare('SELECT 1 FROM uploads WHERE sha256 = ?1').bind(sha).first()).toBeNull();
+    });
+
+    // BAIXO 6
+    it('uid com barras ou pontos de caminho e recusado (401); uid com caracteres especiais e codificado no caminho', async () => {
+      const blob = await makeBlob(300);
+      for (const uid of ['x/../alice', 'alice/members', '..', '.']) {
+        expect((await upload(await mintToken(keys, { uid }), A, blob)).status, uid).toBe(401);
+      }
+      await seed('churches/igreja-a/members/ana@igreja.org', { role: 'sound_tech', status: 'active' });
+      const ana = await mintToken(keys, { uid: 'ana@igreja.org' });
+      expect((await upload(ana, A, blob)).status).toBe(201);
+    });
+    // NOVO
+    it('modo emulador: token sem assinatura de projeto demo-* funciona so com AUTH_EMULATOR=true', async () => {
+      const token = mintUnsigned({ uid: 'alice' });
+      const blob = await makeBlob(400);
+      const off = await call(blobPath(A, blob.sha), { method: 'PUT', token, body: blob.bytes });
+      expect(off.status).toBe(401);
+      const on = await callWithEnv({ AUTH_EMULATOR: 'true' }, blobPath(A, blob.sha), {
+        method: 'PUT',
+        token,
+        headers: { 'content-length': String(blob.bytes.length) },
+        body: blob.bytes
+      });
+      expect(on.status).toBe(201);
+    });
+  });});

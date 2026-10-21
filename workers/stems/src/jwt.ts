@@ -13,6 +13,8 @@ const CLOCK_SKEW_SEC = 60;
 const DEFAULT_JWKS_TTL_SEC = 3600;
 /** Chave desconhecida so provoca nova busca do JWKS depois deste intervalo (evita amplificacao). */
 const MIN_REFETCH_MS = 60_000;
+/** Se o Google falhar, a copia vencida continua valendo por ate 10 min. */
+const STALE_GRACE_MS = 10 * 60_000;
 
 interface JwksCache {
   url: string;
@@ -22,6 +24,12 @@ interface JwksCache {
 }
 
 let jwksCache: JwksCache | null = null;
+let inflight: Promise<JwksCache> | null = null;
+
+/** Modo emulador do Firebase Auth: so em projeto "demo-*" E com AUTH_EMULATOR=true. Nunca em producao. */
+export function authEmulatorEnabled(env: Env): boolean {
+  return env.AUTH_EMULATOR === 'true' && env.FIREBASE_PROJECT_ID.startsWith('demo-');
+}
 
 function b64urlToBytes(value: string): Uint8Array {
   if (!/^[A-Za-z0-9_-]*$/.test(value)) throw unauthenticated();
@@ -48,7 +56,7 @@ function maxAgeSeconds(cacheControl: string | null): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 24 * 3600) : DEFAULT_JWKS_TTL_SEC;
 }
 
-async function refreshJwks(env: Env, now: number): Promise<JwksCache> {
+async function fetchJwks(env: Env, now: number): Promise<JwksCache> {
   let response: Response;
   try {
     response = await fetch(env.JWKS_URL, { signal: AbortSignal.timeout(8000) });
@@ -84,12 +92,30 @@ async function refreshJwks(env: Env, now: number): Promise<JwksCache> {
   return jwksCache;
 }
 
+/** Buscas simultaneas viram uma so; com falha do Google, usa a copia vencida por ate STALE_GRACE_MS. */
+function refreshJwks(env: Env, now: number): Promise<JwksCache> {
+  if (!inflight) {
+    inflight = fetchJwks(env, now)
+      .catch((err: unknown) => {
+        const stale = jwksCache && jwksCache.url === env.JWKS_URL ? jwksCache : null;
+        if (stale && now < stale.expiresAt + STALE_GRACE_MS) return stale;
+        throw err;
+      })
+      .finally(() => {
+        inflight = null;
+      });
+  }
+  return inflight;
+}
 async function getKey(kid: string, env: Env, now: number): Promise<CryptoKey | null> {
   let cache = jwksCache && jwksCache.url === env.JWKS_URL ? jwksCache : null;
   if (!cache || now >= cache.expiresAt) cache = await refreshJwks(env, now);
   const known = cache.keys.get(kid);
   if (known) return known;
-  if (now - cache.fetchedAt >= MIN_REFETCH_MS) cache = await refreshJwks(env, now);
+  if (now - cache.fetchedAt >= MIN_REFETCH_MS) {
+    const current: JwksCache = cache;
+    cache = await refreshJwks(env, now).catch(() => current);
+  }
   return cache.keys.get(kid) ?? null;
 }
 
@@ -104,18 +130,25 @@ export async function verifyIdToken(token: string, env: Env, now = Date.now()): 
   const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
 
   const header = decodeJson(headerPart);
-  if (header.alg !== 'RS256' || typeof header.kid !== 'string' || header.kid === '') throw unauthenticated();
+  const unsigned = header.alg === 'none';
+  if (unsigned) {
+    if (!authEmulatorEnabled(env)) throw unauthenticated();
+  } else if (header.alg !== 'RS256' || typeof header.kid !== 'string' || header.kid === '') {
+    throw unauthenticated();
+  }
 
-  const key = await getKey(header.kid, env, now);
-  if (!key) throw unauthenticated();
-
-  const valid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    b64urlToBytes(signaturePart),
-    new TextEncoder().encode(`${headerPart}.${payloadPart}`)
-  );
-  if (!valid) throw unauthenticated();
+  // Tokens do Firebase Auth Emulator (alg none) pulam so a assinatura; iss/aud/exp/sub/provedor valem igual.
+  if (!unsigned) {
+    const key = await getKey(header.kid as string, env, now);
+    if (!key) throw unauthenticated();
+    const valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      b64urlToBytes(signaturePart),
+      new TextEncoder().encode(`${headerPart}.${payloadPart}`)
+    );
+    if (!valid) throw unauthenticated();
+  }
 
   const claims = decodeJson(payloadPart);
   const nowSec = Math.floor(now / 1000);
@@ -123,7 +156,10 @@ export async function verifyIdToken(token: string, env: Env, now = Date.now()): 
   if (claims.iss !== issuer || claims.aud !== env.FIREBASE_PROJECT_ID) throw unauthenticated();
   if (typeof claims.exp !== 'number' || claims.exp <= nowSec) throw unauthenticated();
   if (typeof claims.iat !== 'number' || claims.iat > nowSec + CLOCK_SKEW_SEC) throw unauthenticated();
-  if (typeof claims.sub !== 'string' || claims.sub === '' || claims.sub.length > 128) throw unauthenticated();
+  // uid vira segmento de caminho no Firestore: so caracteres seguros (uids reais do Firebase sao alfanumericos).
+  if (typeof claims.sub !== 'string' || !/^[A-Za-z0-9_.:@-]{1,128}$/.test(claims.sub) || claims.sub === '.' || claims.sub === '..') {
+    throw unauthenticated();
+  }
   if (typeof claims.auth_time === 'number' && claims.auth_time > nowSec + CLOCK_SKEW_SEC) throw unauthenticated();
 
   const firebase = claims.firebase;

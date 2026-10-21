@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:emu": "node scripts/test-emu.mjs",
     "dev": "wrangler dev",
+    "dev:emu": "wrangler d1 migrations apply lagoinha-vs-stems-registry --local && wrangler dev --port 8787 --var FIREBASE_PROJECT_ID:demo-lagoinha-vs --var FIRESTORE_BASE:http://127.0.0.1:8080 --var AUTH_EMULATOR:true --var ALLOWED_ORIGINS:http://localhost:5173",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

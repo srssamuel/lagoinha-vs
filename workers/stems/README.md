@@ -25,6 +25,10 @@ testes aponta para la; o codigo de producao nao tem desvio). O Firestore real do
 `127.0.0.1:8080` (o workerd local tem rede de saida). O emulador aceita JWT sem validar assinatura; o estado e preparado
 por REST com `Authorization: Bearer owner`.
 
+## Desenvolvimento local ponta a ponta
+
+`npm run dev:emu` aplica as migracoes no D1 local e sobe o Worker em http://127.0.0.1:8787 apontando para o Firestore Emulator (8080), com o modo emulador de autenticacao (tokens do Firebase Auth Emulator) e CORS para http://localhost:5173. Valores em `.dev.vars.example`. O modo emulador so existe com projeto `demo-*` e `AUTH_EMULATOR=true`.
+
 ## Publicar (exige `wrangler login` do dono da conta Cloudflare)
 
 ```powershell

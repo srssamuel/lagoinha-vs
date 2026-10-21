@@ -1,23 +1,31 @@
-import { authorizeRead, authorizeWrite } from './authz';
+import { authorizeAdmin, authorizeRead, authorizeWrite } from './authz';
 import type { Env } from './env';
 import { HttpError, badRequest, forbidden, json, notFound } from './http';
 import type { VerifiedToken } from './jwt';
 import {
   type BlobRow,
+  MAX_OPEN_UPLOADS_PER_UID,
   type SourceInput,
-  deleteUploadStatement,
+  acquireReservation,
+  countOpenUploads,
+  deleteBlobStatements,
+  deleteUploadWithPartsStatements,
   getBlob,
   getUpload,
-  insertBlob,
   insertBlobStatement,
   insertUpload,
+  purgeStaleUploads,
+  recordPart,
+  releaseReservation,
+  sumPartsExcept,
+  upsertBlobStatement,
   upsertSource
 } from './registry';
 import { type Route, type Scope, r2Key, validIdSegment } from './route';
 
 /** O plano Workers Free aceita corpo de ate 100 MB; fica folga para o envelope. */
 export const MAX_BODY_BYTES = 95 * 1024 * 1024;
-/** Teto de um arquivo montado por multipart (contrato nao define; evita estourar a cota do R2 por engano). */
+/** Teto de um arquivo montado por multipart (evita estourar a cota do R2 por engano). */
 export const MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_NAME_LENGTH = 255;
 const MAX_JSON_BYTES = 64 * 1024;
@@ -57,11 +65,35 @@ function originalName(request: Request): string | null {
   return name;
 }
 
+/** Le o corpo JSON com teto de 64 KB: confere content-length e conta os bytes lidos (chunked). */
 async function readJson(request: Request): Promise<Record<string, unknown>> {
-  const text = await request.text();
-  if (text.length > MAX_JSON_BYTES) throw new HttpError(413, 'payload_too_large');
+  const declared = request.headers.get('content-length');
+  if (declared !== null && (!/^\d{1,12}$/.test(declared) || Number(declared) > MAX_JSON_BYTES)) {
+    throw new HttpError(413, 'payload_too_large');
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = request.body?.getReader();
+  if (reader) {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_JSON_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new HttpError(413, 'payload_too_large');
+      }
+      chunks.push(value);
+    }
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   try {
-    const parsed: unknown = JSON.parse(text);
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
   } catch {
     // cai no erro abaixo
@@ -85,6 +117,21 @@ async function requireOwnUpload(env: Env, auth: VerifiedToken, route: { scope: S
   // Mesmo uid, mesmo escopo, mesmo hash que abriram o upload.
   if (row.uid !== auth.uid || row.scope !== route.scope.key || row.sha256 !== route.sha256) throw forbidden();
   return row;
+}
+
+/**
+ * Um escritor por (escopo, hash) de cada vez: PUT, complete do multipart e exclusao disputam a mesma
+ * reserva (INSERT condicional no D1). Quem perde recebe 409; ninguem apaga ou sobrescreve o objeto
+ * que outro acabou de conferir.
+ */
+async function withReservation<T>(env: Env, scope: Scope, sha256: string, fn: () => Promise<T>): Promise<T> {
+  const holder = crypto.randomUUID();
+  if (!(await acquireReservation(env.REGISTRY, scope.key, sha256, holder))) throw new HttpError(409, 'in_progress');
+  try {
+    return await fn();
+  } finally {
+    await releaseReservation(env.REGISTRY, scope.key, sha256, holder).catch(() => undefined);
+  }
 }
 
 function blobHeaders(row: Pick<BlobRow, 'integrity'>, sha256: string): Headers {
@@ -112,46 +159,82 @@ export const putBlob: Handler<'blob'> = async (request, env, auth, route) => {
   const name = originalName(request);
   const contentType = cleanContentType(request.headers.get('content-type'));
 
-  const existing = await getBlob(env.REGISTRY, route.scope.key, route.sha256);
-  if (existing) return json({ ok: true, existed: true, size: existing.size, integrity: existing.integrity }, 200);
+  const alreadyVerified = (row: BlobRow | null): Response | null =>
+    row && row.integrity === 'r2-sha256'
+      ? json({ ok: true, existed: true, size: row.size, integrity: row.integrity }, 200)
+      : null;
 
-  let stored: R2Object;
-  try {
-    stored = await env.STEMS.put(r2Key(route.scope, route.sha256), request.body, {
+  const early = alreadyVerified(await getBlob(env.REGISTRY, route.scope.key, route.sha256));
+  if (early) return early;
+
+  // Registro ausente OU client-declared (multipart nao conferido): o PUT regrava com sha256 conferido
+  // pelo R2 e promove para r2-sha256, entao ninguem consegue "pre-reservar" um hash com conteudo falso.
+  return withReservation(env, route.scope, route.sha256, async () => {
+    const current = await getBlob(env.REGISTRY, route.scope.key, route.sha256);
+    const verified = alreadyVerified(current);
+    if (verified) return verified;
+
+    let stored: R2Object;
+    try {
+      stored = await env.STEMS.put(r2Key(route.scope, route.sha256), request.body, {
+        sha256: route.sha256,
+        httpMetadata: { contentType },
+        customMetadata: { uploadedBy: auth.uid, ...(name ? { originalName: name } : {}) }
+      });
+    } catch (err) {
+      if (isChecksumError(err)) throw badRequest('sha256_mismatch');
+      throw err;
+    }
+    if (stored.size !== length) {
+      // Nao deveria ocorrer; sob a reserva nenhum objeto conferido pode estar neste caminho, so o nosso.
+      if (!current) await env.STEMS.delete(r2Key(route.scope, route.sha256));
+      throw badRequest('size_mismatch');
+    }
+
+    await upsertBlobStatement(env.REGISTRY, {
+      scope: route.scope.key,
       sha256: route.sha256,
-      httpMetadata: { contentType },
-      customMetadata: { uploadedBy: auth.uid, ...(name ? { originalName: name } : {}) }
-    });
-  } catch (err) {
-    if (isChecksumError(err)) throw badRequest('sha256_mismatch');
-    throw err;
-  }
-  if (stored.size !== length) {
-    // Nao deveria ocorrer (o R2 le exatamente o corpo); por seguranca nao registra.
-    await env.STEMS.delete(r2Key(route.scope, route.sha256));
-    throw badRequest('size_mismatch');
-  }
-
-  await insertBlob(env.REGISTRY, {
-    scope: route.scope.key,
-    sha256: route.sha256,
-    size: stored.size,
-    content_type: contentType,
-    original_name: name,
-    integrity: 'r2-sha256',
-    uploaded_by: auth.uid,
-    uploaded_at: nowIso()
+      size: stored.size,
+      content_type: contentType,
+      original_name: name,
+      integrity: 'r2-sha256',
+      uploaded_by: auth.uid,
+      uploaded_at: nowIso()
+    }).run();
+    return json({ ok: true, existed: false, promoted: current !== null, size: stored.size, integrity: 'r2-sha256' }, 201);
   });
-  return json({ ok: true, existed: false, size: stored.size, integrity: 'r2-sha256' }, 201);
 };
 
-function resolveRange(range: R2Range, size: number): { start: number; end: number } {
-  if ('suffix' in range && range.suffix !== undefined) {
-    return { start: Math.max(0, size - range.suffix), end: size - 1 };
+/** Exclusao: so admin da igreja (ou curador, no catalogo). Remove o objeto, o registro e as origens. */
+export const deleteBlob: Handler<'blob'> = async (_request, env, auth, route) => {
+  await authorizeAdmin(env, auth.raw, auth.uid, route.scope);
+  return withReservation(env, route.scope, route.sha256, async () => {
+    if (!(await getBlob(env.REGISTRY, route.scope.key, route.sha256))) throw notFound('blob_not_found');
+    await env.STEMS.delete(r2Key(route.scope, route.sha256));
+    await env.REGISTRY.batch(deleteBlobStatements(env.REGISTRY, route.scope.key, route.sha256));
+    return new Response(null, { status: 204 });
+  });
+};
+
+/**
+ * Interpreta `Range: bytes=...` (uma unica faixa). Invalido, insatisfazivel ou multiplo = null (416).
+ */
+export function parseRange(header: string, size: number): { start: number; end: number } | null {
+  const match = /^bytes=(\d{0,15})-(\d{0,15})$/.exec(header.trim());
+  if (!match) return null;
+  const [, first = '', last = ''] = match;
+  if (first === '' && last === '') return null;
+  if (first === '') {
+    const suffix = Number(last);
+    if (suffix === 0) return null;
+    return { start: Math.max(0, size - suffix), end: size - 1 };
   }
-  const offset = 'offset' in range && range.offset !== undefined ? range.offset : 0;
-  const length = 'length' in range && range.length !== undefined ? range.length : size - offset;
-  return { start: offset, end: Math.min(size - 1, offset + length - 1) };
+  const start = Number(first);
+  if (start >= size) return null;
+  if (last === '') return { start, end: size - 1 };
+  const end = Number(last);
+  if (end < start) return null;
+  return { start, end: Math.min(end, size - 1) };
 }
 
 export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) => {
@@ -162,17 +245,23 @@ export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) =
 
   const row = await authorizeRead(env, auth.raw, route.scope, route.sha256, songId, versionId);
 
-  const key = r2Key(route.scope, route.sha256);
-  const wantsRange = request.headers.has('range');
-  let object: R2ObjectBody | R2Object | null;
+  const rangeHeader = request.headers.get('range');
+  let range: { start: number; end: number } | null = null;
+  if (rangeHeader !== null) {
+    range = parseRange(rangeHeader, row.size);
+    if (!range) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${row.size}` } });
+  }
+
+  let object: R2ObjectBody | null;
   try {
-    object = await env.STEMS.get(key, wantsRange ? { range: request.headers } : undefined);
+    object = (await env.STEMS.get(
+      r2Key(route.scope, route.sha256),
+      range ? { range: { offset: range.start, length: range.end - range.start + 1 } } : undefined
+    )) as R2ObjectBody | null;
   } catch {
-    // Faixa invalida / fora do arquivo.
-    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${row.size}` } });
+    throw new HttpError(502, 'upstream_error');
   }
   if (!object) throw notFound('blob_not_found');
-  if (!('body' in object)) throw notFound('blob_not_found');
 
   const headers = blobHeaders(row, route.sha256);
   headers.set('content-type', cleanContentType(object.httpMetadata?.contentType ?? row.content_type));
@@ -183,10 +272,9 @@ export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) =
   headers.set('content-security-policy', "default-src 'none'; sandbox");
   headers.set('cache-control', 'private, no-cache');
 
-  if (wantsRange && object.range) {
-    const { start, end } = resolveRange(object.range, object.size);
-    headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
-    headers.set('content-length', String(end - start + 1));
+  if (range) {
+    headers.set('content-range', `bytes ${range.start}-${range.end}/${object.size}`);
+    headers.set('content-length', String(range.end - range.start + 1));
     return new Response(object.body, { status: 206, headers });
   }
   headers.set('content-length', String(object.size));
@@ -206,8 +294,13 @@ export const createMultipart: Handler<'multipart-create'> = async (request, env,
   const contentType = cleanContentType(typeof body.contentType === 'string' ? body.contentType : null);
   const name = originalName(request);
 
-  // Multipart nao e conferido pelo R2: nunca pode sobrescrever um blob ja registrado (r2-sha256 ou nao).
+  // Multipart nao e conferido pelo R2: nunca pode sobrescrever um blob ja registrado.
   if (await getBlob(env.REGISTRY, route.scope.key, route.sha256)) throw new HttpError(409, 'already_exists');
+
+  await purgeStaleUploads(env.REGISTRY);
+  if ((await countOpenUploads(env.REGISTRY, auth.uid)) >= MAX_OPEN_UPLOADS_PER_UID) {
+    throw new HttpError(429, 'too_many_uploads');
+  }
 
   const upload = await env.STEMS.createMultipartUpload(r2Key(route.scope, route.sha256), {
     httpMetadata: { contentType },
@@ -227,10 +320,15 @@ export const createMultipart: Handler<'multipart-create'> = async (request, env,
 
 export const putPart: Handler<'multipart-part'> = async (request, env, auth, route) => {
   await requireWrite(env, auth, route.scope);
-  await requireOwnUpload(env, auth, route);
-  declaredLength(request);
+  const row = await requireOwnUpload(env, auth, route);
+  const length = declaredLength(request);
+  // A soma das partes nao passa do tamanho declarado na abertura (reenvio da mesma parte substitui a anterior).
+  if (row.size !== null && (await sumPartsExcept(env.REGISTRY, route.uploadId, route.partNumber)) + length > row.size) {
+    throw new HttpError(413, 'parts_exceed_size');
+  }
   const upload = env.STEMS.resumeMultipartUpload(r2Key(route.scope, route.sha256), route.uploadId);
   const part = await upload.uploadPart(route.partNumber, request.body as ReadableStream);
+  await recordPart(env.REGISTRY, route.uploadId, route.partNumber, length);
   return json({ etag: part.etag, partNumber: part.partNumber }, 200);
 };
 
@@ -265,40 +363,44 @@ export const completeMultipart: Handler<'multipart-complete'> = async (request, 
   const parts = parseParts(await readJson(request));
   const key = r2Key(route.scope, route.sha256);
   const upload = env.STEMS.resumeMultipartUpload(key, route.uploadId);
+  const dropUpload = () => env.REGISTRY.batch(deleteUploadWithPartsStatements(env.REGISTRY, route.uploadId));
 
-  // Reconfere logo antes de gravar: outro upload pode ter registrado o hash desde a abertura.
-  if (await getBlob(env.REGISTRY, route.scope.key, route.sha256)) {
-    await upload.abort().catch(() => undefined);
-    await deleteUploadStatement(env.REGISTRY, route.uploadId).run();
-    throw new HttpError(409, 'already_exists');
-  }
+  return withReservation(env, route.scope, route.sha256, async () => {
+    // Sob a reserva: se alguem registrou o hash desde a abertura, este upload nao pode escrever na chave.
+    if (await getBlob(env.REGISTRY, route.scope.key, route.sha256)) {
+      await upload.abort().catch(() => undefined);
+      await dropUpload();
+      throw new HttpError(409, 'already_exists');
+    }
 
-  let object: R2Object;
-  try {
-    object = await upload.complete(parts);
-  } catch {
-    throw badRequest('invalid_parts');
-  }
-  if (row.size !== null && object.size !== row.size) {
-    await env.STEMS.delete(key);
-    await deleteUploadStatement(env.REGISTRY, route.uploadId).run();
-    throw badRequest('size_mismatch');
-  }
+    let object: R2Object;
+    try {
+      object = await upload.complete(parts);
+    } catch {
+      throw badRequest('invalid_parts');
+    }
+    if (row.size !== null && object.size !== row.size) {
+      // Seguro apagar: nenhum blob registrado existe e a reserva impede PUT/exclusao concorrentes.
+      await env.STEMS.delete(key);
+      await dropUpload();
+      throw badRequest('size_mismatch');
+    }
 
-  await env.REGISTRY.batch([
-    insertBlobStatement(env.REGISTRY, {
-      scope: route.scope.key,
-      sha256: route.sha256,
-      size: object.size,
-      content_type: row.content_type,
-      original_name: object.customMetadata?.originalName ?? null,
-      integrity: 'client-declared',
-      uploaded_by: auth.uid,
-      uploaded_at: nowIso()
-    }),
-    deleteUploadStatement(env.REGISTRY, route.uploadId)
-  ]);
-  return json({ ok: true, size: object.size, integrity: 'client-declared' }, 201);
+    await env.REGISTRY.batch([
+      insertBlobStatement(env.REGISTRY, {
+        scope: route.scope.key,
+        sha256: route.sha256,
+        size: object.size,
+        content_type: row.content_type,
+        original_name: object.customMetadata?.originalName ?? null,
+        integrity: 'client-declared',
+        uploaded_by: auth.uid,
+        uploaded_at: nowIso()
+      }),
+      ...deleteUploadWithPartsStatements(env.REGISTRY, route.uploadId)
+    ]);
+    return json({ ok: true, size: object.size, integrity: 'client-declared' }, 201);
+  });
 };
 
 export const abortMultipart: Handler<'multipart-abort'> = async (_request, env, auth, route) => {
@@ -306,7 +408,7 @@ export const abortMultipart: Handler<'multipart-abort'> = async (_request, env, 
   await requireOwnUpload(env, auth, route);
   const upload = env.STEMS.resumeMultipartUpload(r2Key(route.scope, route.sha256), route.uploadId);
   await upload.abort().catch(() => undefined);
-  await deleteUploadStatement(env.REGISTRY, route.uploadId).run();
+  await env.REGISTRY.batch(deleteUploadWithPartsStatements(env.REGISTRY, route.uploadId));
   return new Response(null, { status: 204 });
 };
 

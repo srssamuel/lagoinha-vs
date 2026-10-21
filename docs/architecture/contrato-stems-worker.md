@@ -56,20 +56,21 @@ Base: `https://<worker>/v1`. `scope` na rota é `churches/{churchId}` ou `catalo
 | Método e rota | Corpo | Resposta |
 |---|---|---|
 | `GET /health` | - | `200 {"ok":true,"version":"<git sha>"}` |
+| `DELETE /{scope}/blobs/{sha256}` | - | `204`: remove objeto, registro e origens. Só admin da igreja (`members/{uid}` ativo com papel `admin`) ou curador no catálogo; `404` se não registrado; `409` se há escrita em curso |
 | `HEAD /{scope}/blobs/{sha256}` | - | `200` se registrado no escopo (cabeçalhos `content-length`, `x-integrity`), `404` se não |
-| `PUT /{scope}/blobs/{sha256}` | bytes (até 95 MB) | Grava com `sha256` em `R2PutOptions` (o R2 rejeita se o conteúdo não bater) e registra; `201` novo, `200` se já existia (não regrava), `400 {"error":"sha256_mismatch"}` |
-| `POST /{scope}/blobs/{sha256}/multipart` | `{"size":n,"contentType":"..."}` (`size` 1 a 2 GiB) | `201 {"uploadId":"..."}`; acima de 95 MB. `409 {"error":"already_exists"}` se o hash ja esta registrado no escopo (multipart nunca sobrescreve um blob existente) |
-| `PUT /{scope}/blobs/{sha256}/multipart/{uploadId}/{partNumber}` | bytes da parte (5 MB a 95 MB, última menor) | `200 {"etag":"..."}` |
+| `PUT /{scope}/blobs/{sha256}` | bytes (até 95 MB) | Grava com `sha256` em `R2PutOptions` (o R2 rejeita se o conteúdo não bater) e registra; `201` novo, `200` se já existia com `r2-sha256` (não regrava), `400 {"error":"sha256_mismatch"}`. Se o registro existente é `client-declared` (multipart), o PUT regrava, confere e promove para `r2-sha256` (`201`, `promoted:true`) |
+| `POST /{scope}/blobs/{sha256}/multipart` | `{"size":n,"contentType":"..."}` (`size` 1 a 2 GiB; no máximo 3 uploads abertos por uid, `429 too_many_uploads`) | `201 {"uploadId":"..."}`; acima de 95 MB. `409 {"error":"already_exists"}` se o hash ja esta registrado no escopo (multipart nunca sobrescreve um blob existente) |
+| `PUT /{scope}/blobs/{sha256}/multipart/{uploadId}/{partNumber}` | bytes da parte (5 MB a 95 MB, última menor) | `200 {"etag":"..."}`; `413 parts_exceed_size` se a soma das partes passar do `size` declarado |
 | `POST /{scope}/blobs/{sha256}/multipart/{uploadId}/complete` | `{"parts":[{"partNumber":1,"etag":"..."}]}` | `201`; registra com `integrity='client-declared'`. `400 size_mismatch` (e o objeto e apagado) se o tamanho montado difere do `size` declarado na abertura |
 | `DELETE /{scope}/blobs/{sha256}/multipart/{uploadId}` | - | `204` (aborta) |
-| `GET /{scope}/blobs/{sha256}?song={songId}&version={versionId}` | - | bytes, `content-type` gravado, `etag`, `x-content-sha256`, `x-integrity`, aceita `Range` (`206`; `416` fora do arquivo). Sempre com `content-disposition: attachment`, `x-content-type-options: nosniff` e CSP `sandbox` |
+| `GET /{scope}/blobs/{sha256}?song={songId}&version={versionId}` | - | bytes, `content-type` gravado, `etag`, `x-content-sha256`, `x-integrity`, aceita `Range` (`206`; `416` fora do arquivo). `Range` inválido, múltiplo ou insatisfazível = `416` com `content-range: bytes */size`; falha do R2 = `502`. Sempre com `content-disposition: attachment`, `x-content-type-options: nosniff` e CSP `sandbox` |
 | `POST /{scope}/blobs/{sha256}/sources` | `{"kind":"drive","sourceId":"...","path":"...","name":"...","modifiedAt":"ISO","size":n,"md5":"..."}` | `201`; só se o blob já estiver registrado no escopo |
 
 Cabeçalhos opcionais no `PUT`/`multipart`: `content-type` (gravado), `x-original-name` (gravado, até 255 caracteres).
 
 Limites: o plano Workers Free aceita corpo de até 100 MB e 10 ms de CPU; o Worker não calcula hash (o R2 confere no `PUT`; no multipart quem baixa confere). `integrity`: `r2-sha256` (conferido pelo R2) ou `client-declared` (conferido por quem baixa).
 
-CORS: só as origens de `ALLOWED_ORIGINS` (o Hosting do app e `http://localhost:5173`); métodos acima; `authorization`, `content-type`, `x-original-name`, `range`.
+CORS: só as origens de `ALLOWED_ORIGINS` (os dois Hostings do app em produção; `http://localhost:5173` só em desenvolvimento, via `--var`/`.dev.vars`, nunca no `wrangler.toml` publicado); métodos acima; `authorization`, `content-type`, `x-original-name`, `range`.
 
 ## 6. Registro de origem (D1, escrito só pelo Worker)
 
@@ -149,3 +150,12 @@ Riscos residuais conhecidos (nao tratados no Worker):
 2. **Revogacao:** o ID token vale ate 1 h; um membro removido continua passando na checagem de token, mas o Firestore (regras) nega a leitura/papel imediatamente, o que bloqueia todas as rotas.
 3. **Sem limite de taxa nem cota por usuario.** Um tecnico mal-intencionado pode encher o bucket gratuito (10 GB). Mitigacao futura: Rate Limiting do Cloudflare e alerta de uso.
 4. **Uploads multipart abandonados** ficam no R2 ate o ciclo de vida de 7 dias do proprio R2 e as linhas de `uploads` no D1 ate alguem abortar; limpar por job quando houver volume.
+
+Acrescentos da revisão de segurança (commit ad41d6a):
+
+- **Reserva de escrita por (escopo, hash):** `PUT`, `complete` do multipart e `DELETE` disputam uma linha em `reservations` (INSERT condicional; reserva com mais de 15 min é retomável). Quem perde recebe `409 in_progress`. Assim um `complete` com tamanho divergente nunca apaga objeto que outro acabou de conferir.
+- **Pré-reserva de hash:** multipart `client-declared` pode ser sobrescrito pelo `PUT` verdadeiro (promoção), e um admin pode excluir o blob. O lixo não fica para sempre.
+- **JSON** das rotas de multipart/origem: teto de 64 KB (`413`), conferido por `content-length` e pela contagem dos bytes lidos.
+- **uid** do token só aceita `[A-Za-z0-9_.:@-]{1,128}` (nem `.` nem `..`) e vai codificado (`encodeURIComponent`) nos caminhos do Firestore.
+- **JWKS:** buscas simultâneas coalescidas; se o Google falhar, a cópia vencida vale por até 10 min (depois, `503`).
+- **Modo emulador de autenticação (só desenvolvimento):** aceita tokens `alg: "none"` do Firebase Auth Emulator **somente** se `FIREBASE_PROJECT_ID` começar com `demo-` **e** `AUTH_EMULATOR=true`. Iss/aud/exp/sub/provedor são validados igual; em qualquer outro projeto o modo é impossível mesmo com a variável. Nunca definir `AUTH_EMULATOR` no `wrangler.toml`.

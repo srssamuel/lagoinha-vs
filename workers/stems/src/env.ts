@@ -7,6 +7,8 @@ export interface Env {
   JWKS_URL: string;
   ALLOWED_ORIGINS: string;
   VERSION?: string;
+  /** 'true' liga o modo emulador de autenticacao, mas SO se FIREBASE_PROJECT_ID comecar com "demo-". */
+  AUTH_EMULATOR?: string;
 }
 
 type WorkerEnv = Env;

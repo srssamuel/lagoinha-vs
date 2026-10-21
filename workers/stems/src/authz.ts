@@ -13,7 +13,7 @@ const UPLOAD_ROLES = new Set(['sound_tech', 'leader', 'admin']);
  */
 export async function authorizeWrite(env: Env, userToken: string, uid: string, scope: Scope): Promise<void> {
   if (scope.kind === 'church') {
-    const member = await getDocument(env, userToken, `churches/${scope.churchId}/members/${uid}`);
+    const member = await getDocument(env, userToken, `churches/${scope.churchId}/members/${encodeURIComponent(uid)}`);
     if (
       member.status !== 'ok' ||
       member.data.status !== 'active' ||
@@ -24,12 +24,26 @@ export async function authorizeWrite(env: Env, userToken: string, uid: string, s
     }
     return;
   }
-  const admin = await getDocument(env, userToken, `platformAdmins/${uid}`);
+  const admin = await getDocument(env, userToken, `platformAdmins/${encodeURIComponent(uid)}`);
   if (admin.status !== 'ok') throw forbidden();
 }
 
 /**
- * Baixar: ler a versao no Firestore (as regras exigem membro ativo / ativo em alguma igreja ou
+ * Excluir um blob: admin da igreja (membro ativo com papel admin) ou curador do catalogo.
+ */
+export async function authorizeAdmin(env: Env, userToken: string, uid: string, scope: Scope): Promise<void> {
+  if (scope.kind === 'church') {
+    const member = await getDocument(env, userToken, `churches/${scope.churchId}/members/${encodeURIComponent(uid)}`);
+    if (member.status !== 'ok' || member.data.status !== 'active' || member.data.role !== 'admin') throw forbidden();
+    return;
+  }
+  const admin = await getDocument(env, userToken, `platformAdmins/${encodeURIComponent(uid)}`);
+  if (admin.status !== 'ok') throw forbidden();
+}
+
+/**
+ * Baixar:
+ ler a versao no Firestore (as regras exigem membro ativo / ativo em alguma igreja ou
  * curador) E o sha256 estar em stems[].sha256 dessa versao E existir o registro no escopo da rota.
  * O terceiro passo impede reutilizar por hash um arquivo registrado so em outro escopo.
  */

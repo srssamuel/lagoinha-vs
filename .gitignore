@@ -23,3 +23,4 @@ public/stems/
 # Worker de stems
 workers/stems/node_modules/
 workers/stems/.wrangler/
+workers/stems/.dev.vars

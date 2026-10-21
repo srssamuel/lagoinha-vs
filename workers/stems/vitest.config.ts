@@ -23,6 +23,7 @@ export default defineConfig(async () => {
             FIRESTORE_BASE: emulatorHost ? `http://${emulatorHost}` : 'http://127.0.0.1:1',
             // Host ficticio: o teste intercepta a busca do JWKS (nunca existe no codigo de producao).
             JWKS_URL: 'https://jwks.test/securetoken.jwk',
+            ALLOWED_ORIGINS: 'https://lagoinha-vs-jp.web.app,https://lagoinha-joao-pessoa.web.app,http://localhost:5173',
             EMULATOR: emulatorHost ? '1' : ''
           }
         }

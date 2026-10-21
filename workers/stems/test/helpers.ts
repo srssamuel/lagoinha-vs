@@ -1,6 +1,7 @@
 import { applyD1Migrations } from 'cloudflare:test';
 import { env, exports } from 'cloudflare:workers';
 import { vi } from 'vitest';
+import worker from '../src/index';
 
 declare global {
   namespace Cloudflare {
@@ -158,3 +159,29 @@ export async function clearFirestore(): Promise<void> {
   if (!response.ok) throw new Error(`limpar emulador falhou: ${response.status}`);
 }
 
+
+
+/** Chama o handler do Worker com bindings sobrescritos (ex.: AUTH_EMULATOR, STEMS que falha). */
+export function callWithEnv(overrides: Record<string, unknown>, path: string, opts: CallOptions = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  if (opts.token) headers.set('authorization', `Bearer ${opts.token}`);
+  const request = new Request(`https://stems.test${path}`, { method: opts.method ?? 'GET', headers, body: opts.body ?? null });
+  return worker.fetch(request, { ...(env as unknown as Record<string, unknown>), ...overrides } as never);
+}
+
+/** Token no formato do Firebase Auth Emulator: alg "none", sem assinatura. */
+export function mintUnsigned(opts: { uid: string; project?: string; provider?: string; exp?: number; aud?: string }): string {
+  const now = Math.floor(Date.now() / 1000);
+  const project = opts.project ?? PROJECT;
+  const payload = {
+    iss: `https://securetoken.google.com/${project}`,
+    aud: opts.aud ?? project,
+    auth_time: now - 5,
+    user_id: opts.uid,
+    sub: opts.uid,
+    iat: now - 5,
+    exp: opts.exp ?? now + 3600,
+    firebase: { identities: {}, sign_in_provider: opts.provider ?? 'password' }
+  };
+  return `${b64url(JSON.stringify({ alg: 'none', typ: 'JWT' }))}.${b64url(JSON.stringify(payload))}.`;
+}

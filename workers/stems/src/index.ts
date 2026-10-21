@@ -2,6 +2,7 @@ import {
   abortMultipart,
   completeMultipart,
   createMultipart,
+  deleteBlob,
   getBlobBytes,
   headBlob,
   putBlob,
@@ -38,6 +39,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (method === 'HEAD') return headBlob(request, env, auth, route);
       if (method === 'PUT') return putBlob(request, env, auth, route);
       if (method === 'GET') return getBlobBytes(request, env, auth, route);
+      if (method === 'DELETE') return deleteBlob(request, env, auth, route);
       break;
     case 'multipart-create':
       if (method === 'POST') return createMultipart(request, env, auth, route);

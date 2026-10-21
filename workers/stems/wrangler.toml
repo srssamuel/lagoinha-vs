@@ -8,7 +8,8 @@ workers_dev = true
 FIREBASE_PROJECT_ID = "lagoinha-joao-pessoa"
 FIRESTORE_BASE = "https://firestore.googleapis.com"
 JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
-ALLOWED_ORIGINS = "https://lagoinha-vs-jp.web.app,https://lagoinha-joao-pessoa.web.app,http://localhost:5173"
+# Producao: so os Hostings. Em dev local a origem vem de --var / .dev.vars (veja .dev.vars.example)
+ALLOWED_ORIGINS = "https://lagoinha-vs-jp.web.app,https://lagoinha-joao-pessoa.web.app"
 # Sobrescrito no deploy: wrangler deploy --var VERSION:$(git rev-parse --short HEAD)
 VERSION = "dev"
 

@@ -1,0 +1,7 @@
+# Copie para .dev.vars (nao versionado) para `wrangler dev` com Firebase Emulators.
+# `npm run dev:emu` ja passa estes valores por --var; este arquivo serve para quem roda `wrangler dev` direto.
+FIREBASE_PROJECT_ID=demo-lagoinha-vs
+FIRESTORE_BASE=http://127.0.0.1:8080
+# Aceita os tokens (alg none) do Firebase Auth Emulator. So funciona com FIREBASE_PROJECT_ID comecando por demo-.
+AUTH_EMULATOR=true
+ALLOWED_ORIGINS=http://localhost:5173
