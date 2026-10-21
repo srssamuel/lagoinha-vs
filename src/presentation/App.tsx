@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { WebAudioEngine } from '../infrastructure/audio/WebAudioEngine';
 import { PolyphonicAmbientPad } from '../infrastructure/audio/PolyphonicAmbientPad';
 import { Song } from '../domain/entities/Song';
@@ -14,11 +14,15 @@ import { AmbientPadBar } from './components/AmbientPadBar';
 import { RoutingModal } from './components/RoutingModal';
 import { MidiModal } from './components/MidiModal';
 import { AuthGate } from './components/AuthGate';
-import { CloudVSLibraryModal } from './components/CloudVSLibraryModal';
-import { CifraProModal } from './components/CifraProModal';
-import { VstPluginRackModal } from './components/VstPluginRackModal';
-import { HelpGuideModal } from './components/HelpGuideModal';
-import { AdminUsersModal } from './components/AdminUsersModal';
+import {
+  AdminUsersModal,
+  CifraProModal,
+  CloudVSLibraryModal,
+  HelpGuideModal,
+  VstPluginRackModal,
+  useHasOpened,
+  usePrefetchLazyModals
+} from './lazyModals';
 import { PendingApprovalModal } from './components/PendingApprovalModal';
 import { RouteHealthBanner } from './components/RouteHealthBanner';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
@@ -59,6 +63,14 @@ export const App: React.FC = () => {
   const [isAdminUsersModalOpen, setIsAdminUsersModalOpen] = useState<boolean>(false);
   const [pendingUsersCount, setPendingUsersCount] = useState<number>(0);
   const [selectedVstStemId, setSelectedVstStemId] = useState<string | null>(null);
+
+  // Modais pesados: carregados sob demanda e pré-baixados em ocioso (abrem offline no culto)
+  usePrefetchLazyModals();
+  const cloudLibraryOpened = useHasOpened(isCloudLibraryOpen);
+  const cifraOpened = useHasOpened(isCifraModalOpen);
+  const vstRackOpened = useHasOpened(isVstRackOpen);
+  const helpOpened = useHasOpened(isHelpGuideOpen);
+  const adminUsersOpened = useHasOpened(isAdminUsersModalOpen);
 
   const refreshPendingCount = useCallback(async () => {
     if (currentUser?.isAdmin || currentUser?.canApproveUsers) {
@@ -390,48 +402,56 @@ export const App: React.FC = () => {
       {/* Modal de Mapeamento MIDI e Pedaleiras USB */}
       <MidiModal isOpen={isMidiModalOpen} onClose={() => setIsMidiModalOpen(false)} />
 
-      {/* Modal do Banco de VS na Nuvem */}
-      <CloudVSLibraryModal
-        isOpen={isCloudLibraryOpen}
-        canUpload={currentUser.canUploadVS}
-        onClose={() => setIsCloudLibraryOpen(false)}
-        onAddSongToSetlist={setlist.add}
-      />
+      <Suspense fallback={null}>
+        {/* Modal do Banco de VS na Nuvem */}
+        {cloudLibraryOpened && (
+          <CloudVSLibraryModal
+            isOpen={isCloudLibraryOpen}
+            canUpload={currentUser.canUploadVS}
+            onClose={() => setIsCloudLibraryOpen(false)}
+            onAddSongToSetlist={setlist.add}
+          />
+        )}
 
-      {/* Modal Cifra Pro® & Mapa Dinâmico Sincronizado */}
-      <CifraProModal
-        isOpen={isCifraModalOpen}
-        song={currentSong}
-        activeSectionId={engineState.activeSectionId}
-        onClose={() => setIsCifraModalOpen(false)}
-        onSelectSection={(secId) => audioEngine.queueSectionJump(secId)}
-        onPitchShiftChange={handlePitchShiftChange}
-      />
+        {/* Modal Cifra Pro® & Mapa Dinâmico Sincronizado */}
+        {cifraOpened && (
+          <CifraProModal
+            isOpen={isCifraModalOpen}
+            song={currentSong}
+            activeSectionId={engineState.activeSectionId}
+            onClose={() => setIsCifraModalOpen(false)}
+            onSelectSection={(secId) => audioEngine.queueSectionJump(secId)}
+            onPitchShiftChange={handlePitchShiftChange}
+          />
+        )}
 
-      {/* Modal Rack de Plugins VST & Channel Strip DSP */}
-      {currentSong && (
-        <VstPluginRackModal
-          isOpen={isVstRackOpen}
-          stems={currentSong.stems}
-          initialSelectedStemId={selectedVstStemId}
-          onClose={() => setIsVstRackOpen(false)}
-          onUpdateStemDsp={handleUpdateStemDsp}
-          onAutoFixAllStems={handleAutoFixAllStems}
-          onResetAllDsp={handleResetAllDsp}
-        />
-      )}
+        {/* Modal Rack de Plugins VST & Channel Strip DSP */}
+        {currentSong && vstRackOpened && (
+          <VstPluginRackModal
+            isOpen={isVstRackOpen}
+            stems={currentSong.stems}
+            initialSelectedStemId={selectedVstStemId}
+            onClose={() => setIsVstRackOpen(false)}
+            onUpdateStemDsp={handleUpdateStemDsp}
+            onAutoFixAllStems={handleAutoFixAllStems}
+            onResetAllDsp={handleResetAllDsp}
+          />
+        )}
 
-      {/* Modal Didático de Operação no Culto (Manual de Palco) */}
-      <HelpGuideModal isOpen={isHelpGuideOpen} onClose={() => setIsHelpGuideOpen(false)} />
+        {/* Modal Didático de Operação no Culto (Manual de Palco) */}
+        {helpOpened && <HelpGuideModal isOpen={isHelpGuideOpen} onClose={() => setIsHelpGuideOpen(false)} />}
 
-      {/* Modal de Gestão de Usuários, Aprovações e Convites (Admin / Líder) */}
-      <AdminUsersModal
-        isOpen={isAdminUsersModalOpen}
-        currentUser={currentUser}
-        authService={authService}
-        onClose={() => setIsAdminUsersModalOpen(false)}
-        onUsersUpdated={() => void refreshPendingCount()}
-      />
+        {/* Modal de Gestão de Usuários, Aprovações e Convites (Admin / Líder) */}
+        {adminUsersOpened && (
+          <AdminUsersModal
+            isOpen={isAdminUsersModalOpen}
+            currentUser={currentUser}
+            authService={authService}
+            onClose={() => setIsAdminUsersModalOpen(false)}
+            onUsersUpdated={() => void refreshPendingCount()}
+          />
+        )}
+      </Suspense>
     </div>
   );
 };
