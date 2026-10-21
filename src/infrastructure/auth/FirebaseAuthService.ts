@@ -1,6 +1,7 @@
 import { AuthPort, CreateInviteProps } from '../../application/ports/AuthPort';
 import { User, UserRole, UserStatus } from '../../domain/entities/User';
-import { InviteToken } from '../../domain/entities/InviteToken';
+import { InviteToken, InviteTokenProps } from '../../domain/entities/InviteToken';
+import { hashPassword, isModernHash, randomToken, verifyPassword } from './passwordHash';
 
 const CURRENT_USER_KEY = 'lagoinha_vs_auth_user';
 const USERS_DB_KEY = 'lagoinha_vs_users_db';
@@ -23,16 +24,49 @@ interface StoredUserRecord {
   passwordHash?: string;
 }
 
+export interface FirebaseAuthServiceOptions {
+  /**
+   * Modo demonstração: entra direto como o admin de exemplo, libera "Acesso Demo" e o Google simulado.
+   * Padrão: ligado no `npm run dev` ou com VITE_DEMO_MODE=true; desligado no build de produção.
+   */
+  demoMode?: boolean;
+}
+
+const INVALID_CREDENTIALS = 'Credenciais inválidas.';
+
+/** Lê a flag de demo do Vite sem quebrar fora dele. */
+function defaultDemoMode(): boolean {
+  try {
+    return import.meta.env.DEV === true || import.meta.env.VITE_DEMO_MODE === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Adaptador de autenticação LOCAL (localStorage do aparelho), apesar do nome.
+ * Senhas guardadas com PBKDF2; o papel e a igreja vêm do cadastro, não da sessão salva.
+ * Não é segurança de servidor: qualquer pessoa com o aparelho pode editar o localStorage.
+ * Multi-igreja em produção exige o backend descrito em docs/architecture.
+ */
 export class FirebaseAuthService implements AuthPort {
   private currentUser: User | null = null;
   private listeners: Set<(user: User | null) => void> = new Set();
+  private readonly demoMode: boolean;
 
-  constructor() {
+  constructor(options: FirebaseAuthServiceOptions = {}) {
+    this.demoMode = options.demoMode ?? defaultDemoMode();
     this.ensureInitialSeedData();
     this.loadPersistedUser();
   }
 
+  public isDemoMode(): boolean {
+    return this.demoMode;
+  }
+
   private ensureInitialSeedData(): void {
+    // Fora do modo demo o aparelho começa vazio: a primeira conta cadastrada vira a administradora.
+    if (!this.demoMode) return;
     try {
       const existing = localStorage.getItem(USERS_DB_KEY);
       if (!existing) {
@@ -74,23 +108,31 @@ export class FirebaseAuthService implements AuthPort {
     try {
       const saved = localStorage.getItem(CURRENT_USER_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        this.currentUser = new User({
-          uid: parsed.uid,
-          email: parsed.email,
-          displayName: parsed.displayName,
-          photoURL: parsed.photoURL,
-          role: parsed.role as UserRole,
-          churchBranch: parsed.churchBranch || 'Lagoinha João Pessoa',
-          churchId: parsed.churchId || 'lagoinha-jp',
-          status: parsed.status as UserStatus,
-          instrumentOrMinistry: parsed.instrumentOrMinistry
-        });
-        return;
+        const parsed = JSON.parse(saved) as Partial<StoredUserRecord>;
+        // Papel, status e igreja vêm do cadastro: editar a sessão salva não eleva ninguém.
+        const record = this.getStoredUsers().find((u) => u.uid === parsed.uid);
+        if (record) {
+          this.currentUser = new User({ ...record, churchId: record.churchId || 'lagoinha-jp' });
+          return;
+        }
+        // Sessões de demonstração não têm cadastro; só valem no modo demo.
+        if (this.demoMode && typeof parsed.uid === 'string' && parsed.uid.startsWith('demo-')) {
+          this.currentUser = new User({
+            uid: parsed.uid,
+            email: parsed.email ?? '',
+            displayName: parsed.displayName ?? 'Demonstração',
+            role: (parsed.role as UserRole) ?? 'musician',
+            churchBranch: 'Lagoinha João Pessoa',
+            churchId: 'lagoinha-jp',
+            status: (parsed.status as UserStatus) ?? 'active'
+          });
+          return;
+        }
+        localStorage.removeItem(CURRENT_USER_KEY);
       }
 
       const explicitlyLoggedOut = localStorage.getItem(LOGGED_OUT_KEY) === 'true';
-      if (!explicitlyLoggedOut) {
+      if (this.demoMode && !explicitlyLoggedOut) {
         // Por padrão no primeiro acesso, loga como Leandro Machado (Admin)
         this.currentUser = new User({
           uid: 'admin-leandro-machado',
@@ -109,6 +151,9 @@ export class FirebaseAuthService implements AuthPort {
   }
 
   public async signInWithGoogle(): Promise<User> {
+    if (!this.demoMode) {
+      throw new Error('Login com Google ainda não está configurado. Entre com email e senha.');
+    }
     const googleUser = new User({
       uid: `google-${Date.now()}`,
       email: 'leandro@lagoinhajp.com.br',
@@ -128,42 +173,19 @@ export class FirebaseAuthService implements AuthPort {
     const cleanEmail = email.trim().toLowerCase();
     const existing = users.find((u) => u.email.toLowerCase() === cleanEmail);
 
-    if (existing) {
-      const user = new User({
-        uid: existing.uid,
-        email: existing.email,
-        displayName: existing.displayName,
-        photoURL: existing.photoURL,
-        role: existing.role,
-        churchBranch: existing.churchBranch,
-        churchId: existing.churchId || 'lagoinha-jp',
-        status: existing.status,
-        instrumentOrMinistry: existing.instrumentOrMinistry
-      });
-      this.setCurrentUser(user);
-      return Promise.resolve(user);
+    // Email desconhecido, conta sem senha (exemplo do modo demo) ou senha errada: mesma resposta.
+    if (!existing || !(await verifyPassword(pass, existing.passwordHash))) {
+      throw new Error(INVALID_CREDENTIALS);
     }
 
-    // Se o usuário não existir no banco, cria como Administrador se for email de liderança, ou pending
-    const isLeadershipEmail =
-      cleanEmail.includes('leandro') ||
-      cleanEmail.includes('admin') ||
-      cleanEmail.includes('louvor') ||
-      cleanEmail.includes('lider');
+    if (!isModernHash(existing.passwordHash)) {
+      existing.passwordHash = await hashPassword(pass);
+      this.saveAllUsers(users);
+    }
 
-    const newUser = new User({
-      uid: `usr-${Date.now()}`,
-      email,
-      displayName: email.split('@')[0] || 'Membro do Louvor',
-      role: isLeadershipEmail ? 'admin' : 'pending',
-      churchBranch: 'Lagoinha João Pessoa',
-      churchId: 'lagoinha-jp',
-      status: isLeadershipEmail ? 'active' : 'pending'
-    });
-
-    this.saveUserToDb(newUser, pass);
-    this.setCurrentUser(newUser);
-    return Promise.resolve(newUser);
+    const user = new User({ ...existing, churchId: existing.churchId || 'lagoinha-jp' });
+    this.setCurrentUser(user);
+    return user;
   }
 
   public async registerWithEmail(
@@ -173,10 +195,30 @@ export class FirebaseAuthService implements AuthPort {
     instrumentOrMinistry?: string,
     inviteTokenString?: string
   ): Promise<User> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !pass) {
+      throw new Error('Informe email e senha.');
+    }
+    if (pass.length < 8) {
+      throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+    }
+    const users = this.getStoredUsers();
+    if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      throw new Error('Já existe uma conta com este email neste aparelho.');
+    }
+
     let assignedRole: UserRole = 'pending';
     let assignedStatus: UserStatus = 'pending';
     let assignedChurchBranch = 'Lagoinha João Pessoa';
     let assignedChurchId = 'lagoinha-jp';
+
+    // Aparelho sem nenhuma administração com senha (instalação nova fora do modo demo):
+    // a primeira conta cadastrada administra este aparelho.
+    const hasCredentialedAdmin = users.some((u) => u.role === 'admin' && u.status === 'active' && u.passwordHash);
+    if (!this.demoMode && !hasCredentialedAdmin) {
+      assignedRole = 'admin';
+      assignedStatus = 'active';
+    }
 
     // Se informou um token de convite válido, auto-aprova imediatamente com a role e congregação do convite!
     if (inviteTokenString) {
@@ -192,8 +234,8 @@ export class FirebaseAuthService implements AuthPort {
     }
 
     const newUser = new User({
-      uid: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      email: email.trim().toLowerCase(),
+      uid: `usr-${Date.now()}-${randomToken(4)}`,
+      email: cleanEmail,
       displayName: displayName.trim(),
       role: assignedRole,
       churchBranch: assignedChurchBranch,
@@ -202,12 +244,15 @@ export class FirebaseAuthService implements AuthPort {
       instrumentOrMinistry: instrumentOrMinistry?.trim()
     });
 
-    this.saveUserToDb(newUser, pass);
+    await this.saveUserToDb(newUser, pass);
     this.setCurrentUser(newUser);
-    return Promise.resolve(newUser);
+    return newUser;
   }
 
   public async signInDemo(role: UserRole, displayName: string): Promise<User> {
+    if (!this.demoMode) {
+      throw new Error('Acesso de demonstração desativado nesta instalação.');
+    }
     const demoUser = new User({
       uid: `demo-${role}-${Date.now()}`,
       email: `${role}@lagoinhajp.com.br`,
@@ -369,7 +414,7 @@ export class FirebaseAuthService implements AuthPort {
       throw new Error('Acesso negado: apenas administradores ou líderes ativos podem gerar convites.');
     }
 
-    const randPart = Math.random().toString(36).substring(2, 8);
+    const randPart = randomToken();
     const tokenStr = `lagoinha-${props.targetRole}-${randPart}`;
     const expiresAt = props.expiresHours
       ? new Date(Date.now() + props.expiresHours * 3600 * 1000).toISOString()
@@ -428,7 +473,16 @@ export class FirebaseAuthService implements AuthPort {
     }
   }
 
-  private saveUserToDb(user: User, password?: string): void {
+  private saveAllUsers(users: StoredUserRecord[]): void {
+    try {
+      localStorage.setItem(USERS_DB_KEY, JSON.stringify(users));
+    } catch {
+      // Storage full or unavailable
+    }
+  }
+
+  private async saveUserToDb(user: User, password?: string): Promise<void> {
+    const passwordHash = password ? await hashPassword(password) : undefined;
     try {
       const users = this.getStoredUsers();
       const idx = users.findIndex((u) => u.uid === user.uid);
@@ -445,7 +499,7 @@ export class FirebaseAuthService implements AuthPort {
         approvedBy: user.approvedBy,
         approvedAt: user.approvedAt,
         createdAt: user.createdAt,
-        passwordHash: password ? btoa(password) : undefined
+        passwordHash: passwordHash ?? users[idx]?.passwordHash
       };
 
       if (idx >= 0) {
@@ -463,8 +517,8 @@ export class FirebaseAuthService implements AuthPort {
     try {
       const data = localStorage.getItem(INVITES_DB_KEY);
       if (!data) return [];
-      const parsed = JSON.parse(data);
-      return parsed.map((item: any) => new InviteToken(item));
+      const parsed = JSON.parse(data) as InviteTokenProps[];
+      return parsed.map((item) => new InviteToken(item));
     } catch {
       return [];
     }

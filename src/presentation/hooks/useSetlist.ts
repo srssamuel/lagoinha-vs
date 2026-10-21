@@ -37,7 +37,7 @@ export function useSetlist(churchId: string | undefined): SetlistController {
       if (cancelled) return;
       const presets = DemoWorshipSongs.getPresetSongs();
       const presetIds = new Set(presets.map((s) => s.id));
-      dispatch({ type: 'replaceAll', songs: [...presets, ...saved.filter((s) => !presetIds.has(s.id))] });
+      dispatch({ type: 'hydrate', songs: [...presets, ...saved.filter((s) => !presetIds.has(s.id))] });
     });
     return () => {
       cancelled = true;
@@ -47,10 +47,10 @@ export function useSetlist(churchId: string | undefined): SetlistController {
   const remove = useCallback(
     (index: number) => {
       const target = state.songs[index];
-      if (target) void IndexedDbStorageService.deleteCustomSong(target.id);
+      if (target) void IndexedDbStorageService.deleteCustomSong(target.id, churchId);
       dispatch({ type: 'remove', index });
     },
-    [state.songs]
+    [state.songs, churchId]
   );
 
   return {

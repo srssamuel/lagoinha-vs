@@ -258,6 +258,20 @@ describe('WebAudioEngine — Integridade de Rota e Interrupção Imediata (ENG-0
       expect(onMeters).toHaveBeenCalledTimes(3);
       expect(onState).toHaveBeenCalledTimes(1);
 
+      // Um listener da UI que lança exceção não derruba o loop rAF
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      let brokenCalls = 0;
+      const unsubscribeBroken = engine.subscribeMeters(() => {
+        // A primeira entrega é síncrona no subscribe; quebra só nos quadros do loop.
+        if (brokenCalls++ > 0) throw new Error('VU quebrado');
+      });
+      ctx.currentTime = 0.2;
+      runFrame();
+      expect(frames).toHaveLength(1);
+      expect(errorSpy).toHaveBeenCalled();
+      unsubscribeBroken();
+      errorSpy.mockRestore();
+
       // Parar emite estado e um quadro final para zerar os VUs
       engine.stop();
       expect(onState).toHaveBeenLastCalledWith(expect.objectContaining({ isPlaying: false }));

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MusicalKey, PolyphonicAmbientPad } from '../../infrastructure/audio/PolyphonicAmbientPad';
+import { MusicalKey, PolyphonicAmbientPad, toPadKey } from '../../infrastructure/audio/PolyphonicAmbientPad';
 import { Song } from '../../domain/entities/Song';
 
-/** Tom do pad para uma música: fundamental sem o sufixo de menor ("Em" -> "E"). */
-export const padKeyForSong = (song: Song): MusicalKey => (song.currentKey.replace('m', '') as MusicalKey) || 'C';
+/** Tom do pad para uma música: fundamental sem o sufixo de menor e com enarmonia ("Em" -> "E", "Gb" -> "F#"). */
+export const padKeyForSong = (song: Song): MusicalKey => toPadKey(song.currentKey);
 
 export interface AmbientPadController {
   isActive: boolean;
@@ -52,7 +52,7 @@ export function useAmbientPad(padEngine: PolyphonicAmbientPad): AmbientPadContro
         setIsActive(false);
         return;
       }
-      const keyToPlay = currentKey || (fallbackSong?.currentKey as MusicalKey) || 'B';
+      const keyToPlay = currentKey || (fallbackSong ? padKeyForSong(fallbackSong) : 'B');
       setCurrentKey(keyToPlay);
       padEngine.play(keyToPlay, volume);
       setIsActive(true);

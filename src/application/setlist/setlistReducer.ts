@@ -22,6 +22,8 @@ export type SetlistAction =
   | { type: 'move'; from: number; to: number }
   | { type: 'add'; song: Song }
   | { type: 'replaceAll'; songs: Song[] }
+  /** Carga assíncrona (IndexedDB/nuvem): troca a lista sem tirar o operador da música atual. */
+  | { type: 'hydrate'; songs: Song[] }
   | { type: 'touch' };
 
 export const createSetlistState = (songs: Song[]): SetlistState => ({ songs, currentIndex: 0, revision: 0 });
@@ -58,6 +60,13 @@ export const setlistReducer = (state: SetlistState, action: SetlistAction): Setl
       };
     case 'replaceAll':
       return { songs: action.songs, currentIndex: 0, revision: state.revision + 1 };
+    case 'hydrate': {
+      // Mantém o mesmo objeto da música atual: o motor não recarrega o que já está tocando.
+      const current = currentSongOf(state);
+      const index = current ? action.songs.findIndex((s) => s.id === current.id) : -1;
+      const songs = index >= 0 && current ? action.songs.map((s, i) => (i === index ? current : s)) : action.songs;
+      return { songs, currentIndex: Math.max(0, index), revision: state.revision + 1 };
+    }
     case 'touch':
       return { ...state, songs: [...state.songs], revision: state.revision + 1 };
   }

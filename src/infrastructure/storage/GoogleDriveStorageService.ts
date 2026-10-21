@@ -4,6 +4,26 @@ import { CloudSong } from '../../domain/entities/CloudSong';
 
 const GDRIVE_CONFIG_KEY = 'lagoinha_vs_gdrive_config';
 
+interface DriveApiFile {
+  id: string;
+  name: string;
+  mimeType?: string;
+  size?: string;
+  webContentLink?: string;
+}
+
+const TRUSTED_DOWNLOAD_HOSTS = ['drive.google.com', 'www.googleapis.com', 'drive.usercontent.google.com'];
+
+function isTrustedDriveDownloadUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && TRUSTED_DOWNLOAD_HOSTS.includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export class GoogleDriveStorageService implements GoogleDriveStoragePort {
   private config: GoogleDriveConfig | null = null;
   private stemCache: Map<string, ArrayBuffer> = new Map();
@@ -54,7 +74,11 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
    */
   public async syncDriveFolder(folderIdOrUrl: string = ''): Promise<CloudSong[]> {
     const trimmed = (folderIdOrUrl || '').trim();
-    const folderId = GoogleDriveConfig.extractFolderId(trimmed) || trimmed || 'drive-lagoinha-acervo';
+    const extracted = GoogleDriveConfig.extractFolderId(trimmed);
+    if (trimmed && !extracted) {
+      throw new Error('Link ou ID de pasta do Google Drive inválido');
+    }
+    const folderId = extracted || 'drive-lagoinha-acervo';
 
     if (this.config) {
       this.config.folderId = folderId;
@@ -66,19 +90,20 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
     }
 
     // Se houver API Key configurada, consulta a Google Drive API v3
-    if (this.config?.apiKey) {
+    if (this.config?.apiKey && extracted) {
       try {
         const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
         const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,size,webContentLink)&key=${this.config.apiKey}`
+          `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,size,webContentLink)&key=${encodeURIComponent(this.config.apiKey)}`
         );
         if (res.ok) {
-          const data = await res.json();
+          const data = (await res.json()) as { files?: DriveApiFile[] };
           // Converte arquivos retornados da API do Drive em CloudSong
           if (data.files && Array.isArray(data.files) && data.files.length > 0) {
             const mappedSongs: CloudSong[] = data.files
-              .filter((f: any) => f.mimeType === 'application/zip' || f.mimeType === 'application/x-zip-compressed' || f.name.endsWith('.zip'))
-              .map((f: any, idx: number) => {
+              .filter((f) => typeof f.id === 'string' && GoogleDriveConfig.isValidDriveId(f.id) && typeof f.name === 'string')
+              .filter((f) => f.mimeType === 'application/zip' || f.mimeType === 'application/x-zip-compressed' || f.name.endsWith('.zip'))
+              .map((f, idx) => {
                 const title = f.name.replace(/\.[^/.]+$/, '');
                 return new CloudSong({
                   id: `gdrive-${f.id}`,
@@ -273,10 +298,16 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
    * Baixa uma faixa de áudio do Google Drive com cache em memória/IndexedDB para segurança offline de culto.
    */
   public async downloadDriveStem(fileId: string, downloadUrl?: string): Promise<ArrayBuffer> {
+    if (!GoogleDriveConfig.isValidDriveId(fileId)) {
+      throw new Error('ID de arquivo do Google Drive inválido');
+    }
     const cached = this.stemCache.get(fileId);
     if (cached) return cached;
 
-    const url = downloadUrl || `https://drive.google.com/uc?export=download&id=${fileId}`;
+    // URL externa só é usada se for de um host do Google; senão, monta a do próprio ID.
+    const url = isTrustedDriveDownloadUrl(downloadUrl)
+      ? downloadUrl
+      : `https://drive.google.com/uc?export=download&id=${fileId}`;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -21,6 +21,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
   const [validInvite, setValidInvite] = useState<InviteToken | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const demoMode = authService.isDemoMode();
 
   // Detecta se há link de convite na URL (?invite=lagoinha-xxx)
   useEffect(() => {
@@ -89,8 +90,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
         inviteToken || undefined
       );
       onAuthenticated(user);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Falha ao registrar.');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error && err.message ? err.message : 'Falha ao registrar.');
     } finally {
       setIsLoading(false);
     }
@@ -127,6 +128,11 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
           <p className="text-[11px] text-stage-muted mt-0.5">
             Plataforma Cloud de Multitracks & Playback ao Vivo
           </p>
+          {demoMode && (
+            <span className="inline-block mt-2 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-bold tracking-wider">
+              MODO DEMONSTRAÇÃO
+            </span>
+          )}
         </div>
 
         {/* Banner de Convite Ativo */}
@@ -186,7 +192,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
         {/* ABA 1: LOGIN */}
         {authMode === 'login' && (
           <>
-            {/* 1. Botão Entrar com Google */}
+            {/* 1. Botão Entrar com Google (simulado: só no modo demonstração) */}
+            {demoMode && (
+            <>
             <button
               onClick={handleGoogleSignIn}
               disabled={isLoading}
@@ -218,6 +226,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
               <span className="text-[10px] font-mono text-stage-muted uppercase">ou com email e senha</span>
               <div className="h-px bg-stage-border flex-1" />
             </div>
+            </>
+            )}
 
             {/* 2. Formulário Email & Senha */}
             <form onSubmit={handleLoginSubmit} className="space-y-3 mb-4">
@@ -263,7 +273,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
               </button>
             </form>
 
-            {/* 3. Acesso Rápido de Teste */}
+            {/* 3. Acesso Rápido de Teste (só no modo demonstração) */}
+            {demoMode && (
             <div className="border-t border-stage-border pt-3">
               <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                 <Sparkles className="w-3 h-3 text-amber-400" />
@@ -290,6 +301,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
                 </button>
               </div>
             </div>
+            )}
           </>
         )}
 

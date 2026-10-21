@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Song } from '../../domain/entities/Song';
 import { ChordTransposer } from '../../domain/services/ChordTransposer';
+import { escapeHtml } from '../utils/escapeHtml';
 import {
   X,
   FileText,
@@ -227,13 +228,13 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
         return `
           <div style="margin-bottom: 18px; page-break-inside: avoid;">
             <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #475569; margin-bottom: 4px;">
-              [${section.name}]
+              [${escapeHtml(section.name)}]
             </div>
             <div style="font-family: monospace; font-size: 16px; font-weight: bold; color: #b45309; letter-spacing: 1px; margin-bottom: 4px;">
-              ${displayedChords}
+              ${escapeHtml(displayedChords)}
             </div>
             <div style="font-size: 13px; color: #1e293b; line-height: 1.5;">
-              ${chartItem?.lyrics || ''}
+              ${escapeHtml(chartItem?.lyrics || '')}
             </div>
           </div>
         `;
@@ -244,7 +245,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${song.title} — Cifra Pro Lagoinha VS</title>
+          <title>${escapeHtml(song.title)} — Cifra Pro Lagoinha VS</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; max-width: 800px; margin: 0 auto; color: #0f172a; }
             h1 { font-size: 22px; margin: 0 0 4px 0; }
@@ -253,11 +254,11 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
           </style>
         </head>
         <body>
-          <h1>${song.title}</h1>
+          <h1>${escapeHtml(song.title)}</h1>
           <div class="meta">
-            <strong>Artista:</strong> ${song.artist} | 
-            <strong>Tom no Áudio:</strong> ${song.currentKey} ${capoFret > 0 ? `(Capo ${capoFret})` : ''} | 
-            <strong>BPM:</strong> ${song.bpm} | 
+            <strong>Artista:</strong> ${escapeHtml(song.artist)} |
+            <strong>Tom no Áudio:</strong> ${escapeHtml(song.currentKey)} ${capoFret > 0 ? `(Capo ${escapeHtml(capoFret)})` : ''} |
+            <strong>BPM:</strong> ${escapeHtml(song.bpm)} |
             <strong>Notação:</strong> ${notationMode === 'NASHVILLE' ? 'Graus Nashville' : 'Acordes'}
           </div>
           ${sectionsHtml}

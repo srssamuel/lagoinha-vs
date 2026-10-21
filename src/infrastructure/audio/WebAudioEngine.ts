@@ -1113,7 +1113,8 @@ export class WebAudioEngine implements AudioEnginePort {
     this.selectedAudioDeviceId = deviceId;
     if (this.ctx && 'setSinkId' in this.ctx) {
       try {
-        await (this.ctx as any).setSinkId(deviceId);
+        // setSinkId ainda não está no lib.dom do TypeScript para AudioContext.
+        await (this.ctx as AudioContext & { setSinkId(id: string): Promise<void> }).setSinkId(deviceId);
         const maxCh = this.ctx.destination.maxChannelCount;
         if (maxCh >= 4) {
           this.ctx.destination.channelCount = 4;
@@ -1278,7 +1279,7 @@ export class WebAudioEngine implements AudioEnginePort {
   private notifyState(): void {
     const state = this.getState();
     this.lastStateSignature = WebAudioEngine.stateSignature(state);
-    this.listeners.forEach((l) => l(state));
+    WebAudioEngine.emit(this.listeners, state);
     // Ao parar/pausar o loop rAF não roda mais: um quadro final zera os medidores.
     if (!this.isPlaying) this.notifyMeters();
   }
@@ -1290,13 +1291,24 @@ export class WebAudioEngine implements AudioEnginePort {
     const signature = WebAudioEngine.stateSignature(state);
     if (signature === this.lastStateSignature) return;
     this.lastStateSignature = signature;
-    this.listeners.forEach((l) => l(state));
+    WebAudioEngine.emit(this.listeners, state);
   }
 
   private notifyMeters(): void {
     if (this.meterListeners.size === 0) return;
     const frame = this.getMeterFrame();
-    this.meterListeners.forEach((l) => l(frame));
+    WebAudioEngine.emit(this.meterListeners, frame);
+  }
+
+  /** Um listener da UI que lança exceção não pode matar o loop rAF (pulo quantizado, fim da música). */
+  private static emit<T>(listeners: Set<(value: T) => void>, value: T): void {
+    listeners.forEach((listener) => {
+      try {
+        listener(value);
+      } catch (err) {
+        console.error('[WebAudioEngine] listener falhou:', err);
+      }
+    });
   }
 
   private static stateSignature(state: AudioEngineState): string {

@@ -70,19 +70,31 @@ service cloud.firestore {
 
     // Links e Tokens de Convite
     match /invites/{inviteId} {
-      allow read: if isAuthenticated() && (
+      // Quem tem o token lê só aquele documento (get pelo id exato); listar convites é da liderança da igreja.
+      allow get: if isAuthenticated() && (
         resource.data.isActive == true ||
         (isLeaderOrAdmin() && isSameChurch(resource.data.churchId))
       );
+      allow list: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
 
       allow create: if isLeaderOrAdmin() &&
         isSameChurch(request.resource.data.churchId) &&
         request.resource.data.createdByUid == request.auth.uid;
 
-      // Consumo de convite ou revogação
+      // Consumo (uma unidade, convite ativo e dentro do limite) ou revogação pela liderança da mesma igreja
       allow update: if isAuthenticated() && (
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'isActive']) && request.resource.data.usedCount == resource.data.usedCount + 1) ||
-        (isLeaderOrAdmin() && isSameChurch(resource.data.churchId))
+        (
+          resource.data.isActive == true &&
+          resource.data.usedCount < resource.data.maxUses &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'isActive']) &&
+          request.resource.data.usedCount == resource.data.usedCount + 1 &&
+          request.resource.data.isActive == (request.resource.data.usedCount < resource.data.maxUses)
+        ) ||
+        (
+          isLeaderOrAdmin() &&
+          isSameChurch(resource.data.churchId) &&
+          request.resource.data.churchId == resource.data.churchId
+        )
       );
 
       allow delete: if isAdmin() && isSameChurch(resource.data.churchId);
@@ -90,16 +102,23 @@ service cloud.firestore {
 
     // Músicas e Multitracks (Banco de VS)
     match /songs/{songId} {
-      allow read: if isAuthenticated() && isSameChurch(resource.data.churchId);
+      allow read: if isAuthenticated() && isActive() && isSameChurch(resource.data.churchId);
       allow create: if isAudioTechOrHigher() && isSameChurch(request.resource.data.churchId);
-      allow update: if isAudioTechOrHigher() && isSameChurch(resource.data.churchId);
+      // churchId não muda no update (não dá para "mover" a música para outra igreja)
+      allow update: if isAudioTechOrHigher() &&
+        isSameChurch(resource.data.churchId) &&
+        request.resource.data.churchId == resource.data.churchId;
       allow delete: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
     }
 
-    // Setlists do Culto
+    // Setlists do Culto (no create não existe `resource`: valida o documento novo)
     match /setlists/{setlistId} {
-      allow read: if isAuthenticated() && isSameChurch(resource.data.churchId);
-      allow write: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
+      allow read: if isAuthenticated() && isActive() && isSameChurch(resource.data.churchId);
+      allow create: if isLeaderOrAdmin() && isSameChurch(request.resource.data.churchId);
+      allow update: if isLeaderOrAdmin() &&
+        isSameChurch(resource.data.churchId) &&
+        request.resource.data.churchId == resource.data.churchId;
+      allow delete: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
     }
   }
 }

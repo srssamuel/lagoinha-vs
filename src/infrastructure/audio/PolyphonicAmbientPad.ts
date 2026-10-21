@@ -27,6 +27,28 @@ const KEY_FREQUENCIES: Record<MusicalKey, number> = {
   B: 246.94
 };
 
+/** Enarmonias que a tabela do pad não grafa (Gb, Db, Eb, Ab davam NaN e o pad não trocava de tom). */
+const ENHARMONIC: Record<string, MusicalKey> = {
+  Db: 'C#',
+  Eb: 'D#',
+  Gb: 'F#',
+  Ab: 'G#',
+  'A#': 'Bb',
+  Cb: 'B',
+  Fb: 'E',
+  'E#': 'F',
+  'B#': 'C'
+};
+
+/** Converte o tom da música ("Gb", "F#m", "Bbm", "Em") na fundamental que o pad toca. */
+export function toPadKey(rawKey: string | null | undefined): MusicalKey {
+  const match = /^\s*([A-Ga-g])([#b]?)/.exec(rawKey ?? '');
+  if (!match) return 'C';
+  const root = `${match[1]!.toUpperCase()}${match[2] ?? ''}`;
+  if (root in KEY_FREQUENCIES) return root as MusicalKey;
+  return ENHARMONIC[root] ?? 'C';
+}
+
 export class PolyphonicAmbientPad {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -72,6 +94,7 @@ export class PolyphonicAmbientPad {
       this.stopCurrentVoices(1.5);
     }
 
+    key = toPadKey(key);
     this.currentKey = key;
     this.isPlaying = true;
 
@@ -117,7 +140,7 @@ export class PolyphonicAmbientPad {
    * Modula o Pad atmosférico para um novo tom com crossfade contínuo sem cortes
    */
   public crossfadeTo(newKey: MusicalKey, targetVolume: number = 0.4): void {
-    if (this.currentKey === newKey && this.isPlaying) return;
+    if (this.currentKey === toPadKey(newKey) && this.isPlaying) return;
     this.play(newKey, targetVolume);
   }
 

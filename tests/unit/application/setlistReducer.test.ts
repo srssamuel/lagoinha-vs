@@ -47,6 +47,19 @@ describe('setlistReducer — repertório do culto ao vivo', () => {
     expect(replaced.songs).toEqual([first]);
   });
 
+  it('hydrate (carga tardia do IndexedDB) mantém a música atual e a mesma instância', () => {
+    const onThird = setlistReducer(createSetlistState(presets()), { type: 'select', index: 2 });
+    const playing = currentSongOf(onThird)!;
+
+    const fresh = presets(); // objetos novos, mesmos ids
+    const hydrated = setlistReducer(onThird, { type: 'hydrate', songs: fresh });
+    expect(currentSongOf(hydrated)).toBe(playing);
+    expect(hydrated.currentIndex).toBe(2);
+
+    const withoutIt = setlistReducer(onThird, { type: 'hydrate', songs: fresh.filter((s) => s.id !== playing.id) });
+    expect(withoutIt.currentIndex).toBe(0);
+  });
+
   it('touch sinaliza mutação no lugar sem trocar as instâncias de Song', () => {
     const initial = createSetlistState(presets());
     const touched = setlistReducer(initial, { type: 'touch' });

@@ -30,5 +30,7 @@ describe('GoogleDriveConfig & URL Parser', () => {
     expect(GoogleDriveConfig.extractFolderId('')).toBeNull();
     expect(GoogleDriveConfig.extractFolderId('https://google.com')).toBeNull();
     expect(GoogleDriveConfig.extractFolderId('curto')).toBeNull();
+    expect(GoogleDriveConfig.extractFolderId('https://evil.example/drive/folders/1aBcDeFgHiJkLmNoPqRsTuVwXyZ')).toBeNull();
+    expect(GoogleDriveConfig.extractFolderId("1aBcDeFgHiJkLmNoPqRsTuVwXyZ' or '1")).toBeNull();
   });
 });

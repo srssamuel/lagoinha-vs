@@ -376,6 +376,8 @@ export class IndexedDbStorageService {
   }
 
   public static async loadCustomSongs(churchId?: string): Promise<Song[]> {
+    // Sem igreja definida (login ainda não resolvido) não há acervo a mostrar: nunca "todas as igrejas".
+    if (!churchId) return [];
     try {
       const db = await this.getDb();
       return await new Promise<Song[]>((resolve, reject) => {
@@ -384,9 +386,7 @@ export class IndexedDbStorageService {
         const req = store.getAll();
         req.onsuccess = async () => {
           const list = (req.result as SerializedSong[]) || [];
-          const filtered = churchId
-            ? list.filter((item) => (item.churchId || 'lagoinha-jp') === churchId)
-            : list;
+          const filtered = list.filter((item) => (item.churchId || 'lagoinha-jp') === churchId);
           const deserialized = filtered.map((item) => this.deserializeSong(item));
           const rehydrated = await Promise.all(deserialized.map((s) => this.rehydrateSongAudioUrls(s)));
           resolve(rehydrated);
@@ -398,17 +398,28 @@ export class IndexedDbStorageService {
     }
   }
 
-  public static async deleteCustomSong(songId: string): Promise<void> {
+  /** Só apaga se a música pertence à igreja logada (o mesmo aparelho pode atender mais de uma igreja). */
+  public static async deleteCustomSong(songId: string, churchId: string | undefined): Promise<void> {
+    if (!churchId) return;
     try {
       const db = await this.getDb();
-      await new Promise<void>((resolve, reject) => {
+      const deleted = await new Promise<boolean>((resolve, reject) => {
         const tx = db.transaction(STORE_SONGS, 'readwrite');
         const store = tx.objectStore(STORE_SONGS);
-        const req = store.delete(songId);
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
+        const getReq = store.get(songId);
+        getReq.onsuccess = () => {
+          const record = getReq.result as SerializedSong | undefined;
+          if (!record || (record.churchId || 'lagoinha-jp') !== churchId) {
+            resolve(false);
+            return;
+          }
+          const delReq = store.delete(songId);
+          delReq.onsuccess = () => resolve(true);
+          delReq.onerror = () => reject(delReq.error);
+        };
+        getReq.onerror = () => reject(getReq.error);
       });
-      await this.deleteSongAudioBlobs(songId);
+      if (deleted) await this.deleteSongAudioBlobs(songId);
     } catch (err) {
       console.warn('Erro ao deletar música do IndexedDB:', err);
     }

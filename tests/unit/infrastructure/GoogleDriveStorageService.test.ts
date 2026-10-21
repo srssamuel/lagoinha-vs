@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { GoogleDriveStorageService } from '../../../src/infrastructure/storage/GoogleDriveStorageService';
 import { GoogleDriveConfig } from '../../../src/domain/entities/GoogleDriveConfig';
 
@@ -63,5 +63,48 @@ describe('GoogleDriveStorageService Suite', () => {
     expect(generalSong?.stemsCount).toBe(13);
     expect(generalSong?.stems.some((st) => st.type === 'click')).toBe(true);
     expect(generalSong?.stems.some((st) => st.type === 'guide')).toBe(true);
+  });
+
+  it('rejeita link de outro host ou ID com aspas (injeção na query do Drive)', async () => {
+    const service = new GoogleDriveStorageService();
+    await expect(service.syncDriveFolder('https://evil.example/drive/folders/1Lagoinha-Official')).rejects.toThrow(
+      /inválido/
+    );
+    await expect(service.syncDriveFolder("x' or name contains 'a")).rejects.toThrow(/inválido/);
+  });
+
+  it('não chama a API do Drive sem pasta válida e escapa a apiKey', async () => {
+    const service = new GoogleDriveStorageService();
+    const config = (await service.getConfig())!;
+    config.apiKey = 'k&evil=1';
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(url);
+      return { ok: false, status: 500 };
+    }));
+    try {
+      await service.syncDriveFolder('');
+      expect(calls).toHaveLength(0);
+
+      await service.syncDriveFolder('https://drive.google.com/drive/folders/1Lagoinha-Official');
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toContain('key=k%26evil%3D1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('downloadDriveStem valida o ID e ignora URL de host não confiável', async () => {
+    const service = new GoogleDriveStorageService();
+    await expect(service.downloadDriveStem('../../etc')).rejects.toThrow(/inválido/);
+
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await service.downloadDriveStem('1Zxt922J3KtI-3zfwP4eZe7KKoZgsBXAl', 'https://evil.example/stem.wav');
+      expect(fetchMock).toHaveBeenCalledWith('https://drive.google.com/uc?export=download&id=1Zxt922J3KtI-3zfwP4eZe7KKoZgsBXAl');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

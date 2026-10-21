@@ -22,7 +22,54 @@ export interface ParsedMultitrackMetadata {
   originalKey: string;
 }
 
+/** Tetos contra ZIP malicioso (zip bomb): contam os bytes reais descomprimidos, não o que o cabeçalho declara. */
+export interface ZipExtractionLimits {
+  maxAudioEntries: number;
+  maxStemBytes: number;
+  maxTotalBytes: number;
+}
+
+const MB = 1024 * 1024;
+
 export class ZipMultitrackExtractor {
+  /** Uma multitrack real tem 8–20 stems de 50–150 MB; os tetos deixam folga sem permitir estourar a RAM. */
+  public static readonly LIMITS: ZipExtractionLimits = {
+    maxAudioEntries: 64,
+    maxStemBytes: 300 * MB,
+    maxTotalBytes: 2048 * MB
+  };
+
+  private static assertEntryCount(count: number, limits: ZipExtractionLimits): void {
+    if (count > limits.maxAudioEntries) {
+      throw new Error(`Pacote .ZIP com ${count} faixas de áudio excede o limite de ${limits.maxAudioEntries}.`);
+    }
+  }
+
+  private static assertWithinBytes(filename: string, bytes: number, budget: number, limits: ZipExtractionLimits): void {
+    if (bytes > limits.maxStemBytes) {
+      throw new Error(`A faixa "${filename}" excede ${Math.round(limits.maxStemBytes / MB)} MB descomprimida.`);
+    }
+    if (bytes > budget) {
+      throw new Error(`O pacote .ZIP excede ${Math.round(limits.maxTotalBytes / MB)} MB descomprimidos no total.`);
+    }
+  }
+
+  /** Corta a descompressão assim que os bytes reais passam do teto (o cabeçalho pode mentir o tamanho). */
+  private static byteLimitStream(
+    filename: string,
+    budget: number,
+    limits: ZipExtractionLimits
+  ): TransformStream<Uint8Array, Uint8Array> {
+    let seen = 0;
+    return new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        seen += chunk.byteLength;
+        ZipMultitrackExtractor.assertWithinBytes(filename, seen, budget, limits);
+        controller.enqueue(chunk);
+      }
+    });
+  }
+
   /**
    * Analisa nomes de pacotes Multitrack reais, por exemplo:
    * - "O Nosso General (Versão Mateus Brito) 140Bpm - B.zip"
@@ -112,7 +159,8 @@ export class ZipMultitrackExtractor {
    */
   public static async extractFromZipBlob(
     zipBlob: Blob,
-    onProgress?: (current: number, total: number, currentFilename: string) => void
+    onProgress?: (current: number, total: number, currentFilename: string) => void,
+    limits: ZipExtractionLimits = ZipMultitrackExtractor.LIMITS
   ): Promise<ExtractedZipEntry[]> {
     const fileSize = zipBlob.size;
     if (fileSize < 22) {
@@ -197,11 +245,16 @@ export class ZipMultitrackExtractor {
       });
     }
 
+    ZipMultitrackExtractor.assertEntryCount(audioEntries.length, limits);
+
     const results: ExtractedZipEntry[] = [];
+    let totalBytes = 0;
 
     for (let i = 0; i < audioEntries.length; i++) {
       const item = audioEntries[i]!;
       onProgress?.(i + 1, audioEntries.length, item.filename);
+      const budget = limits.maxTotalBytes - totalBytes;
+      ZipMultitrackExtractor.assertWithinBytes(item.filename, item.uncompressedSize, budget, limits);
 
       // Lê os 30 bytes do Local File Header para saber onde começam os dados comprimidos
       const lhBuffer = await zipBlob
@@ -221,18 +274,21 @@ export class ZipMultitrackExtractor {
 
       if (item.compressionMethod === 0) {
         // Store (sem compressão) — reusa o slice direto do disco sem copiar RAM
+        ZipMultitrackExtractor.assertWithinBytes(item.filename, compressedBlob.size, budget, limits);
         outBlob = new Blob([compressedBlob], { type: mimeType });
       } else if (item.compressionMethod === 8 && typeof DecompressionStream !== 'undefined') {
         // Deflate via Web Streams API
         const decompressedStream = compressedBlob
           .stream()
-          .pipeThrough(new DecompressionStream('deflate-raw'));
+          .pipeThrough(new DecompressionStream('deflate-raw'))
+          .pipeThrough(ZipMultitrackExtractor.byteLimitStream(item.filename, budget, limits));
         outBlob = await new Response(decompressedStream, {
           headers: { 'Content-Type': mimeType }
         }).blob();
       } else {
         continue;
       }
+      totalBytes += outBlob.size;
 
       // Lê apenas os primeiros 256 bytes para detectar a duração se for WAV
       const headerSlice = await outBlob.slice(0, Math.min(256, outBlob.size)).arrayBuffer();
@@ -255,7 +311,10 @@ export class ZipMultitrackExtractor {
   /**
    * Extrai arquivos de áudio (.wav, .mp3, .ogg, .flac, .m4a) de dentro de um `ArrayBuffer` .ZIP.
    */
-  public static async extractAudioFiles(zipBuffer: ArrayBuffer): Promise<ExtractedZipEntry[]> {
+  public static async extractAudioFiles(
+    zipBuffer: ArrayBuffer,
+    limits: ZipExtractionLimits = ZipMultitrackExtractor.LIMITS
+  ): Promise<ExtractedZipEntry[]> {
     const view = new DataView(zipBuffer);
     const bytes = new Uint8Array(zipBuffer);
 
@@ -277,6 +336,7 @@ export class ZipMultitrackExtractor {
 
     const results: ExtractedZipEntry[] = [];
     const utf8Decoder = new TextDecoder('utf-8');
+    let totalBytes = 0;
 
     let ptr = centralDirOffset;
     for (let idx = 0; idx < totalEntries; idx++) {
@@ -312,8 +372,12 @@ export class ZipMultitrackExtractor {
       const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
       const compressedSlice = bytes.subarray(dataStart, dataStart + compressedSize);
       const mimeType = ZipMultitrackExtractor.getAudioMimeType(filename);
+      ZipMultitrackExtractor.assertEntryCount(results.length + 1, limits);
+      const budget = limits.maxTotalBytes - totalBytes;
 
       if (compressionMethod === 0) {
+        ZipMultitrackExtractor.assertWithinBytes(filename, compressedSlice.byteLength, budget, limits);
+        totalBytes += compressedSlice.byteLength;
         const copy = new Uint8Array(compressedSlice.byteLength);
         copy.set(compressedSlice);
         const arrayBuf = copy.buffer;
@@ -326,10 +390,14 @@ export class ZipMultitrackExtractor {
       } else if (compressionMethod === 8 && typeof DecompressionStream !== 'undefined') {
         const ds = new DecompressionStream('deflate-raw');
         const writer = ds.writable.getWriter();
-        void writer.write(new Uint8Array(compressedSlice));
-        void writer.close();
-        const decompressedResponse = new Response(ds.readable);
+        // Se o teto cortar a descompressão, estas promessas rejeitam; o erro real chega pelo arrayBuffer().
+        writer.write(new Uint8Array(compressedSlice)).catch(() => {});
+        writer.close().catch(() => {});
+        const decompressedResponse = new Response(
+          ds.readable.pipeThrough(ZipMultitrackExtractor.byteLimitStream(filename, budget, limits))
+        );
         const arrayBuf = await decompressedResponse.arrayBuffer();
+        totalBytes += arrayBuf.byteLength;
         const blob = new Blob([arrayBuf], { type: mimeType });
         const durationSeconds = ZipMultitrackExtractor.parseWavDurationFromHeader(
           arrayBuf,

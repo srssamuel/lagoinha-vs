@@ -26,17 +26,22 @@ service firebase.storage {
       // Leitura permitida apenas para membros autenticados da mesma igreja
       allow read: if isAuthenticated() && isSameChurch(churchId);
 
-      // Upload permitido apenas para admin, líder ou técnico de som, com limite de 500MB por arquivo
-      allow write: if canUploadAudio(churchId) &&
-        request.resource.size < 500 * 1024 * 1024;
+      // Upload só de áudio (ou .zip de multitrack), por admin, líder ou técnico de som, até 500MB por arquivo
+      allow create, update: if canUploadAudio(churchId) &&
+        request.resource.size < 500 * 1024 * 1024 &&
+        (request.resource.contentType.matches('audio/.*') ||
+         request.resource.contentType in ['application/zip', 'application/x-zip-compressed']);
+      // No delete não há request.resource: a checagem de tamanho bloqueava a exclusão
+      allow delete: if canUploadAudio(churchId);
     }
 
     // Imagens de capa de álbuns ou avatares
     match /churches/{churchId}/covers/{imageFile} {
       allow read: if isAuthenticated() && isSameChurch(churchId);
-      allow write: if canUploadAudio(churchId) &&
+      allow create, update: if canUploadAudio(churchId) &&
         request.resource.size < 10 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
+      allow delete: if canUploadAudio(churchId);
     }
   }
 }
