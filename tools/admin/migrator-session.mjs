@@ -110,7 +110,8 @@ export function createLoginServer({ apiKey, onSession, startPort = 5180, nonce =
     if (!hostOk(req.headers.host)) return send(res, 403, 'host invalido');
     const url = new URL(req.url, `http://localhost:${port}`);
     if (req.method === 'GET' && url.pathname === '/') {
-      const csp = `default-src 'none'; script-src 'nonce-${nonce}' https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://www.googleapis.com; frame-src https://*.firebaseapp.com https://accounts.google.com; style-src 'unsafe-inline'`;
+      // O signInWithPopup do Firebase carrega apis.google.com/js/api.js para o iframe do authDomain.
+      const csp = `default-src 'none'; script-src 'nonce-${nonce}' https://www.gstatic.com https://apis.google.com; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://www.googleapis.com; frame-src https://*.firebaseapp.com https://accounts.google.com; style-src 'unsafe-inline'`;
       return send(res, 200, loginPage({ nonce, apiKey }), 'text/html; charset=utf-8', { 'content-security-policy': csp });
     }
     if (req.method === 'POST' && url.pathname === '/session') {

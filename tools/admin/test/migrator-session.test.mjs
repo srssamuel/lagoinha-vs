@@ -46,7 +46,10 @@ test('POST de outra origem e recusado (mesmo com nonce certo)', async () => {
 test('nonce e origem certos entregam a sessao; pagina embute o nonce', async () => {
   const s = await startServer();
   try {
-    const page = await (await fetch(`http://127.0.0.1:${s.port}/`)).text();
+    const res = await fetch(`http://127.0.0.1:${s.port}/`);
+    const page = await res.text();
+    // signInWithPopup carrega apis.google.com/js/api.js; sem ele o popup nunca devolve o login.
+    assert.match(res.headers.get('content-security-policy'), /script-src [^;]*https:\/\/apis\.google\.com/);
     assert.ok(page.includes(s.srv.nonce));
     assert.ok(page.includes('Entrar com Google'));
     assert.ok(page.includes('select_account'));
