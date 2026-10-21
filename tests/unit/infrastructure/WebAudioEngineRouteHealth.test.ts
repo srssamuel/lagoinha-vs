@@ -68,6 +68,18 @@ describe('WebAudioEngine — Integridade de Rota e Interrupção Imediata (ENG-0
         delayTime: { value: 0, setValueAtTime: vi.fn() },
         connect: vi.fn()
       }),
+      createConstantSource: () => ({
+        offset: {
+          value: 0,
+          setValueAtTime: vi.fn(),
+          cancelScheduledValues: vi.fn(),
+          linearRampToValueAtTime: vi.fn()
+        },
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn()
+      }),
       createOscillator: () => ({
         type: 'sawtooth',
         frequency: { value: 1, setValueAtTime: vi.fn() },
@@ -253,7 +265,8 @@ describe('WebAudioEngine — Integridade de Rota e Interrupção Imediata (ENG-0
       expect(onMeters).toHaveBeenCalledTimes(2);
       expect(onState).not.toHaveBeenCalled();
 
-      ctx.currentTime = 0.15;
+      // A música começa 50 ms depois do play (when comum): 0,17 s de relógio = 0,12 s de música
+      ctx.currentTime = 0.17;
       runFrame();
       expect(onMeters).toHaveBeenCalledTimes(3);
       expect(onState).toHaveBeenCalledTimes(1);

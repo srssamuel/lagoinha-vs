@@ -73,7 +73,16 @@ export function createGraphAudioContext(maxChannelCount = 4): GraphAudioContext 
           node.edges.push({ dest: dest as FakeNode, output, input });
         }
       },
-      disconnect() {},
+      // Sem argumento remove todas as arestas de saída; com destino, só as que vão para ele (como o AudioNode real).
+      disconnect(dest?: unknown, output?: number, input?: number) {
+        node.edges = node.edges.filter((e) => {
+          if (dest === undefined) return false;
+          if (e.dest !== dest) return true;
+          if (output !== undefined && e.output !== output) return true;
+          if (input !== undefined && e.input !== input) return true;
+          return false;
+        });
+      },
       ...extra
     };
     nodes.push(node);
@@ -117,6 +126,7 @@ export function createGraphAudioContext(maxChannelCount = 4): GraphAudioContext 
     createChannelSplitter: (n: number) => make('splitter', { outputs: n }),
     createBufferSource: () => make('bufferSource', { buffer: null, start: vi.fn(), stop: vi.fn() }),
     createDelay: () => make('delay', { delayTime: param(0) }),
+    createConstantSource: () => make('constantSource', { offset: param(0), start: () => {}, stop: () => {} }),
     createOscillator: () =>
       make('oscillator', { type: 'sine', frequency: param(440), start: () => {}, stop: () => {} }),
     createWaveShaper: () => make('waveShaper', { curve: null, oversample: 'none' }),

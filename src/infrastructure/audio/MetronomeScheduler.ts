@@ -1,6 +1,7 @@
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { connectClickToBus, RoutingBuses } from './AudioRoutingGraph';
+import { PITCH_PATH_LATENCY_SEC } from './PitchShifterDspNode';
 import { ProceduralClickGenerator } from './ProceduralClickGenerator';
 
 /** Barramentos de destino do click procedural (criados pelo motor em init()). */
@@ -14,8 +15,28 @@ export interface MetronomeHost {
   getBuses(): MetronomeBuses;
   isPlaying(): boolean;
   getPlaybackTime(): number;
+  /** Segundos até o início agendado dos stems (margem comum de partida); 0 se já começaram. */
+  getTransportLeadSec?(): number;
   notifyState(): void;
 }
+
+/** Margem entre o comando de play/seek e o `when` comum de todos os stems (sample-accurate entre eles). */
+export const TRANSPORT_START_MARGIN_S = 0.05;
+
+interface PendingClick {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+  at: number;
+  /** Fim da reprodução do click (at + duração do buffer): até lá o destino ainda pode ser religado. */
+  end: number;
+}
+
+/**
+ * Latência (s) que o stem acumula no channel strip e o click procedural não tem: o DynamicsCompressorNode do strip
+ * (mesmo com ratio 1) impõe 6 ms de pre-delay no Chromium. Medido no render real (render-alignment.mjs, seção 6):
+ * sem esta soma o click procedural saía 6,0 ms antes do stem de bateria.
+ */
+export const CLICK_STRIP_LATENCY_SEC = 0.006;
 
 /** Janela de lookahead: cliques são agendados no relógio do AudioContext até 150 ms à frente. */
 const LOOKAHEAD_S = 0.15;
@@ -41,6 +62,8 @@ export class MetronomeScheduler {
   private _isCountingIn = false;
   private _countInBeat = 1;
   private countInTimerId: number | null = null;
+  /** Clicks já agendados no AudioContext e ainda não tocados: o destino pode mudar ou eles podem ser cancelados. */
+  private pending: PendingClick[] = [];
 
   constructor(private readonly host: MetronomeHost) {}
 
@@ -80,10 +103,13 @@ export class MetronomeScheduler {
     const beatsPerBar = song.timeSignature.beats;
 
     const currentTime = this.host.getPlaybackTime();
-    const totalBeatsElapsed = Math.floor(currentTime / secondsPerBeat);
-
+    // Os stems começam em lead s (when comum); currentTime é a posição agora (negativa antes da partida).
+    // A grade de tempos do click parte da posição que a música terá no instante de partida.
+    const lead = Math.max(0, this.host.getTransportLeadSec?.() ?? 0);
+    const posAtStart = lead > 0 ? Math.max(0, Math.round((currentTime + lead) * 1e6) / 1e6) : Math.max(0, currentTime);
+    const totalBeatsElapsed = Math.floor(posAtStart / secondsPerBeat);
     this.beatInBar = (totalBeatsElapsed % beatsPerBar) + 1;
-    this.nextClickTime = ctx.currentTime + (secondsPerBeat - (currentTime % secondsPerBeat));
+    this.nextClickTime = ctx.currentTime + lead + (secondsPerBeat - (posAtStart % secondsPerBeat));
 
     const scheduleWindow = () => {
       const liveCtx = this.host.getCtx();
@@ -106,6 +132,54 @@ export class MetronomeScheduler {
       clearTimeout(this.timerId);
       this.timerId = null;
     }
+    // Clicks já entregues ao AudioContext (até ~170 ms à frente) não podem tocar depois de parar/pausar/pular.
+    this.cancelPending();
+  }
+
+  /** Para e desconecta os clicks já agendados e ainda não terminados. */
+  public cancelPending(): void {
+    for (const p of this.pending) {
+      try {
+        p.source.stop();
+      } catch {
+        // Já parado
+      }
+      try {
+        p.source.disconnect();
+      } catch {
+        // Já desconectado
+      }
+      try {
+        p.gain.disconnect();
+      } catch {
+        // Já desconectado
+      }
+    }
+    this.pending = [];
+  }
+
+  /**
+   * Religa os clicks já agendados ao destino do modo de roteamento vigente. O destino é escolhido ao agendar
+   * (até ~170 ms antes do click); sem isto, Stereo -> Split com música tocando soltaria um click no PA.
+   */
+  public rerouteScheduled(): void {
+    const ctx = this.host.getCtx();
+    if (!ctx) return;
+    this.prunePending(ctx.currentTime);
+    const mode = this.host.getRoutingMode();
+    const buses = this.host.getBuses();
+    for (const p of this.pending) {
+      try {
+        p.gain.disconnect();
+      } catch {
+        // Já desconectado
+      }
+      connectClickToBus(p.gain, mode, buses);
+    }
+  }
+
+  private prunePending(now: number): void {
+    this.pending = this.pending.filter((p) => p.end > now);
   }
 
   /**
@@ -156,6 +230,7 @@ export class MetronomeScheduler {
       this.countInTimerId = null;
     }
     this._isCountingIn = false;
+    this.cancelPending();
   }
 
   public scheduleClick(time: number, isAccent: boolean): void {
@@ -166,6 +241,10 @@ export class MetronomeScheduler {
     const buffer = isAccent ? this.bufferAccent : this.bufferRegular;
     if (!buffer) return;
 
+    // Os stems passam pelo PitchShifterDspNode, que impõe PITCH_PATH_LATENCY_SEC a todos (transpostos ou não). O
+    // click procedural não passa por ali nem pelo strip: soma as duas latências para continuar no tempo da banda.
+    const at = time + PITCH_PATH_LATENCY_SEC + CLICK_STRIP_LATENCY_SEC;
+
     const clickSource = ctx.createBufferSource();
     clickSource.buffer = buffer;
 
@@ -174,11 +253,13 @@ export class MetronomeScheduler {
     const clickStem = song?.stems.find((s) => s.type === 'click');
     const vol = clickStem?.isAudible(song?.hasSoloTrack || false) ? clickStem.volume : 0;
 
-    clickGain.gain.setValueAtTime(vol, time);
+    clickGain.gain.setValueAtTime(vol, at);
     clickSource.connect(clickGain);
 
     connectClickToBus(clickGain, this.host.getRoutingMode(), buses);
 
-    clickSource.start(time);
+    clickSource.start(at);
+    this.prunePending(ctx.currentTime);
+    this.pending.push({ source: clickSource, gain: clickGain, at, end: at + (buffer.duration || 0.05) });
   }
 }

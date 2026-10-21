@@ -19,7 +19,7 @@ import {
   createStemChannelStrip,
   StemAudioNodes
 } from './AudioRoutingGraph';
-import { MetronomeScheduler } from './MetronomeScheduler';
+import { MetronomeScheduler, TRANSPORT_START_MARGIN_S } from './MetronomeScheduler';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 import { RouteHealthMonitor } from './RouteHealthMonitor';
 
@@ -59,7 +59,9 @@ export class WebAudioEngine implements AudioEnginePort {
       channelMerger: this.channelMerger
     }),
     isPlaying: () => this.isPlaying,
-    getPlaybackTime: () => this.getCurrentPlaybackTime(),
+    // Posição sem piso: negativa durante a margem de partida, para a grade do click partir da posição certa
+    getPlaybackTime: () => this.getTransportTime(),
+    getTransportLeadSec: () => this.getTransportLeadSec(),
     notifyState: () => this.notifyState()
   });
 
@@ -168,15 +170,14 @@ export class WebAudioEngine implements AudioEnginePort {
           .then((decoded) => {
             stem.audioBuffer = decoded;
             // Se o usuário já deu Play enquanto o stem terminava de decodificar, sincroniza imediatamente
-            if (this.isPlaying && this.currentSong?.id === song.id) {
+            // (durante a contagem prévia nada começou: startAudioSources pega o buffer pronto ao fim dela)
+            if (this.isPlaying && !this.metronome.isCountingIn && this.currentSong?.id === song.id) {
               const currentNodes = this.stemNodes.get(stem.id);
               if (currentNodes && !currentNodes.source) {
                 const src = ctxRef.createBufferSource();
                 src.buffer = decoded;
                 src.connect(currentNodes.pitchShifter.input);
-                const nowOffset = Math.min(this.getCurrentPlaybackTime(), decoded.duration);
-                src.start(0, nowOffset);
-                currentNodes.source = src;
+                this.startSourceInSync(src, decoded, currentNodes);
               }
             }
           })
@@ -214,7 +215,8 @@ export class WebAudioEngine implements AudioEnginePort {
     }
 
     this.isPlaying = true;
-    this.playbackStartTime = this.ctx.currentTime - this.pausedAtTime;
+    // when comum de todos os stems: agora + margem, para que nenhum start() caia no passado do thread de áudio
+    this.playbackStartTime = this.ctx.currentTime + TRANSPORT_START_MARGIN_S - this.pausedAtTime;
 
     // Só usa metrônomo procedural se a música não tiver um arquivo real de click
     const clickStem = this.currentSong.stems.find((s) => s.type === 'click');
@@ -239,7 +241,7 @@ export class WebAudioEngine implements AudioEnginePort {
 
     this.metronome.startCountIn(() => {
       if (!this.ctx) return;
-      this.playbackStartTime = this.ctx.currentTime;
+      this.playbackStartTime = this.ctx.currentTime + TRANSPORT_START_MARGIN_S;
       this.pausedAtTime = 0;
 
       const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
@@ -294,7 +296,7 @@ export class WebAudioEngine implements AudioEnginePort {
     this.pausedAtTime = target;
 
     if (wasPlaying && this.ctx) {
-      this.playbackStartTime = this.ctx.currentTime - this.pausedAtTime;
+      this.playbackStartTime = this.ctx.currentTime + TRANSPORT_START_MARGIN_S - this.pausedAtTime;
       const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
       if (!clickStem?.audioUrl) {
         this.metronome.start();
@@ -320,6 +322,8 @@ export class WebAudioEngine implements AudioEnginePort {
   public setRoutingMode(mode: RoutingMode): void {
     this.routingMode = mode;
     this.applyMixerSettings();
+    // Clicks procedurais já agendados (até ~170 ms à frente) foram ligados ao destino do modo antigo
+    this.metronome.rerouteScheduled();
     this.notifyState();
   }
 
@@ -654,12 +658,40 @@ export class WebAudioEngine implements AudioEnginePort {
     return () => this.meterListeners.delete(listener);
   }
 
-  private getCurrentPlaybackTime(): number {
+  /** Posição da música agora em relação ao when comum; negativa (ou menor que a de partida) antes da partida. */
+  private getTransportTime(): number {
     if (!this.isPlaying || !this.ctx) {
       return this.pausedAtTime;
     }
     const elapsed = this.ctx.currentTime - this.playbackStartTime;
     return Math.min(elapsed, this.currentSong?.duration || 0);
+  }
+
+  private getCurrentPlaybackTime(): number {
+    return Math.max(0, this.getTransportTime());
+  }
+
+  /** Segundos até o when comum dos stems (0 se já começaram ou se não há transporte). */
+  private getTransportLeadSec(): number {
+    if (!this.ctx || !this.isPlaying) return 0;
+    return Math.max(0, this.playbackStartTime + this.pausedAtTime - this.ctx.currentTime);
+  }
+
+  /**
+   * Inicia um stem decodificado depois da partida, no mesmo relógio do transporte: toca em
+   * max(agora, when comum) e a posição no buffer é a que a música tem naquele instante.
+   */
+  private startSourceInSync(source: AudioBufferSourceNode, buffer: AudioBuffer, nodes: StemAudioNodes): void {
+    if (!this.ctx) return;
+    const startAt = this.playbackStartTime + this.pausedAtTime;
+    const when = Math.max(this.ctx.currentTime, startAt);
+    const position = Math.min(this.pausedAtTime + (when - startAt), buffer.duration);
+    try {
+      source.start(when, position);
+      nodes.source = source;
+    } catch {
+      // Ignora caso já iniciado
+    }
   }
 
   private applyMixerSettings(): void {
@@ -685,6 +717,10 @@ export class WebAudioEngine implements AudioEnginePort {
 
     const song = this.currentSong;
     const ctxRef = this.ctx;
+    // when comum calculado UMA vez: todos os stems recebem o mesmo instante e a posição que lhe corresponde
+    const nominalStart = this.playbackStartTime + offset;
+    const when = Math.max(ctxRef.currentTime, nominalStart);
+    const bufferPosition = offset + (when - nominalStart);
 
     song.stems.forEach((stem) => {
       const nodes = this.stemNodes.get(stem.id);
@@ -699,9 +735,9 @@ export class WebAudioEngine implements AudioEnginePort {
         source.buffer = stem.audioBuffer;
         source.connect(nodes.pitchShifter.input);
 
-        const startOffset = Math.min(offset, stem.audioBuffer.duration);
+        const startOffset = Math.min(bufferPosition, stem.audioBuffer.duration);
         try {
-          source.start(0, startOffset);
+          source.start(when, startOffset);
           nodes.source = source;
         } catch {
           // Ignora caso já iniciado
@@ -719,12 +755,11 @@ export class WebAudioEngine implements AudioEnginePort {
           .then((ab) => ctxRef.decodeAudioData(ab))
           .then((decoded) => {
             stem.audioBuffer = decoded;
-            if (this.isPlaying && this.currentSong?.id === song.id && !nodes.source) {
+            if (this.isPlaying && !this.metronome.isCountingIn && this.currentSong?.id === song.id && !nodes.source) {
               const src = ctxRef.createBufferSource();
               src.buffer = decoded;
               src.connect(nodes.pitchShifter.input);
-              src.start(0, Math.min(this.getCurrentPlaybackTime(), decoded.duration));
-              nodes.source = src;
+              this.startSourceInSync(src, decoded, nodes);
             }
           })
           .catch((err) => {
