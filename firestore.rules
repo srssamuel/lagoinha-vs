@@ -95,9 +95,13 @@ service cloud.firestore {
       allow create, update: if isCurator() && catalogEligible(request.resource.data);
       allow delete: if isCurator();
 
+      // Versao so nasce sob musica que ja passou pela I4
       match /versions/{versionId} {
         allow read: if isActiveSomewhere() || isCurator();
-        allow create: if isCurator();
+        allow create: if isCurator()
+          && exists(/databases/$(database)/documents/catalog/$(songId))
+          && catalogEligible(get(/databases/$(database)/documents/catalog/$(songId)).data)
+          && validVersion(request.resource.data);
         allow update, delete: if false; // versao e imutavel
       }
     }
@@ -107,7 +111,9 @@ service cloud.firestore {
       // Igreja nasce pelo console no bootstrap (F2); admin so edita nome e cidade
       allow read: if isActiveMember(churchId);
       allow update: if hasRank(churchId, 3)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'city']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'city'])
+        && optString(request.resource.data, 'name', 100)
+        && optString(request.resource.data, 'city', 100);
       allow create, delete: if false;
 
       match /members/{uid} {
@@ -120,38 +126,51 @@ service cloud.firestore {
             signedIn() && request.auth.uid == uid
             && request.resource.data.keys().hasOnly(['role', 'status', 'inviteId', 'displayName', 'instrument', 'createdAt'])
             && request.resource.data.status == 'pending'
+            && profileFieldsValid(request.resource.data)
             && inviteConsumedBy(churchId, request.resource.data.inviteId, request.resource.data.role)
           ) || (
             hasRank(churchId, 3) && request.auth.uid != uid
+            && request.resource.data.keys().hasOnly(['role', 'status', 'displayName', 'instrument', 'createdAt', 'approvedBy', 'approvedAt'])
             && validRole(request.resource.data.role)
             && request.resource.data.status in ['pending', 'active']
+            && profileFieldsValid(request.resource.data)
+            && request.resource.data.get('approvedBy', request.auth.uid) == request.auth.uid
           );
 
         // So admin aprova, troca papel ou suspende, e nunca a si mesmo (I1).
-        // A propria pessoa so mexe no instrumento.
+        // Rebaixar, suspender ou remover um admin e so pelo console: a igreja nunca fica sem admin pelo app.
+        // A propria pessoa so mexe no nome e no instrumento.
         allow update: if (
             hasRank(churchId, 3) && request.auth.uid != uid
+            && resource.data.role != 'admin'
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['role', 'status', 'approvedBy', 'approvedAt', 'instrument'])
             && validRole(request.resource.data.role)
             && request.resource.data.status in ['pending', 'active', 'suspended']
+            && profileFieldsValid(request.resource.data)
             && (!('approvedBy' in request.resource.data.diff(resource.data).affectedKeys())
                 || request.resource.data.approvedBy == request.auth.uid)
           ) || (
             signedIn() && request.auth.uid == uid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'instrument'])
+            && profileFieldsValid(request.resource.data)
           );
 
-        // Sair da igreja (a propria pessoa) ou remocao por admin
-        allow delete: if signedIn() && (request.auth.uid == uid || hasRank(churchId, 3));
+        // Sair da igreja: a propria pessoa, menos admin (console) e suspenso (sair apagaria a suspensao).
+        // Admin remove os outros, menos outro admin.
+        allow delete: if signedIn() && resource.data.role != 'admin' && (
+            (request.auth.uid == uid && resource.data.status != 'suspended')
+            || hasRank(churchId, 3)
+          );
       }
 
-      // inviteId = sha256 do token do link: so quem tem o link sabe o id (get), so a lideranca lista.
+      // inviteId = sha256 (hex) do token do link: so quem tem o link sabe o id (get), so a lideranca lista.
       match /invites/{inviteId} {
         allow get: if signedIn();
         allow list: if hasRank(churchId, 2);
 
         allow create: if canInviteRole(churchId, request.resource.data.targetRole)
+          && inviteId.matches('^[a-f0-9]{64}$')
           && request.resource.data.keys().hasOnly(['targetRole', 'expiresAt', 'maxUses', 'usedCount', 'createdBy', 'revoked', 'createdAt'])
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.usedCount == 0
@@ -167,13 +186,13 @@ service cloud.firestore {
             signedIn()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount'])
             && request.resource.data.usedCount == resource.data.usedCount + 1
-            && inviteUsable(resource.data)
+            && inviteUsable(churchId, resource.data)
             && !exists(memberPath(churchId, request.auth.uid))
             && existsAfter(memberPath(churchId, request.auth.uid))
             && getAfter(memberPath(churchId, request.auth.uid)).data.inviteId == inviteId
           ) || (
-            // Revogar: lideranca da igreja, so o campo revoked, so para true
-            hasRank(churchId, 2)
+            // Revogar: quem criou (ainda lideranca) ou admin; so o campo revoked, so para true
+            (hasRank(churchId, 3) || (hasRank(churchId, 2) && resource.data.createdBy == request.auth.uid))
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked'])
             && request.resource.data.revoked == true
           );
@@ -185,12 +204,18 @@ service cloud.firestore {
       match /library/{songId} {
         allow read: if isActiveMember(churchId);
         allow create, update: if hasRank(churchId, 1)
-          && request.resource.data.rightsClass in ['own', 'licensed_redistributable', 'church_purchased', 'unknown'];
+          && request.resource.data.rightsClass in ['own', 'licensed_redistributable', 'church_purchased', 'unknown']
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
         allow delete: if hasRank(churchId, 2);
 
+        // Versao so nasce sob musica existente da propria igreja. Que os sha256 listados sejam
+        // arquivos desta igreja quem garante e o Worker (spec, I5): a regra nao percorre listas.
         match /versions/{versionId} {
           allow read: if isActiveMember(churchId);
-          allow create: if hasRank(churchId, 1);
+          allow create: if hasRank(churchId, 1)
+            && exists(/databases/$(database)/documents/churches/$(churchId)/library/$(songId))
+            && validVersion(request.resource.data);
           allow update, delete: if false; // versao e imutavel
         }
       }
@@ -212,17 +237,35 @@ service cloud.firestore {
       }
     }
 
-    function inviteUsable(invite) {
-      return invite.revoked == false
-        && invite.usedCount < invite.maxUses
-        && request.time < invite.expiresAt;
+    function optString(data, key, max) {
+      return !(key in data) || (data[key] is string && data[key].size() <= max);
     }
 
+    function profileFieldsValid(data) {
+      return optString(data, 'displayName', 100) && optString(data, 'instrument', 100);
+    }
+
+    function validVersion(data) {
+      return data.keys().hasOnly(['createdAt', 'createdBy', 'changelog', 'sections', 'stems'])
+        && data.createdBy == request.auth.uid
+        && data.stems is list && data.stems.size() <= 64
+        && optString(data, 'changelog', 500);
+    }
+
+    // Valido, nao revogado, no prazo, e quem convidou ainda e lideranca ativa da igreja
+    function inviteUsable(churchId, invite) {
+      return invite.revoked == false
+        && invite.usedCount < invite.maxUses
+        && request.time < invite.expiresAt
+        && exists(memberPath(churchId, invite.createdBy))
+        && get(memberPath(churchId, invite.createdBy)).data.status == 'active'
+        && rankOf(get(memberPath(churchId, invite.createdBy)).data.role) >= 2;
+    }
     // O convite existia valido antes do lote, sobe 1 no lote e o papel pedido e o do convite
     function inviteConsumedBy(churchId, inviteId, role) {
       return inviteId is string
         && exists(invitePath(churchId, inviteId))
-        && inviteUsable(get(invitePath(churchId, inviteId)).data)
+        && inviteUsable(churchId, get(invitePath(churchId, inviteId)).data)
         && getAfter(invitePath(churchId, inviteId)).data.usedCount == get(invitePath(churchId, inviteId)).data.usedCount + 1
         && role == get(invitePath(churchId, inviteId)).data.targetRole;
     }

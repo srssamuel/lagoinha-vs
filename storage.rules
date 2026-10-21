@@ -24,7 +24,7 @@ service firebase.storage {
       allow read: if isActiveMember(churchId);
       allow create, update: if canUpload(churchId)
         && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp']; // sem SVG (script embutido)
       // No delete nao ha request.resource
       allow delete: if canUpload(churchId);
     }

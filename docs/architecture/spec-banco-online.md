@@ -14,14 +14,15 @@
 
 ---
 
-### Estado da F1 (*validado*: `npm run test:rules`, 37 testes no emulador, mutacao de I1-I4 e da revisao derruba a suite)
+### Estado da F1 (*validado*: `npm run test:rules`, 46 testes no emulador, mutacao de I1-I4 e da revisao derruba a suite)
 
 - `firestore.rules` reescrito para o modelo da secao 3: papel em `churches/{id}/members/{uid}`, convite em `churches/{id}/invites/{sha256 do token}`, biblioteca e setlists dentro da igreja, catalogo global em `catalog/`, curadores em `platformAdmins/`. Colecoes antigas da raiz (`songs`, `setlists`, `invites`) ficam fechadas.
 - Entrada por convite e um lote unico: o membro nasce `pending` com o `targetRole` e o `usedCount` sobe 1; um nao passa sem o outro (`getAfter`/`existsAfter`).
 - Catalogo global legivel por quem e membro ativo da igreja apontada em `users/{uid}.primaryChurchId` (a regra confere o membro; apontar igreja alheia nao libera nada).
 - `storage.rules`: so capas por igreja; stems ficam no R2 (ADR-001) e qualquer outro caminho e negado.
 - Como rodar: `npm run test:rules` (sobe emuladores Firestore + Storage com projeto `demo-lagoinha-vs`, sem credencial). Exige Java 21+: o script usa o do PATH, `JAVA_HOME` ou `%LOCALAPPDATA%\Programs\jdk21`.
-- Ainda nao feito: deploy das regras (exige o projeto Firebase real, F2) e gate de deploy em CI.
+- Revisao de seguranca independente (`security-guardian`, 8 sondas no emulador): 1 alto, 3 medios e 6 baixos, nenhum critico e nenhum caminho para a I1. Corrigido nas regras, com teste de regressao: versao so sob musica existente (e no catalogo, so sob musica que passou pela I4); suspenso nao sai sozinho; rebaixar, suspender ou remover admin so pelo console (a igreja nunca fica sem admin pelo app); convite de quem deixou a lideranca deixa de valer; lider so revoga o proprio convite; id de convite precisa ser sha256 em hex; campos de membro, versao, biblioteca e igreja com chaves e tamanhos fixos; capa sem SVG. O alto restante (repasse de stems por hash) depende do Worker e virou reforco da I5 para a F3.
+- Aceito por ora (baixo): uma pessoa pode esgotar um convite entrando e saindo repetidas vezes; qualquer conta logada le um convite cujo id (hash do token) conhece. Na F2: login anonimo desligado no projeto e App Check avaliado.- Ainda nao feito: deploy das regras (exige o projeto Firebase real, F2) e gate de deploy em CI.
 ---
 
 ## 1. O pedido, melhorado
@@ -111,9 +112,10 @@ Mudanca no dominio (`src/domain`): `User` perde `role`/`churchId` fixos e o defa
 Invariantes (cada uma vira teste de regra que pode falhar):
 - **I1** Ninguem altera o proprio `role`/`status` (nem cria o proprio `members/{uid}` como `active`). Auto-cadastro so cria `status: 'pending'` via convite valido.
 - **I2** Igreja A nunca le nada de `churches/B/**`.
-- **I3** Consumo de convite so incrementa `usedCount` em 1, so se `!revoked`, `usedCount < maxUses`, `now < expiresAt`, e cria membro `pending` com o `targetRole` do convite (aprovacao final por admin/leader). Corrige o `firestore.rules` atual, que permite qualquer autenticado incrementar `usedCount` sem checar validade.
+- **I3** Consumo de convite so incrementa `usedCount` em 1, so se `!revoked`, `usedCount < maxUses`, `now < expiresAt`, e cria membro `pending` com o `targetRole` do convite (aprovacao final so por admin, como na tabela acima; lider apenas convida). Corrige o `firestore.rules` atual, que permite qualquer autenticado incrementar `usedCount` sem checar validade.
 - **I4** `catalog/**` so recebe escrita de `platformAdmins/{uid}` existente; `rightsClass` em `catalog/` so `own` ou `licensed_redistributable` com `licenseRef`.
 - **I5** O Worker de stems nao tem regra propria: so entrega `stems/{sha256}` se o usuario conseguir ler, **com o proprio token**, um documento de versao (catalogo ou biblioteca da igreja dele) que liste aquele `sha256`.
+  - **Reforco (revisao de seguranca da F1):** ler a versao nao basta. Um tecnico pode listar numa versao da igreja A o `sha256` de um arquivo comprado pela igreja B, e a regra nao percorre a lista de stems. O Worker grava no upload o registro `churches/{id}/blobs/{sha256}` (cliente sem escrita) e no download so entrega se o hash estiver registrado na igreja do pedido ou referenciado pelo catalogo. Obrigatorio na F3.
 - **I6** Build de producao recusa o adaptador de auth local (sem admin automatico fora do modo `local`).
 
 Curador global: no inicio, so o Samuel (ou quem ele indicar), cadastrado manualmente no console do Firebase — nao existe tela que crie curador.

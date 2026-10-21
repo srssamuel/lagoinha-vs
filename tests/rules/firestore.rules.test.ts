@@ -29,6 +29,8 @@ let env: RulesTestEnvironment;
 
 const DAY_MS = 24 * 3600 * 1000;
 const inDays = (days: number) => Timestamp.fromMillis(Date.now() + days * DAY_MS);
+/** Id de convite no formato real: sha256 em hex (64 caracteres). */
+const hexId = (seed: string) => seed.padEnd(64, '0').replace(/[^a-f0-9]/g, 'a').slice(0, 64);
 const LICENSE = { holder: 'Lagoinha JP', documentId: 'DOC-001', scope: 'todas as igrejas' };
 
 const db = (uid: string | null): Firestore =>
@@ -70,6 +72,8 @@ beforeEach(async () => {
     await member('a', 'tech-a', 'sound_tech');
     await member('a', 'music-a', 'musician');
     await member('a', 'pend-a', 'musician', 'pending');
+    await member('a', 'admin2-a', 'admin');
+    await member('a', 'susp-a', 'musician', 'suspended');
     await member('b', 'admin-b', 'admin');
 
     await setDoc(doc(admin, 'users/music-a'), { displayName: 'Músico A', primaryChurchId: 'a' });
@@ -81,6 +85,8 @@ beforeEach(async () => {
     await setDoc(doc(admin, 'churches/a/invites/inv-revoked'), invite({ revoked: true }));
     await setDoc(doc(admin, 'churches/a/invites/inv-full'), invite({ maxUses: 1, usedCount: 1 }));
     await setDoc(doc(admin, 'churches/a/invites/inv-tech'), invite({ targetRole: 'sound_tech' }));
+    await setDoc(doc(admin, 'churches/a/invites/inv-orphan'), invite({ createdBy: 'ex-leader' }));
+    await setDoc(doc(admin, 'churches/a/invites/inv-admin'), invite({ createdBy: 'admin-a' }));
 
     await setDoc(doc(admin, 'churches/a/library/song1'), { title: 'Comprada', rightsClass: 'church_purchased' });
     await setDoc(doc(admin, 'churches/a/library/song1/versions/v1'), { stems: [] });
@@ -229,7 +235,7 @@ describe('I3: convite', () => {
 
   it('líder convida até técnico de som; admin até líder; ninguém convida admin; músico não convida', async () => {
     const create = (uid: string, id: string, targetRole: string) =>
-      setDoc(doc(db(uid), `churches/a/invites/${id}`), invite({ targetRole, createdBy: uid }));
+      setDoc(doc(db(uid), `churches/a/invites/${hexId(id)}`), invite({ targetRole, createdBy: uid }));
     await assertSucceeds(create('leader-a', 'n1', 'sound_tech'));
     await assertFails(create('leader-a', 'n2', 'leader'));
     await assertSucceeds(create('admin-a', 'n3', 'leader'));
@@ -239,7 +245,7 @@ describe('I3: convite', () => {
 
   it('convite nasce zerado, no nome de quem cria e com prazo de até 30 dias', async () => {
     const put = (id: string, data: Record<string, unknown>) =>
-      setDoc(doc(db('leader-a'), `churches/a/invites/${id}`), invite(data));
+      setDoc(doc(db('leader-a'), `churches/a/invites/${hexId(id)}`), invite(data));
     await assertFails(put('p1', { usedCount: 5 }));
     await assertFails(put('p2', { createdBy: 'admin-a' }));
     await assertFails(put('p3', { expiresAt: inDays(60) }));
@@ -340,6 +346,64 @@ describe('storage: capas por igreja; stems fora do Firebase', () => {
     await assertFails(uploadBytes(ref(storageOf('music-a'), 'churches/a/covers/c.png'), png, { contentType: 'image/png' }));
     await assertFails(
       uploadBytes(ref(storageOf('admin-a'), 'churches/a/stems/click.wav'), png, { contentType: 'audio/wav' })
+    );
+  });
+});
+
+describe('regressões da revisão de segurança', () => {
+  it('versão não nasce sob música inexistente (biblioteca e catálogo)', async () => {
+    const v = (uid: string) => ({ createdBy: uid, stems: [] });
+    await assertFails(setDoc(doc(db('tech-a'), 'churches/a/library/fantasma/versions/v1'), v('tech-a')));
+    await assertSucceeds(setDoc(doc(db('tech-a'), 'churches/a/library/song1/versions/v2'), v('tech-a')));
+    await assertFails(setDoc(doc(db('tech-a'), 'churches/a/library/song1/versions/v3'), { ...v('tech-a'), extra: 1 }));
+    await assertFails(setDoc(doc(db('curator'), 'catalog/fantasma/versions/v1'), v('curator')));
+    await assertSucceeds(setDoc(doc(db('curator'), 'catalog/c1/versions/v2'), v('curator')));
+  });
+
+  it('suspenso não sai sozinho (sairia e voltaria como pendente)', async () => {
+    await assertFails(deleteDoc(doc(db('susp-a'), 'churches/a/members/susp-a')));
+    await assertSucceeds(deleteDoc(doc(db('music-a'), 'churches/a/members/music-a')));
+  });
+
+  it('a igreja não fica sem admin pelo app', async () => {
+    await assertFails(deleteDoc(doc(db('admin-a'), 'churches/a/members/admin-a')));
+    await assertFails(updateDoc(doc(db('admin-a'), 'churches/a/members/admin2-a'), { role: 'musician' }));
+    await assertFails(updateDoc(doc(db('admin-a'), 'churches/a/members/admin2-a'), { status: 'suspended' }));
+    await assertFails(deleteDoc(doc(db('admin-a'), 'churches/a/members/admin2-a')));
+    await assertSucceeds(updateDoc(doc(db('admin-a'), 'churches/a/members/music-a'), { role: 'admin' }));
+  });
+
+  it('convite de quem deixou a liderança não vale mais', async () => {
+    await assertFails(joinWithInvite('novo', 'inv-orphan'));
+  });
+
+  it('líder não revoga convite de outra pessoa; admin revoga qualquer um', async () => {
+    await assertFails(updateDoc(doc(db('leader-a'), 'churches/a/invites/inv-admin'), { revoked: true }));
+    await assertSucceeds(updateDoc(doc(db('admin2-a'), 'churches/a/invites/inv-admin'), { revoked: true }));
+  });
+
+  it('id de convite precisa ser sha256 em hex', async () => {
+    await assertFails(setDoc(doc(db('leader-a'), 'churches/a/invites/convite-facil'), invite({ createdBy: 'leader-a' })));
+  });
+
+  it('admin cadastra membro só com campos conhecidos e assinando como si', async () => {
+    const put = (data: Record<string, unknown>) => setDoc(doc(db('admin-a'), 'churches/a/members/novo'), data);
+    await assertFails(put({ role: 'musician', status: 'active', lixo: 'x'.repeat(10) }));
+    await assertFails(put({ role: 'musician', status: 'active', approvedBy: 'leader-a' }));
+    await assertSucceeds(put({ role: 'musician', status: 'active', approvedBy: 'admin-a' }));
+  });
+
+  it('nome e instrumento têm tamanho limitado', async () => {
+    await assertFails(updateDoc(doc(db('music-a'), 'churches/a/members/music-a'), { instrument: 'x'.repeat(101) }));
+    await assertFails(updateDoc(doc(db('admin-a'), 'churches/a'), { name: 'x'.repeat(101) }));
+  });
+
+  it('capa não aceita SVG', async () => {
+    const svg = new TextEncoder().encode('<svg onload="alert(1)"/>');
+    await assertFails(
+      uploadBytes(ref(env.authenticatedContext('tech-a').storage(), 'churches/a/covers/x.svg'), svg, {
+        contentType: 'image/svg+xml'
+      })
     );
   });
 });
