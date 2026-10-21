@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, UserRole } from '../../domain/entities/User';
 import { InviteToken } from '../../domain/entities/InviteToken';
 import { FirebaseAuthService } from '../../infrastructure/auth/FirebaseAuthService';
@@ -49,20 +49,20 @@ export const AdminUsersModal: React.FC<AdminUsersModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const pendings = await authService.listPendingUsers();
     const all = await authService.listAllUsers();
     const tokens = await authService.listInviteTokens();
     setPendingUsers(pendings);
     setAllUsers(all);
     setInviteTokens(tokens);
-  };
+  }, [authService]);
 
   useEffect(() => {
     if (isOpen) {
       void loadData();
     }
-  }, [isOpen]);
+  }, [isOpen, loadData]);
 
   if (!isOpen) return null;
 

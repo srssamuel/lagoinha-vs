@@ -25,18 +25,23 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
 
   // Calcula picos reais a partir do buffer decodificado da música (ex: Bateria ou Mix),
   // ou gera perfil dinâmico de culto se ainda não decodificado
+  // Tenta encontrar o buffer da bateria ou baixo ou primeiro stem carregado.
+  // Fica fora do useMemo porque os stems são mutáveis: o buffer decodificado
+  // chega no mesmo array e precisa invalidar a forma de onda.
+  const referenceBuffer = currentSong
+    ? (currentSong.stems.find((s) => s.type === 'drums' && s.audioBuffer) ||
+        currentSong.stems.find((s) => s.type === 'bass' && s.audioBuffer) ||
+        currentSong.stems.find((s) => s.audioBuffer))?.audioBuffer ?? null
+    : null;
+  const songBpm = currentSong?.bpm;
+  const hasSong = Boolean(currentSong);
+
   const waveformBars = useMemo(() => {
     const barsCount = 130;
-    if (!currentSong) return [];
+    if (!hasSong) return [];
 
-    // Tenta encontrar o buffer da bateria ou baixo ou primeiro stem carregado
-    const referenceStem =
-      currentSong.stems.find((s) => s.type === 'drums' && s.audioBuffer) ||
-      currentSong.stems.find((s) => s.type === 'bass' && s.audioBuffer) ||
-      currentSong.stems.find((s) => s.audioBuffer);
-
-    if (referenceStem?.audioBuffer) {
-      const buffer = referenceStem.audioBuffer;
+    if (referenceBuffer) {
+      const buffer = referenceBuffer;
       const channelData = buffer.getChannelData(0);
       const blockSize = Math.floor(channelData.length / barsCount);
       const peaks: number[] = [];
@@ -57,7 +62,7 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
 
     // Perfil dinâmico de palco enquanto o arquivo de áudio carrega
     const bars: number[] = [];
-    const seed = currentSong.bpm || 120;
+    const seed = songBpm || 120;
     for (let i = 0; i < barsCount; i++) {
       const phase = (i / barsCount) * Math.PI * 4;
       const baseHeight = 0.28 + 0.35 * Math.abs(Math.sin(phase));
@@ -65,7 +70,7 @@ export const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
       bars.push(Math.min(1.0, Math.max(0.12, baseHeight + variation)));
     }
     return bars;
-  }, [currentSong?.id, currentSong?.bpm, currentSong?.stems]);
+  }, [hasSong, referenceBuffer, songBpm]);
 
   if (!currentSong || duration <= 0) return null;
 
