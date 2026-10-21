@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rules": "node scripts/test-rules.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.17.0",
+    "@firebase/rules-unit-testing": "5.0.2",
     "@types/node": "^22.13.0",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
@@ -26,6 +28,8 @@
     "autoprefixer": "^10.4.20",
     "eslint": "9.17.0",
     "eslint-plugin-react-hooks": "5.1.0",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.32.1",
     "globals": "15.14.0",
     "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",

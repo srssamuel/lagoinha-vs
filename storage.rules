@@ -1,47 +1,32 @@
 rules_version = '2';
+
+// Stems moram no Cloudflare R2 atras do Worker (ADR-001), nao no Firebase Storage.
+// Aqui ficam so as capas, com o papel lido de churches/{churchId}/members/{uid}.
+// Qualquer outro caminho (inclusive o antigo churches/{id}/stems/**) e negado.
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isAuthenticated() {
-      return request.auth != null;
+    function member(churchId) {
+      return firestore.get(/databases/(default)/documents/churches/$(churchId)/members/$(request.auth.uid));
     }
 
-    function getUserData() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    function isActiveMember(churchId) {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/churches/$(churchId)/members/$(request.auth.uid))
+        && member(churchId).data.status == 'active';
     }
 
-    function isSameChurch(churchId) {
-      return getUserData().churchId == churchId;
+    function canUpload(churchId) {
+      return isActiveMember(churchId) && member(churchId).data.role in ['admin', 'leader', 'sound_tech'];
     }
 
-    function canUploadAudio(churchId) {
-      return isAuthenticated() &&
-        isSameChurch(churchId) &&
-        getUserData().status == 'active' &&
-        getUserData().role in ['admin', 'leader', 'sound_tech'];
-    }
-
-    // Isolamento multi-tenant de Stems e Multitracks no Storage
-    match /churches/{churchId}/stems/{allPaths=**} {
-      // Leitura permitida apenas para membros autenticados da mesma igreja
-      allow read: if isAuthenticated() && isSameChurch(churchId);
-
-      // Upload só de áudio (ou .zip de multitrack), por admin, líder ou técnico de som, até 500MB por arquivo
-      allow create, update: if canUploadAudio(churchId) &&
-        request.resource.size < 500 * 1024 * 1024 &&
-        (request.resource.contentType.matches('audio/.*') ||
-         request.resource.contentType in ['application/zip', 'application/x-zip-compressed']);
-      // No delete não há request.resource: a checagem de tamanho bloqueava a exclusão
-      allow delete: if canUploadAudio(churchId);
-    }
-
-    // Imagens de capa de álbuns ou avatares
     match /churches/{churchId}/covers/{imageFile} {
-      allow read: if isAuthenticated() && isSameChurch(churchId);
-      allow create, update: if canUploadAudio(churchId) &&
-        request.resource.size < 10 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
-      allow delete: if canUploadAudio(churchId);
+      allow read: if isActiveMember(churchId);
+      allow create, update: if canUpload(churchId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      // No delete nao ha request.resource
+      allow delete: if canUpload(churchId);
     }
   }
 }

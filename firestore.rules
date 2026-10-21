@@ -1,124 +1,230 @@
 rules_version = '2';
+
+// Regras do banco online (docs/architecture/spec-banco-online.md, secoes 3 e 4).
+// O papel mora em churches/{churchId}/members/{uid}, nunca em users/{uid}.
+// Invariantes cobertas pela suite tests/rules (npm run test:rules):
+//   I1 ninguem altera o proprio papel/status nem entra como ativo sozinho
+//   I2 igreja A nunca le nada de churches/B/**
+//   I3 convite: +1 por uso, so valido, nao revogado e dentro do prazo, e gera membro pendente
+//   I4 catalog/** so por curador, e so material proprio ou licenciado com documento
+// Tudo que nao esta listado aqui e negado.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function memberPath(churchId, uid) {
+      return /databases/$(database)/documents/churches/$(churchId)/members/$(uid);
     }
 
-    function getUserChurchId() {
-      return getUserData().churchId;
+    function invitePath(churchId, inviteId) {
+      return /databases/$(database)/documents/churches/$(churchId)/invites/$(inviteId);
     }
 
-    function getUserRole() {
-      return getUserData().role;
+    // Membro ativo da igreja com papel de pelo menos `minRank` (musico 0, tecnico 1, lider 2, admin 3)
+    function hasRank(churchId, minRank) {
+      return signedIn()
+        && exists(memberPath(churchId, request.auth.uid))
+        && get(memberPath(churchId, request.auth.uid)).data.status == 'active'
+        && rankOf(get(memberPath(churchId, request.auth.uid)).data.role) >= minRank;
     }
 
-    function isActive() {
-      return getUserData().status == 'active';
+    function rankOf(role) {
+      return {'musician': 0, 'sound_tech': 1, 'leader': 2, 'admin': 3}.get(role, -1);
     }
 
-    function isAdmin() {
-      return isAuthenticated() && isActive() && getUserRole() == 'admin';
+    function isActiveMember(churchId) {
+      return hasRank(churchId, 0);
     }
 
-    function isLeaderOrAdmin() {
-      return isAuthenticated() && isActive() && (getUserRole() == 'admin' || getUserRole() == 'leader');
+    function isCurator() {
+      return signedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
     }
 
-    function isAudioTechOrHigher() {
-      return isAuthenticated() && isActive() && (getUserRole() in ['admin', 'leader', 'sound_tech']);
+    // Catalogo global: membro ativo de alguma igreja. O usuario aponta a igreja em users/{uid}.primaryChurchId
+    // e a regra confere o membro ativo la; apontar uma igreja onde nao e membro nao libera nada.
+    function isActiveSomewhere() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && isActiveMember(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('primaryChurchId', '_'));
     }
 
-    function isSameChurch(targetChurchId) {
-      return getUserChurchId() == targetChurchId;
+    function nonEmptyString(value) {
+      return value is string && value.size() > 0 && value.size() <= 200;
     }
 
-    // Organizações / Congregações
+    function catalogEligible(data) {
+      return data.rightsClass in ['own', 'licensed_redistributable']
+        && data.licenseRef is map
+        && nonEmptyString(data.licenseRef.get('holder', ''))
+        && nonEmptyString(data.licenseRef.get('documentId', ''));
+    }
+
+    function validRole(role) {
+      return role in ['admin', 'leader', 'sound_tech', 'musician'];
+    }
+
+    // Ate onde cada papel convida: admin ate lider, lider ate tecnico de som
+    function canInviteRole(churchId, targetRole) {
+      return validRole(targetRole)
+        && hasRank(churchId, 2)
+        && rankOf(targetRole) <= {'admin': 2, 'leader': 1}.get(get(memberPath(churchId, request.auth.uid)).data.role, -1);
+    }
+
+    // ---------- Curadores do catalogo global: cadastrados so pelo console (Admin SDK) ----------
+    match /platformAdmins/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+
+    // ---------- Perfil: sem papel e sem igreja com poder; so a propria pessoa le ----------
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['displayName', 'photoURL', 'primaryChurchId', 'createdAt'])
+        && (!('displayName' in request.resource.data) || nonEmptyString(request.resource.data.displayName));
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ---------- Catalogo global (I4) ----------
+    match /catalog/{songId} {
+      allow read: if isActiveSomewhere() || isCurator();
+      allow create, update: if isCurator() && catalogEligible(request.resource.data);
+      allow delete: if isCurator();
+
+      match /versions/{versionId} {
+        allow read: if isActiveSomewhere() || isCurator();
+        allow create: if isCurator();
+        allow update, delete: if false; // versao e imutavel
+      }
+    }
+
+    // ---------- Igreja ----------
     match /churches/{churchId} {
-      allow read: if isAuthenticated() && isSameChurch(churchId);
-      allow write: if isAdmin() && isSameChurch(churchId);
+      // Igreja nasce pelo console no bootstrap (F2); admin so edita nome e cidade
+      allow read: if isActiveMember(churchId);
+      allow update: if hasRank(churchId, 3)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'city']);
+      allow create, delete: if false;
+
+      match /members/{uid} {
+        allow get: if signedIn() && (request.auth.uid == uid || hasRank(churchId, 2));
+        allow list: if hasRank(churchId, 2);
+
+        // Entrada pelo convite (I1, I3): a propria pessoa, pendente, com o papel do convite,
+        // no mesmo lote que consome o convite. Admin tambem cadastra direto (admin novo so por admin).
+        allow create: if (
+            signedIn() && request.auth.uid == uid
+            && request.resource.data.keys().hasOnly(['role', 'status', 'inviteId', 'displayName', 'instrument', 'createdAt'])
+            && request.resource.data.status == 'pending'
+            && inviteConsumedBy(churchId, request.resource.data.inviteId, request.resource.data.role)
+          ) || (
+            hasRank(churchId, 3) && request.auth.uid != uid
+            && validRole(request.resource.data.role)
+            && request.resource.data.status in ['pending', 'active']
+          );
+
+        // So admin aprova, troca papel ou suspende, e nunca a si mesmo (I1).
+        // A propria pessoa so mexe no instrumento.
+        allow update: if (
+            hasRank(churchId, 3) && request.auth.uid != uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['role', 'status', 'approvedBy', 'approvedAt', 'instrument'])
+            && validRole(request.resource.data.role)
+            && request.resource.data.status in ['pending', 'active', 'suspended']
+            && (!('approvedBy' in request.resource.data.diff(resource.data).affectedKeys())
+                || request.resource.data.approvedBy == request.auth.uid)
+          ) || (
+            signedIn() && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'instrument'])
+          );
+
+        // Sair da igreja (a propria pessoa) ou remocao por admin
+        allow delete: if signedIn() && (request.auth.uid == uid || hasRank(churchId, 3));
+      }
+
+      // inviteId = sha256 do token do link: so quem tem o link sabe o id (get), so a lideranca lista.
+      match /invites/{inviteId} {
+        allow get: if signedIn();
+        allow list: if hasRank(churchId, 2);
+
+        allow create: if canInviteRole(churchId, request.resource.data.targetRole)
+          && request.resource.data.keys().hasOnly(['targetRole', 'expiresAt', 'maxUses', 'usedCount', 'createdBy', 'revoked', 'createdAt'])
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.usedCount == 0
+          && request.resource.data.revoked == false
+          && request.resource.data.maxUses is int
+          && request.resource.data.maxUses >= 1 && request.resource.data.maxUses <= 100
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time
+          && request.resource.data.expiresAt <= request.time + duration.value(30, 'd');
+
+        // Consumo: +1, so quem entra como membro pendente neste mesmo lote (I3)
+        allow update: if (
+            signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount'])
+            && request.resource.data.usedCount == resource.data.usedCount + 1
+            && inviteUsable(resource.data)
+            && !exists(memberPath(churchId, request.auth.uid))
+            && existsAfter(memberPath(churchId, request.auth.uid))
+            && getAfter(memberPath(churchId, request.auth.uid)).data.inviteId == inviteId
+          ) || (
+            // Revogar: lideranca da igreja, so o campo revoked, so para true
+            hasRank(churchId, 2)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked'])
+            && request.resource.data.revoked == true
+          );
+
+        allow delete: if hasRank(churchId, 3);
+      }
+
+      // Biblioteca privada da igreja: qualquer rightsClass; nunca vira catalogo por aqui
+      match /library/{songId} {
+        allow read: if isActiveMember(churchId);
+        allow create, update: if hasRank(churchId, 1)
+          && request.resource.data.rightsClass in ['own', 'licensed_redistributable', 'church_purchased', 'unknown'];
+        allow delete: if hasRank(churchId, 2);
+
+        match /versions/{versionId} {
+          allow read: if isActiveMember(churchId);
+          allow create: if hasRank(churchId, 1);
+          allow update, delete: if false; // versao e imutavel
+        }
+      }
+
+      // Setlist do culto: revisao sobe exatamente 1 a cada escrita (o cliente grava em transacao)
+      match /setlists/{setlistId} {
+        allow read: if isActiveMember(churchId);
+        allow create: if hasRank(churchId, 2)
+          && request.resource.data.revision == 1
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.items is list
+          && request.resource.data.items.size() <= 100;
+        allow update: if hasRank(churchId, 2)
+          && request.resource.data.revision == resource.data.revision + 1
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.items is list
+          && request.resource.data.items.size() <= 100;
+        allow delete: if hasRank(churchId, 2);
+      }
     }
 
-    // Coleção de Usuários
-    match /users/{userId} {
-      // Usuário pode ler seu próprio documento, ou Administrador da mesma congregação
-      allow read: if isAuthenticated() && (
-        request.auth.uid == userId ||
-        (isAdmin() && isSameChurch(resource.data.churchId))
-      );
-
-      // Auto-registro inicial apenas como pending (sem poder auto-atribuir admin ou active)
-      allow create: if isAuthenticated() &&
-        request.auth.uid == userId &&
-        request.resource.data.role == 'pending' &&
-        request.resource.data.status == 'pending';
-
-      // Atualização de perfil: usuário comum só altera nome/foto/instrumento (nunca role, status ou churchId)
-      // Administrador da mesma igreja pode alterar role e status
-      allow update: if isAuthenticated() && (
-        (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'churchId'])) ||
-        (isAdmin() && isSameChurch(resource.data.churchId) && request.resource.data.churchId == resource.data.churchId)
-      );
-
-      allow delete: if isAdmin() && isSameChurch(resource.data.churchId);
+    function inviteUsable(invite) {
+      return invite.revoked == false
+        && invite.usedCount < invite.maxUses
+        && request.time < invite.expiresAt;
     }
 
-    // Links e Tokens de Convite
-    match /invites/{inviteId} {
-      // Quem tem o token lê só aquele documento (get pelo id exato); listar convites é da liderança da igreja.
-      allow get: if isAuthenticated() && (
-        resource.data.isActive == true ||
-        (isLeaderOrAdmin() && isSameChurch(resource.data.churchId))
-      );
-      allow list: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
-
-      allow create: if isLeaderOrAdmin() &&
-        isSameChurch(request.resource.data.churchId) &&
-        request.resource.data.createdByUid == request.auth.uid;
-
-      // Consumo (uma unidade, convite ativo e dentro do limite) ou revogação pela liderança da mesma igreja
-      allow update: if isAuthenticated() && (
-        (
-          resource.data.isActive == true &&
-          resource.data.usedCount < resource.data.maxUses &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'isActive']) &&
-          request.resource.data.usedCount == resource.data.usedCount + 1 &&
-          request.resource.data.isActive == (request.resource.data.usedCount < resource.data.maxUses)
-        ) ||
-        (
-          isLeaderOrAdmin() &&
-          isSameChurch(resource.data.churchId) &&
-          request.resource.data.churchId == resource.data.churchId
-        )
-      );
-
-      allow delete: if isAdmin() && isSameChurch(resource.data.churchId);
-    }
-
-    // Músicas e Multitracks (Banco de VS)
-    match /songs/{songId} {
-      allow read: if isAuthenticated() && isActive() && isSameChurch(resource.data.churchId);
-      allow create: if isAudioTechOrHigher() && isSameChurch(request.resource.data.churchId);
-      // churchId não muda no update (não dá para "mover" a música para outra igreja)
-      allow update: if isAudioTechOrHigher() &&
-        isSameChurch(resource.data.churchId) &&
-        request.resource.data.churchId == resource.data.churchId;
-      allow delete: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
-    }
-
-    // Setlists do Culto (no create não existe `resource`: valida o documento novo)
-    match /setlists/{setlistId} {
-      allow read: if isAuthenticated() && isActive() && isSameChurch(resource.data.churchId);
-      allow create: if isLeaderOrAdmin() && isSameChurch(request.resource.data.churchId);
-      allow update: if isLeaderOrAdmin() &&
-        isSameChurch(resource.data.churchId) &&
-        request.resource.data.churchId == resource.data.churchId;
-      allow delete: if isLeaderOrAdmin() && isSameChurch(resource.data.churchId);
+    // O convite existia valido antes do lote, sobe 1 no lote e o papel pedido e o do convite
+    function inviteConsumedBy(churchId, inviteId, role) {
+      return inviteId is string
+        && exists(invitePath(churchId, inviteId))
+        && inviteUsable(get(invitePath(churchId, inviteId)).data)
+        && getAfter(invitePath(churchId, inviteId)).data.usedCount == get(invitePath(churchId, inviteId)).data.usedCount + 1
+        && role == get(invitePath(churchId, inviteId)).data.targetRole;
     }
   }
 }

@@ -16,3 +16,6 @@ __pycache__/
 .vercel
 public/stems/
 
+
+# Logs dos emuladores do Firebase (npm run test:rules)
+*-debug.log

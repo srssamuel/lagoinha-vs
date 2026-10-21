@@ -1,6 +1,6 @@
 # Spec: Banco online do acervo e setlist do culto
 
-- **Status:** Opcao C *decidida* (2026-10-21). **F0 entregue** (2026-10-21); F1-F6 pendentes. Decisao de provedor: `docs/architecture/ADR-001-banco-online-e-acervo.md` (Opcao C: Firebase Auth + Firestore + Cloudflare R2 via Worker).
+- **Status:** Opcao C *decidida* (2026-10-21). **F0 e F1 entregues** (2026-10-21); F2-F6 pendentes. Decisao de provedor: `docs/architecture/ADR-001-banco-online-e-acervo.md` (Opcao C: Firebase Auth + Firestore + Cloudflare R2 via Worker).
 
 ### Estado da F0 (*validado*: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`)
 
@@ -12,6 +12,16 @@
 - Desvios conscientes: (1) `User` ainda guarda `role`/`churchId`; `Membership.fromLegacyUser` faz a ponte ate os membros virem do Firestore na F2. (2) I6 aplicado como "producao sem usuarios de exemplo nem admin automatico"; o adaptador local continua montando em producao porque ainda nao existe o Firebase (recusar agora deixaria o app publicado sem login). (3) A biblioteca da igreja no modo local fica em memoria (some ao recarregar), como o acervo de demonstracao ja ficava. Musica adicionada ao setlist pela biblioteca tambem nao e gravada no IndexedDB (comportamento anterior, mantido); so os uploads pela barra lateral sao. Gravar o setlist preparado no aparelho e o `PrepareServiceUseCase` da F4.
 - **Legenda:** *proposto* = desenho; *decidido* = o Samuel confirmou; *validado* = existe teste/comando que passou.
 
+---
+
+### Estado da F1 (*validado*: `npm run test:rules`, 37 testes no emulador, mutacao de I1-I4 e da revisao derruba a suite)
+
+- `firestore.rules` reescrito para o modelo da secao 3: papel em `churches/{id}/members/{uid}`, convite em `churches/{id}/invites/{sha256 do token}`, biblioteca e setlists dentro da igreja, catalogo global em `catalog/`, curadores em `platformAdmins/`. Colecoes antigas da raiz (`songs`, `setlists`, `invites`) ficam fechadas.
+- Entrada por convite e um lote unico: o membro nasce `pending` com o `targetRole` e o `usedCount` sobe 1; um nao passa sem o outro (`getAfter`/`existsAfter`).
+- Catalogo global legivel por quem e membro ativo da igreja apontada em `users/{uid}.primaryChurchId` (a regra confere o membro; apontar igreja alheia nao libera nada).
+- `storage.rules`: so capas por igreja; stems ficam no R2 (ADR-001) e qualquer outro caminho e negado.
+- Como rodar: `npm run test:rules` (sobe emuladores Firestore + Storage com projeto `demo-lagoinha-vs`, sem credencial). Exige Java 21+: o script usa o do PATH, `JAVA_HOME` ou `%LOCALAPPDATA%\Programs\jdk21`.
+- Ainda nao feito: deploy das regras (exige o projeto Firebase real, F2) e gate de deploy em CI.
 ---
 
 ## 1. O pedido, melhorado
@@ -36,7 +46,7 @@ Versao melhorada:
 Colecoes (caminhos Firestore). `*` = imutavel depois de criado.
 
 ```
-platform/admins/{uid}                      # curadores do catalogo global (definidos fora do app, ver 5.4)
+platformAdmins/{uid}                       # curadores do catalogo global (definidos fora do app; caminho corrigido na F1: platform/admins/{uid} tinha numero impar de segmentos)
 
 churches/{churchId}
   name, city, createdAt, createdBy
@@ -102,7 +112,7 @@ Invariantes (cada uma vira teste de regra que pode falhar):
 - **I1** Ninguem altera o proprio `role`/`status` (nem cria o proprio `members/{uid}` como `active`). Auto-cadastro so cria `status: 'pending'` via convite valido.
 - **I2** Igreja A nunca le nada de `churches/B/**`.
 - **I3** Consumo de convite so incrementa `usedCount` em 1, so se `!revoked`, `usedCount < maxUses`, `now < expiresAt`, e cria membro `pending` com o `targetRole` do convite (aprovacao final por admin/leader). Corrige o `firestore.rules` atual, que permite qualquer autenticado incrementar `usedCount` sem checar validade.
-- **I4** `catalog/**` so recebe escrita de `platform/admins/{uid}` existente; `rightsClass` em `catalog/` so `own` ou `licensed_redistributable` com `licenseRef`.
+- **I4** `catalog/**` so recebe escrita de `platformAdmins/{uid}` existente; `rightsClass` em `catalog/` so `own` ou `licensed_redistributable` com `licenseRef`.
 - **I5** O Worker de stems nao tem regra propria: so entrega `stems/{sha256}` se o usuario conseguir ler, **com o proprio token**, um documento de versao (catalogo ou biblioteca da igreja dele) que liste aquele `sha256`.
 - **I6** Build de producao recusa o adaptador de auth local (sem admin automatico fora do modo `local`).
 
