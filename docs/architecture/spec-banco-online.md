@@ -22,7 +22,8 @@
 - `storage.rules`: so capas por igreja; stems ficam no R2 (ADR-001) e qualquer outro caminho e negado.
 - Como rodar: `npm run test:rules` (sobe emuladores Firestore + Storage com projeto `demo-lagoinha-vs`, sem credencial). Exige Java 21+: o script usa o do PATH, `JAVA_HOME` ou `%LOCALAPPDATA%\Programs\jdk21`.
 - Revisao de seguranca independente (`security-guardian`, 8 sondas no emulador): 1 alto, 3 medios e 6 baixos, nenhum critico e nenhum caminho para a I1. Corrigido nas regras, com teste de regressao: versao so sob musica existente (e no catalogo, so sob musica que passou pela I4); suspenso nao sai sozinho; rebaixar, suspender ou remover admin so pelo console (a igreja nunca fica sem admin pelo app); convite de quem deixou a lideranca deixa de valer; lider so revoga o proprio convite; id de convite precisa ser sha256 em hex; campos de membro, versao, biblioteca e igreja com chaves e tamanhos fixos; capa sem SVG. O alto restante (repasse de stems por hash) depende do Worker e virou reforco da I5 para a F3.
-- Aceito por ora (baixo): uma pessoa pode esgotar um convite entrando e saindo repetidas vezes; qualquer conta logada le um convite cujo id (hash do token) conhece. Na F2: login anonimo desligado no projeto e App Check avaliado.- Ainda nao feito: deploy das regras (exige o projeto Firebase real, F2) e gate de deploy em CI.
+- Aceito por ora (baixo): uma pessoa pode esgotar um convite entrando e saindo repetidas vezes; qualquer conta logada le um convite cujo id (hash do token) conhece. Na F2: login anonimo desligado no projeto e App Check avaliado.- Cloudflare (2026-10-21): bucket R2 privado `lagoinha-vs-stems` criado (Standard, regiao ENAM, sem acesso publico nem dominio). Nenhum Worker ainda; o Worker de stems e a F3.
+- Ainda nao feito: deploy das regras (exige o projeto Firebase real, F2) e gate de deploy em CI.
 ---
 
 ## 1. O pedido, melhorado
