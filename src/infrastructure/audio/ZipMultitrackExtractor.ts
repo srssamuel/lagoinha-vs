@@ -8,6 +8,8 @@
  * e aplica regras estritas de Pitch Lock (Bateria, Loops, Click e Guia bloqueados contra mudança de tom).
  */
 
+import { parseKeyFromName } from '../../domain/services/SongKeyDetector';
+
 export interface ExtractedZipEntry {
   filename: string;
   data: ArrayBuffer;
@@ -20,6 +22,8 @@ export interface ParsedMultitrackMetadata {
   artist: string;
   bpm: number;
   originalKey: string;
+  /** true = tom escrito no nome; false = nome sem tom (detectar pelo áudio antes de confiar em originalKey). */
+  keyFromName: boolean;
 }
 
 /** Tetos contra ZIP malicioso (zip bomb): contam os bytes reais descomprimidos, não o que o cabeçalho declara. */
@@ -82,11 +86,10 @@ export class ZipMultitrackExtractor {
     const bpmMatch = normalized.match(/(\d{2,3})\s*bpm/i);
     const bpm = bpmMatch ? Math.max(40, Math.min(240, parseInt(bpmMatch[1]!, 10))) : 120;
 
-    // Extrai Tom no final ou após hífen (ex: "- B", "- F#m", "- Bb", "Tom G")
-    const keyMatch =
-      normalized.match(/[-–]\s*([A-G][#b]?m?)\s*$/i) ||
-      normalized.match(/\btom\s+([A-G][#b]?m?)\b/i);
-    const originalKey = keyMatch ? keyMatch[1]! : 'G';
+    // Tom pelo nome (mesmas regras do migrador do acervo). Sem tom no nome, o chamador analisa o áudio
+    // (keyFromName = false); 'G' é só o valor provisório, nunca mais um "tom detectado".
+    const keyInName = parseKeyFromName(zipFilename);
+    const originalKey = keyInName ?? 'G';
 
     // Extrai Artista entre parênteses se houver (ex: "(Versão Mateus Brito)")
     const parenMatch = normalized.match(/\(([^)]+)\)/);
@@ -99,6 +102,14 @@ export class ZipMultitrackExtractor {
       .replace(/[-–]\s*[A-G][#b]?m?\s*$/i, '')
       .replace(/[-–]+\s*$/, '')
       .trim();
+    if (keyInName) {
+      // Remove o tom isolado entre hífens/sublinhados ("Titulo - F - 74 BPM") sem tocar em palavras do título
+      const escaped = keyInName.replace('#', '\\#');
+      title = title
+        .replace(new RegExp(`\\s*[-–_]\\s*(?:tom\\s+)?${escaped}\\s*(?=[-–_]|$)`, 'i'), '')
+        .replace(/[-–_]+\s*$/, '')
+        .trim();
+    }
 
     if (!title) {
       title = normalized;
@@ -108,7 +119,8 @@ export class ZipMultitrackExtractor {
       title,
       artist,
       bpm,
-      originalKey
+      originalKey,
+      keyFromName: keyInName !== null
     };
   }
 

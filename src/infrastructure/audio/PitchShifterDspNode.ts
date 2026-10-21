@@ -36,6 +36,13 @@ export class PitchShifterDspNode {
   private readonly grainWindowSec = 0.048;
   private currentSemitones = 0;
   private isEnabledForStem = true;
+  /** Estado agendado do caminho wet (o que vale ao fim das rampas já programadas). */
+  private wetActive = false;
+  private pitchUp = false;
+  /** Instante do AudioContext a partir do qual o wet está em ganho 0. */
+  private wetSilentAt = 0;
+  /** Inversão de direção do delay agendada para quando o wet estiver em silêncio. */
+  private pendingSwap: { at: number; previousUp: boolean } | null = null;
 
   constructor(ctx: AudioContext, isPitchShiftable: boolean = true) {
     this.ctx = ctx;
@@ -78,7 +85,9 @@ export class PitchShifterDspNode {
     this.winShaperB = ctx.createWaveShaper();
 
     // Inicializa curvas de janela de Hann (sin² e cos²) e rampas defasadas em 180°
-    this.updateShaperCurves(true);
+    // Serras fixas crescentes (0 -> 1); a direção subir/descer é feita por base + profundidade do delay
+    this.sawShaperA.curve = PitchShifterDspNode.createSawRampCurve(false, false);
+    this.sawShaperB.curve = PitchShifterDspNode.createSawRampCurve(true, false);
     this.winShaperA.curve = PitchShifterDspNode.createHannWindowCurve(false);
     this.winShaperB.curve = PitchShifterDspNode.createHannWindowCurve(true);
 
@@ -122,28 +131,102 @@ export class PitchShifterDspNode {
     this.setSemitones(this.currentSemitones);
   }
 
+  /**
+   * Troca de tom sem estalo. Antes, dry/wet mudavam em degrau (0 <-> 1) e as curvas de serra eram
+   * trocadas com o wet audível: o wet chega até 48ms atrasado em relação ao dry, então o degrau corta a
+   * forma de onda (clique) e a troca de curva faz o delay saltar de d para 48ms - d (outro clique).
+   * Agora: crossfade linear de `crossfadeSec` no relógio do AudioContext e a direção do delay
+   * (subir/descer) só muda no instante agendado em que o wet está em ganho 0.
+   */
   public setSemitones(semitones: number): void {
-    this.currentSemitones = Math.max(-6, Math.min(6, Math.round(semitones)));
-    const now = this.ctx.currentTime;
+    const target = Math.max(-6, Math.min(6, Math.round(semitones)));
+    // Bateria, Loop, Click e Guia (isEnabledForStem = false) ou Tom Original (0 st): 100% Dry
+    const wetOn = this.isEnabledForStem && target !== 0;
+    if (target === this.currentSemitones && wetOn === this.wetActive) return; // idempotente (refreshDspChain)
+    this.currentSemitones = target;
 
-    // Se o canal é Bateria, Loop, Click ou Guia (isEnabledForStem = false) OU se está no Tom Original (0 st):
-    // mantém 100% Dry (Bypass transparente)
-    if (!this.isEnabledForStem || this.currentSemitones === 0) {
-      this.dryGain.gain.setValueAtTime(1.0, now);
-      this.wetGain.gain.setValueAtTime(0.0, now);
+    const now = this.ctx.currentTime;
+    const fade = PitchShifterDspNode.crossfadeSec;
+    // Troca nova antes da inversão agendada acontecer: a inversão antiga cairia com o wet já subindo de
+    // novo. Cancela e volta ao sentido que de fato está valendo.
+    if (this.pendingSwap && this.pendingSwap.at > now) {
+      for (const param of [this.delayA.delayTime, this.delayB.delayTime, this.modGainA.gain, this.modGainB.gain]) {
+        param.cancelScheduledValues(now);
+      }
+      this.pitchUp = this.pendingSwap.previousUp;
+    }
+    this.pendingSwap = null;
+
+    if (!wetOn) {
+      if (this.wetActive) {
+        PitchShifterDspNode.rampParam(this.dryGain.gain, 1.0, now, fade);
+        PitchShifterDspNode.rampParam(this.wetGain.gain, 0.0, now, fade);
+        this.wetSilentAt = now + fade;
+        this.wetActive = false;
+      }
       return;
     }
 
-    const pitchRatio = Math.pow(2, this.currentSemitones / 12);
+    const pitchRatio = Math.pow(2, target / 12);
     const pitchUp = pitchRatio > 1.0;
-    const rateDelta = Math.abs(1.0 - pitchRatio);
-    const lfoFreq = Math.max(0.05, rateDelta / this.grainWindowSec);
+    const lfoFreq = Math.max(0.05, Math.abs(1.0 - pitchRatio) / this.grainWindowSec);
+    // Frequência do LFO: fase contínua no oscilador, então desliza sem descontinuidade
+    PitchShifterDspNode.rampParam(this.lfo.frequency, lfoFreq, now, fade);
 
-    this.updateShaperCurves(pitchUp);
-    this.lfo.frequency.setValueAtTime(lfoFreq, now);
+    if (this.wetActive && pitchUp === this.pitchUp) return; // mesmo sentido: só a taxa muda
 
-    this.dryGain.gain.setValueAtTime(0.0, now);
-    this.wetGain.gain.setValueAtTime(1.0, now);
+    let swapAt = Math.max(now, this.wetSilentAt);
+    if (this.wetActive) {
+      // Inversão de sentido com wet audível: wet -> dry, troca a direção no silêncio, dry -> wet
+      PitchShifterDspNode.rampParam(this.dryGain.gain, 1.0, now, fade);
+      PitchShifterDspNode.rampParam(this.wetGain.gain, 0.0, now, fade);
+      swapAt = now + fade;
+    }
+    this.applyDelayDirection(pitchUp, swapAt);
+    if (swapAt > now) this.pendingSwap = { at: swapAt, previousUp: this.pitchUp };
+    if (swapAt <= now) {
+      PitchShifterDspNode.rampParam(this.dryGain.gain, 0.0, now, fade);
+      PitchShifterDspNode.rampParam(this.wetGain.gain, 1.0, now, fade);
+    } else {
+      // Fade-out ainda em curso até swapAt: encadeia a volta sem cancelar a rampa que leva o wet a 0
+      PitchShifterDspNode.rampFrom(this.dryGain.gain, 1.0, 0.0, swapAt, fade);
+      PitchShifterDspNode.rampFrom(this.wetGain.gain, 0.0, 1.0, swapAt, fade);
+    }
+    this.pitchUp = pitchUp;
+    this.wetActive = true;
+  }
+
+  /** Duração do crossfade dry/wet na troca de tom (30ms: inaudível como transição, longo o bastante para não estalar). */
+  public static readonly crossfadeSec = 0.03;
+
+  /** Rampa a partir do valor atual no tempo `start` (cancela agendamentos futuros do mesmo parâmetro). */
+  private static rampParam(param: AudioParam, value: number, start: number, duration: number): void {
+    param.cancelScheduledValues(start);
+    param.setValueAtTime(param.value, start);
+    param.linearRampToValueAtTime(value, start + duration);
+  }
+
+  /** Rampa agendada no futuro partindo de um valor conhecido (não cancela o que vem antes de `start`). */
+  private static rampFrom(param: AudioParam, from: number, value: number, start: number, duration: number): void {
+    param.setValueAtTime(from, start);
+    param.linearRampToValueAtTime(value, start + duration);
+  }
+
+  /**
+   * Direção do delay sem trocar curva: delay = base + mod * serra(0..1).
+   * Subir tom: delay decrescente (base = janela, mod = -janela); descer: crescente (base = 0, mod = +janela).
+   */
+  private applyDelayDirection(pitchUp: boolean, at: number): void {
+    const base = pitchUp ? this.grainWindowSec : 0;
+    const depth = pitchUp ? -this.grainWindowSec : this.grainWindowSec;
+    for (const param of [this.delayA.delayTime, this.delayB.delayTime]) {
+      param.cancelScheduledValues(at);
+      param.setValueAtTime(base, at);
+    }
+    for (const param of [this.modGainA.gain, this.modGainB.gain]) {
+      param.cancelScheduledValues(at);
+      param.setValueAtTime(depth, at);
+    }
   }
 
   public dispose(): void {
@@ -155,11 +238,6 @@ export class PitchShifterDspNode {
     } catch {
       // Ignora caso já desconectado
     }
-  }
-
-  private updateShaperCurves(pitchUp: boolean): void {
-    this.sawShaperA.curve = PitchShifterDspNode.createSawRampCurve(false, pitchUp);
-    this.sawShaperB.curve = PitchShifterDspNode.createSawRampCurve(true, pitchUp);
   }
 
   /**

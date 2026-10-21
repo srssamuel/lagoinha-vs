@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { TrackStem } from '../../domain/entities/TrackStem';
 import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
+import { detectKeyFromStems } from '../../infrastructure/audio/AudioKeyAnalyzer';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 import { IndexedDbStorageService } from '../../infrastructure/storage/IndexedDbStorageService';
 import { useBackend } from '../BackendContext';
@@ -134,13 +135,20 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         VstPluginRackService.applySmartAutoFixAll(stems);
 
         const duration = detectedDuration > 10 ? detectedDuration : 247;
+        // Nome sem tom: analisa o áudio dos stems tonais em vez de assumir 'G'
+        let originalKey = meta.originalKey;
+        if (!meta.keyFromName) {
+          setZipProgressText('Identificando o tom pelo áudio...');
+          const estimate = await detectKeyFromStems(stemBlobPairs.map((p) => ({ type: p.stem.type, blob: p.blob })));
+          if (estimate) originalKey = estimate.key;
+        }
         const songId = `zip-song-${Date.now()}`;
         const newSong = new Song({
           id: songId,
           title: meta.title,
           artist: `${meta.artist} (ZIP ${stems.length} Stems)`,
-          originalKey: meta.originalKey,
-          currentKey: meta.originalKey,
+          originalKey,
+          currentKey: originalKey,
           bpm: meta.bpm,
           timeSignature: { beats: 4, value: 4 },
           duration,
@@ -217,13 +225,16 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
     VstPluginRackService.applySmartAutoFixAll(stems);
 
     const duration = detectedDuration > 10 ? detectedDuration : 240;
+    // Stems soltos não têm nome de pacote: tom pelo áudio ('G' só se a análise não for conclusiva)
+    const estimate = await detectKeyFromStems(stemBlobPairs.map((p) => ({ type: p.stem.type, blob: p.blob })));
+    const originalKey = estimate?.key ?? 'G';
     const songId = `imported-song-${Date.now()}`;
     const newSong = new Song({
       id: songId,
       title: 'Multitrack Importada (Stems Locais)',
       artist: 'Lagoinha Worship',
-      originalKey: 'G',
-      currentKey: 'G',
+      originalKey,
+      currentKey: originalKey,
       bpm: 120,
       timeSignature: { beats: 4, value: 4 },
       duration,

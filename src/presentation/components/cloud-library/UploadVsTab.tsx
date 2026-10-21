@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { HardDrive } from 'lucide-react';
 import { ZipMultitrackExtractor } from '../../../infrastructure/audio/ZipMultitrackExtractor';
+import { detectKeyFromStems } from '../../../infrastructure/audio/AudioKeyAnalyzer';
+import { TrackStem } from '../../../domain/entities/TrackStem';
 
 export interface VsUploadDraft {
   title: string;
@@ -45,7 +47,7 @@ export function useVsUploadForm() {
       if (!title) setTitle(meta.title);
       if (!artist) setArtist(meta.artist);
       setBpm(meta.bpm);
-      setOriginalKey(meta.originalKey);
+      if (meta.keyFromName) setOriginalKey(meta.originalKey);
 
       const extracted = await ZipMultitrackExtractor.extractFromZipBlob(zipFile, (current, total, filename) => {
         setZipProgress(`Descompactando ${current}/${total}: ${filename}`);
@@ -56,6 +58,14 @@ export function useVsUploadForm() {
         if (entry.durationSeconds && entry.durationSeconds > maxDur) maxDur = entry.durationSeconds;
         return new File([entry.blob], entry.filename, { type: ZipMultitrackExtractor.getAudioMimeType(entry.filename) });
       });
+      if (!meta.keyFromName) {
+        // Nome sem tom: identifica pelo áudio dos stems tonais (Click/Guia/Bateria/Loop fora)
+        setZipProgress('Identificando o tom pelo áudio...');
+        const estimate = await detectKeyFromStems(
+          asFiles.map((f) => ({ type: TrackStem.classifyStemFromFilename(f.name).type, blob: f }))
+        );
+        if (estimate) setOriginalKey(estimate.key);
+      }
       if (maxDur > 10) setDuration(maxDur);
       setFiles(asFiles.length > 0 ? asFiles : rawFiles);
     } catch {
