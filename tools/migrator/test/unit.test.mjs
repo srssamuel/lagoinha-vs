@@ -209,6 +209,91 @@ test('armazenamento worker (fetch simulado): rotas, cabecalhos, token do arquivo
   }
 });
 
+// Simula o Worker publicado (ate 2026-10-21): o complete monta o objeto no R2 e so depois registra no D1.
+// Se a primeira tentativa cai entre os dois passos, a repeticao do complete recebe 400 invalid_parts.
+function fakeMultipartWorker({ failFirstComplete = 'http500', alwaysCompleteStatus = null } = {}) {
+  const st = { registered: new Set(), uploads: new Map(), r2: new Set(), completes: 0, creates: 0, nextId: 0, calls: [] };
+  const json = (body, status) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  st.fetchImpl = async (url, init) => {
+    st.calls.push({ url, method: init.method, headers: init.headers });
+    const sha = /blobs\/([0-9a-f]{64})/.exec(url)?.[1];
+    if (init.method === 'HEAD') return new Response(null, { status: st.registered.has(sha) ? 200 : 404, headers: { 'content-length': String(st.size ?? 0), 'x-integrity': 'client-declared' } });
+    if (init.method === 'POST' && url.endsWith('/multipart')) {
+      st.creates++;
+      st.size = JSON.parse(init.body).size;
+      const id = `up-${++st.nextId}-xxxxxxxxxxxxxxxxxxxx`;
+      st.uploads.set(id, { completed: false });
+      return json({ uploadId: id }, 201);
+    }
+    const part = /multipart\/([^/]+)\/(\d+)$/.exec(url);
+    if (init.method === 'PUT' && part) return json({ etag: `etag-${part[2]}`, partNumber: Number(part[2]) }, 200);
+    const done = /multipart\/([^/]+)\/complete$/.exec(url);
+    if (init.method === 'POST' && done) {
+      st.completes++;
+      if (alwaysCompleteStatus) return json({ error: 'size_mismatch' }, alwaysCompleteStatus);
+      const up = st.uploads.get(done[1]);
+      if (!up) return json({ error: 'upload_not_found' }, 404);
+      if (up.completed) return json({ error: 'invalid_parts' }, 400); // R2: upload ja montado
+      up.completed = true;
+      st.r2.add(sha);
+      if (st.completes === 1 && failFirstComplete === 'http500') return json({ error: 'internal' }, 500);
+      if (st.completes === 1 && failFirstComplete === 'network') throw new TypeError('fetch failed');
+      st.registered.add(sha);
+      return json({ ok: true, size: st.size, integrity: 'client-declared' }, 201);
+    }
+    if (init.method === 'DELETE') { st.uploads.delete(/multipart\/([^/]+)$/.exec(url)?.[1]); return new Response(null, { status: 204 }); }
+    return new Response(null, { status: 500 });
+  };
+  return st;
+}
+
+for (const failFirstComplete of ['http500', 'network']) {
+  test(`multipart: complete repetido apos o R2 montar o objeto (${failFirstComplete}) consulta o destino e reenvia, sem falhar o item`, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lvs-mp-'));
+    try {
+      const tokenFile = path.join(dir, 't');
+      fs.writeFileSync(tokenFile, 'tok-secreto\n');
+      const st = fakeMultipartWorker({ failFirstComplete });
+      const w = new WorkerStorage({ baseUrl: 'https://w.example.test', tokenFile, fetchImpl: st.fetchImpl, retries: 2, backoffMs: 1 });
+      const sha = 'b'.repeat(64);
+      const logs = [];
+      w.log = (m) => logs.push(m);
+      const res = await w.put('church:igreja-teste', sha, () => Readable.from([Buffer.from('abc')]), { size: 100 * 1024 * 1024 });
+      assert.equal(res.created, true);
+      assert.ok(st.registered.has(sha), 'blob registrado no destino');
+      assert.equal(st.creates, 2, 'um segundo upload completo, nao um terceiro');
+      assert.ok(logs.some((m) => /invalid_parts/.test(m) && /uploadId=up-1/.test(m)), logs.join('\n'));
+      assert.ok(!logs.join('\n').includes('tok-secreto'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('multipart: falha definitiva do complete registra status, codigo, uploadId, partes, tamanhos e ETags (sem token)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lvs-mp-'));
+  try {
+    const tokenFile = path.join(dir, 't');
+    fs.writeFileSync(tokenFile, 'tok-secreto\n');
+    const st = fakeMultipartWorker({ alwaysCompleteStatus: 400 });
+    const w = new WorkerStorage({ baseUrl: 'https://w.example.test', tokenFile, fetchImpl: st.fetchImpl, retries: 0 });
+    await assert.rejects(
+      () => w.put('church:igreja-teste', 'c'.repeat(64), () => Readable.from([Buffer.from('abcd')]), { size: 100 * 1024 * 1024 }),
+      (e) => {
+        assert.match(e.message, /multipart: completar falhou \(400 size_mismatch\)/);
+        assert.match(e.message, /uploadId=up-1/);
+        assert.match(e.message, /partes=1 tamanhos=\[4\] etags=\[etag-1\]/);
+        assert.ok(!e.message.includes('tok-secreto'));
+        return true;
+      },
+    );
+    assert.equal(st.creates, 1, 'falha nao ambigua nao reenvia');
+    assert.ok(st.calls.some((c) => c.method === 'DELETE'), 'upload abortado');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('firestore REST: codifica/decodifica valores tipados', () => {
   const d = new Date('2026-10-21T00:00:00Z');
   const f = toFields({ a: 'x', n: 3, f: 1.5, b: true, z: null, t: d, arr: [{ s: 'y' }], m: { k: 1 }, u: undefined });

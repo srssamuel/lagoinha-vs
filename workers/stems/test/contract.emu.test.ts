@@ -660,6 +660,65 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
       expect(await sha256Hex(await stored!.arrayBuffer())).toBe(blob.sha);
     });
 
+    // Migracao 2026-10-21: a 1a tentativa do complete montou o objeto no R2 e caiu antes do registro no D1;
+    // a repeticao recebia 400 invalid_parts e o objeto ficava orfao (no R2, sem linha em blobs).
+    it('complete repetido depois de o R2 ja ter montado o objeto registra (201), sem 400 nem orfao', async () => {
+      const blob = await makeBlob(1500);
+      const create = await call(blobPath(A, blob.sha, '/multipart'), { method: 'POST', token: tokens.alice!, body: JSON.stringify({ size: 1500 }) });
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/1`), { method: 'PUT', token: tokens.alice!, body: blob.bytes });
+      const parts = [{ partNumber: 1, etag: ((await part.json()) as { etag: string }).etag }];
+      // 1a tentativa interrompida: o R2 conclui, o D1 nao registra
+      await env.STEMS.resumeMultipartUpload(`churches/igreja-a/blobs/${blob.sha}`, uploadId).complete(parts);
+      expect((await call(blobPath(A, blob.sha), { method: 'HEAD', token: tokens.alice! })).status).toBe(404);
+
+      const retry = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
+        method: 'POST',
+        token: tokens.alice!,
+        body: JSON.stringify({ parts })
+      });
+      expect(retry.status).toBe(201);
+      expect(await retry.json()).toMatchObject({ integrity: 'client-declared', size: 1500 });
+      const head = await call(blobPath(A, blob.sha), { method: 'HEAD', token: tokens.alice! });
+      expect(head.status).toBe(200);
+      expect(head.headers.get('content-length')).toBe('1500');
+    });
+
+    it('complete repetido nao adota objeto de outro uid nem de tamanho diferente do declarado', async () => {
+      const blob = await makeBlob(1500);
+      const create = await call(blobPath(A, blob.sha, '/multipart'), { method: 'POST', token: tokens.alice!, body: JSON.stringify({ size: 1501 }) });
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/1`), { method: 'PUT', token: tokens.alice!, body: blob.bytes });
+      const parts = [{ partNumber: 1, etag: ((await part.json()) as { etag: string }).etag }];
+      await env.STEMS.resumeMultipartUpload(`churches/igreja-a/blobs/${blob.sha}`, uploadId).complete(parts);
+      const retry = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
+        method: 'POST',
+        token: tokens.alice!,
+        body: JSON.stringify({ parts })
+      });
+      expect(retry.status).toBe(400);
+      expect((await call(blobPath(A, blob.sha), { method: 'HEAD', token: tokens.alice! })).status).toBe(404);
+    });
+
+    it('complete repetido nao adota objeto gravado por outro uid na mesma chave', async () => {
+      const blob = await makeBlob(1500);
+      const key = `churches/igreja-a/blobs/${blob.sha}`;
+      const create = await call(blobPath(A, blob.sha, '/multipart'), { method: 'POST', token: tokens.alice!, body: JSON.stringify({ size: 1500 }) });
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/1`), { method: 'PUT', token: tokens.alice!, body: blob.bytes });
+      const parts = [{ partNumber: 1, etag: ((await part.json()) as { etag: string }).etag }];
+      await env.STEMS.resumeMultipartUpload(key, uploadId).complete(parts);
+      // outro uid sobrescreve a chave com o mesmo tamanho antes da repeticao
+      await env.STEMS.put(key, blob.bytes, { customMetadata: { uploadedBy: 'outro-uid' } });
+      const retry = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
+        method: 'POST',
+        token: tokens.alice!,
+        body: JSON.stringify({ parts })
+      });
+      expect(retry.status).toBe(400);
+      expect((await call(blobPath(A, blob.sha), { method: 'HEAD', token: tokens.alice! })).status).toBe(404);
+    });
+
     // BAIXO 4
     it('Range: invalido, insatisfazivel ou multiplo = 416; valido e recortado; falha do R2 = 502', async () => {
       const blob = await makeBlob(100);

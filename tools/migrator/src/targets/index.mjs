@@ -3,10 +3,10 @@ import { FirestoreRegistry } from './registry-firestore.mjs';
 import { LocalStorage } from './storage-local.mjs';
 import { WorkerStorage } from './storage-worker.mjs';
 
-export function makeTargets(cfg, { storage = 'local', registry = 'local' } = {}) {
+export function makeTargets(cfg, { storage = 'local', registry = 'local', log } = {}) {
   const s =
     storage === 'worker'
-      ? new WorkerStorage({ baseUrl: cfg.workerUrl, tokenFile: cfg.tokenFile })
+      ? new WorkerStorage({ baseUrl: cfg.workerUrl, tokenFile: cfg.tokenFile, log })
       : storage === 'local'
         ? new LocalStorage(cfg.r2LocalDir)
         : (() => {

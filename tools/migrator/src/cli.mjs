@@ -84,7 +84,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (cmd === 'migrate') {
       const { runMigrate } = await import('./migrate.mjs');
       const { makeTargets } = await import('./targets/index.mjs');
-      const targets = makeTargets(cfg, { storage: args.target ?? 'local', registry: args.registry ?? 'local' });
+      const targets = makeTargets(cfg, { storage: args.target ?? 'local', registry: args.registry ?? 'local', log });
       const ac = new AbortController();
       process.once('SIGINT', () => ac.abort());
       const res = await runMigrate({

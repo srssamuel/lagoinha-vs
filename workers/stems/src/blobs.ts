@@ -377,7 +377,21 @@ export const completeMultipart: Handler<'multipart-complete'> = async (request, 
     try {
       object = await upload.complete(parts);
     } catch {
-      throw badRequest('invalid_parts');
+      // Repeticao do complete: uma tentativa anterior montou o objeto no R2 e caiu antes de registrar no D1
+      // (cliente desconectou e a execucao foi cancelada, ou erro depois do complete). O R2 recusa montar de
+      // novo; se o objeto na chave e deste upload (mesmo uid, criado depois da abertura, tamanho declarado),
+      // registra em vez de deixar um orfao sem linha em `blobs`.
+      const existing = await env.STEMS.head(key);
+      if (
+        !existing ||
+        row.size === null ||
+        existing.size !== row.size ||
+        existing.customMetadata?.uploadedBy !== auth.uid ||
+        existing.uploaded.getTime() < Date.parse(row.created_at) - 60_000 // folga de relogio
+      ) {
+        throw badRequest('invalid_parts');
+      }
+      object = existing;
     }
     if (row.size !== null && object.size !== row.size) {
       // Seguro apagar: nenhum blob registrado existe e a reserva impede PUT/exclusao concorrentes.
