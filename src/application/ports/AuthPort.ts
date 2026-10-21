@@ -1,13 +1,10 @@
 import { User, UserRole } from '../../domain/entities/User';
-import { InviteToken } from '../../domain/entities/InviteToken';
+import { MembershipPort } from './MembershipPort';
 
-export interface CreateInviteProps {
-  targetRole: UserRole;
-  expiresHours?: number; // e.g. 24, 168 (7 days), or undefined for no expiry
-  maxUses?: number;      // e.g. 1 (single-use) or undefined (Infinity)
-  adminUser: User;
-}
-
+/**
+ * Só identidade (spec-banco-online, seção 8): quem é a pessoa logada.
+ * Membros, papéis e convites ficam em MembershipPort.
+ */
 export interface AuthPort {
   signInWithGoogle(): Promise<User>;
   signInWithEmail(email: string, pass: string): Promise<User>;
@@ -21,17 +18,11 @@ export interface AuthPort {
   signOut(): Promise<void>;
   getCurrentUser(): User | null;
   onAuthStateChanged(callback: (user: User | null) => void): () => void;
-
-  // Gestão de Usuários (Painel do Administrador)
-  listPendingUsers(churchId?: string): Promise<User[]>;
-  listAllUsers(churchId?: string): Promise<User[]>;
-  approveUser(uid: string, assignedRole: UserRole, adminUid: string): Promise<User>;
-  rejectUser(uid: string, adminUid: string): Promise<void>;
-  updateUserRole(uid: string, newRole: UserRole, adminUid: string): Promise<User>;
-
-  // Links de Convite
-  createInviteLink(props: CreateInviteProps): Promise<InviteToken>;
-  listInviteTokens(): Promise<InviteToken[]>;
-  revokeInviteToken(tokenId: string): Promise<void>;
-  validateInviteToken(tokenString: string): Promise<InviteToken | null>;
+  /** Modo demonstração (usuários de exemplo e acesso direto). Sempre falso em produção sem VITE_DEMO_MODE. */
+  isDemoMode(): boolean;
+  /** Entra com um usuário de exemplo; lança erro fora do modo demonstração. */
+  signInDemo(role: UserRole, displayName: string): Promise<User>;
 }
+
+/** Login + gestão de membros, para telas que fazem as duas coisas (tela de entrada com convite, App). */
+export type AccountService = AuthPort & MembershipPort;

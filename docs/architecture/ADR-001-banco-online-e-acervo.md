@@ -1,6 +1,6 @@
 # ADR-001 (arquitetura): Banco online do acervo de VS (metadados + stems)
 
-- **Status:** proposto (recomendacao do Principal Architect; vira "aceito" quando o Samuel criar as contas da Fase 2/3 e o spike F3 passar)
+- **Status:** aceito em 2026-10-21 (Samuel aprovou a Opcao C: Firebase + Cloudflare R2). O spike do Worker na F3 continua sendo a condicao para manter o R2; se falhar, reabrir este ADR.
 - **Data:** 2026-10-20
 - **Decisores:** Samuel Rosa (dono do produto), Principal Architect
 - **Consultados:** Security Guardian (regras/isolamento), QA (testes de regras e offline) — ainda nao consultados formalmente

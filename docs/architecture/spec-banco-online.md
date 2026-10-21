@@ -1,6 +1,15 @@
 # Spec: Banco online do acervo e setlist do culto
 
-- **Status:** proposto (2026-10-20). Nada desta spec esta implementado. Decisao de provedor: `docs/architecture/ADR-001-banco-online-e-acervo.md` (Opcao C: Firebase Auth + Firestore + Cloudflare R2 via Worker).
+- **Status:** Opcao C *decidida* (2026-10-21). **F0 entregue** (2026-10-21); F1-F6 pendentes. Decisao de provedor: `docs/architecture/ADR-001-banco-online-e-acervo.md` (Opcao C: Firebase Auth + Firestore + Cloudflare R2 via Worker).
+
+### Estado da F0 (*validado*: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`)
+
+- Dominio: `Membership` (papel por igreja) e `AccessPolicy` (regras da secao 4 e I4 como funcoes puras), `ServiceSetlist` + `SetlistConflictError`, `CloudSong.rightsClass/licenseRef` (padrao `unknown`).
+- Portas: `AuthPort` (so identidade), `MembershipPort`, `SongLibraryPort` (com escopo; substitui `CloudVSRepositoryPort`), `StemBlobPort`, `SetlistRepositoryPort`, `DeviceCachePort`.
+- Adaptadores locais: `LocalAuthAdapter` (o antigo `FirebaseAuthService`), `LocalSongLibraryAdapter`, `LocalStemStore`, `LocalSetlistRepository`, `IndexedDbDeviceCache`.
+- Composition root: `src/presentation/composition.ts` + `BackendContext`, `VITE_BACKEND=local|firebase` (`firebase` recusa montar ate a F2).
+- Testes de contrato em `tests/contract/` (a F2 acrescenta os adaptadores Firebase na mesma lista) e teste que falha se um componente der `new` em adaptador.
+- Desvios conscientes: (1) `User` ainda guarda `role`/`churchId`; `Membership.fromLegacyUser` faz a ponte ate os membros virem do Firestore na F2. (2) I6 aplicado como "producao sem usuarios de exemplo nem admin automatico"; o adaptador local continua montando em producao porque ainda nao existe o Firebase (recusar agora deixaria o app publicado sem login). (3) A biblioteca da igreja no modo local fica em memoria (some ao recarregar), como o acervo de demonstracao ja ficava. Musica adicionada ao setlist pela biblioteca tambem nao e gravada no IndexedDB (comportamento anterior, mantido); so os uploads pela barra lateral sao. Gravar o setlist preparado no aparelho e o `PrepareServiceUseCase` da F4.
 - **Legenda:** *proposto* = desenho; *decidido* = o Samuel confirmou; *validado* = existe teste/comando que passou.
 
 ---

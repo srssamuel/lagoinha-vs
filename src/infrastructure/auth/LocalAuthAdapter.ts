@@ -1,4 +1,5 @@
-import { AuthPort, CreateInviteProps } from '../../application/ports/AuthPort';
+import { AuthPort } from '../../application/ports/AuthPort';
+import { CreateInviteProps, MembershipPort } from '../../application/ports/MembershipPort';
 import { User, UserRole, UserStatus } from '../../domain/entities/User';
 import { InviteToken, InviteTokenProps } from '../../domain/entities/InviteToken';
 import { hashPassword, isModernHash, randomToken, verifyPassword } from './passwordHash';
@@ -24,7 +25,7 @@ interface StoredUserRecord {
   passwordHash?: string;
 }
 
-export interface FirebaseAuthServiceOptions {
+export interface LocalAuthAdapterOptions {
   /**
    * Modo demonstração: entra direto como o admin de exemplo, libera "Acesso Demo" e o Google simulado.
    * Padrão: ligado no `npm run dev` ou com VITE_DEMO_MODE=true; desligado no build de produção.
@@ -49,12 +50,12 @@ function defaultDemoMode(): boolean {
  * Não é segurança de servidor: qualquer pessoa com o aparelho pode editar o localStorage.
  * Multi-igreja em produção exige o backend descrito em docs/architecture.
  */
-export class FirebaseAuthService implements AuthPort {
+export class LocalAuthAdapter implements AuthPort, MembershipPort {
   private currentUser: User | null = null;
   private listeners: Set<(user: User | null) => void> = new Set();
   private readonly demoMode: boolean;
 
-  constructor(options: FirebaseAuthServiceOptions = {}) {
+  constructor(options: LocalAuthAdapterOptions = {}) {
     this.demoMode = options.demoMode ?? defaultDemoMode();
     this.ensureInitialSeedData();
     this.loadPersistedUser();

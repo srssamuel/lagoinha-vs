@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, UserRole } from '../../domain/entities/User';
 import { InviteToken } from '../../domain/entities/InviteToken';
-import { FirebaseAuthService } from '../../infrastructure/auth/FirebaseAuthService';
+import { MembershipPort } from '../../application/ports/MembershipPort';
 import {
   X,
   ShieldCheck,
@@ -21,7 +21,7 @@ import {
 interface AdminUsersModalProps {
   isOpen: boolean;
   currentUser: User;
-  authService: FirebaseAuthService;
+  authService: MembershipPort;
   onClose: () => void;
   onUsersUpdated?: () => void;
 }

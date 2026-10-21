@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { User } from '../../../src/domain/entities/User';
-import { FirebaseAuthService } from '../../../src/infrastructure/auth/FirebaseAuthService';
+import { LocalAuthAdapter } from '../../../src/infrastructure/auth/LocalAuthAdapter';
 
 const createLocalStorageMock = () => {
   let store: Record<string, string> = {};
@@ -19,7 +19,7 @@ const createLocalStorageMock = () => {
 };
 
 describe('SEC-01: Multi-Tenant Isolation & Anti-Self-Elevation Rules', () => {
-  let authService: FirebaseAuthService;
+  let authService: LocalAuthAdapter;
 
   beforeAll(() => {
     if (typeof globalThis.localStorage === 'undefined') {
@@ -29,7 +29,7 @@ describe('SEC-01: Multi-Tenant Isolation & Anti-Self-Elevation Rules', () => {
 
   beforeEach(() => {
     localStorage.clear();
-    authService = new FirebaseAuthService();
+    authService = new LocalAuthAdapter();
   });
 
   describe('Tenant Isolation (Church Boundary)', () => {

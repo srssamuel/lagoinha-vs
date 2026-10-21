@@ -19,6 +19,7 @@ import { TrackStem } from '../../domain/entities/TrackStem';
 import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 import { IndexedDbStorageService } from '../../infrastructure/storage/IndexedDbStorageService';
+import { useBackend } from '../BackendContext';
 
 interface SetlistSidebarProps {
   songs: Song[];
@@ -47,6 +48,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
+  const { deviceCache } = useBackend();
   const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [zipProgressText, setZipProgressText] = useState<string>('');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -148,9 +150,9 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         });
 
         // Salva no IndexedDB para persistência offline permanente (metadados + blobs de áudio pareados)
-        await IndexedDbStorageService.saveCustomSong(newSong);
+        await deviceCache.saveCustomSong(newSong);
         for (const pair of stemBlobPairs) {
-          await IndexedDbStorageService.saveStemAudioBlob(songId, pair.stem.id, pair.blob);
+          await deviceCache.saveStemAudioBlob(songId, pair.stem.id, pair.blob);
         }
 
         onImportCustomSong(newSong);
@@ -230,9 +232,9 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       churchId: currentUser?.churchId || 'lagoinha-jp'
     });
 
-    await IndexedDbStorageService.saveCustomSong(newSong);
+    await deviceCache.saveCustomSong(newSong);
     for (const pair of stemBlobPairs) {
-      await IndexedDbStorageService.saveStemAudioBlob(songId, pair.stem.id, pair.blob);
+      await deviceCache.saveStemAudioBlob(songId, pair.stem.id, pair.blob);
     }
     onImportCustomSong(newSong);
   };

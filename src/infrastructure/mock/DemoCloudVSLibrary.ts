@@ -1,5 +1,4 @@
 import { CloudSong } from '../../domain/entities/CloudSong';
-import { CloudVSRepositoryPort } from '../../application/ports/CloudVSRepositoryPort';
 import { Song } from '../../domain/entities/Song';
 import { TrackStem } from '../../domain/entities/TrackStem';
 import { SongSection } from '../../domain/value-objects/SongSection';
@@ -19,7 +18,8 @@ const FOLDER_BY_CLOUD_ID: Record<string, string> = {
   'cloud-ousado-amor': 'song-ousado-amor'
 };
 
-export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
+/** Acervo de demonstração em memória; LocalSongLibraryAdapter usa uma instância por prateleira. */
+export class DemoCloudVSLibrary {
   private uploadedBlobUrls: Map<string, Map<string, string>> = new Map();
 
   private library: CloudSong[] = [
@@ -204,6 +204,11 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
     })
   ];
 
+  /** `seed: false` começa vazio (biblioteca de uma igreja); o padrão traz o acervo de demonstração. */
+  constructor(options: { seed?: boolean } = {}) {
+    if (options.seed === false) this.library = [];
+  }
+
   public async listAllSongs(): Promise<CloudSong[]> {
     return Promise.resolve([...this.library]);
   }
@@ -347,7 +352,10 @@ export class DemoCloudVSLibrary implements CloudVSRepositoryPort {
       uploadedBy: 'Ministro de Louvor (Lagoinha JP)',
       uploadedAt: 'Hoje',
       storageFolder: `gs://lagoinha-vs-cloud/tracks/${Date.now()}`,
-      stems
+      stems,
+      source: 'local_upload',
+      rightsClass: newSong.rightsClass,
+      licenseRef: newSong.licenseRef
     });
 
     this.library.unshift(created);

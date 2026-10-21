@@ -1,4 +1,5 @@
 import { TimeSignature } from './Song';
+import { LicenseRef, RightsClass } from '../services/AccessPolicy';
 
 export interface CloudStemInfo {
   id: string;
@@ -26,6 +27,9 @@ export interface CloudSongProps {
   driveFileId?: string;
   driveFolderId?: string;
   driveDownloadUrl?: string;
+  /** Direito de distribuição; padrão `unknown` (só biblioteca da igreja, nunca catálogo global). */
+  rightsClass?: RightsClass;
+  licenseRef?: LicenseRef;
 }
 
 export class CloudSong {
@@ -46,6 +50,8 @@ export class CloudSong {
   public readonly driveFileId?: string;
   public readonly driveFolderId?: string;
   public readonly driveDownloadUrl?: string;
+  public readonly rightsClass: RightsClass;
+  public readonly licenseRef?: LicenseRef;
 
   constructor(props: CloudSongProps) {
     this.id = props.id;
@@ -65,5 +71,7 @@ export class CloudSong {
     this.driveFileId = props.driveFileId;
     this.driveFolderId = props.driveFolderId;
     this.driveDownloadUrl = props.driveDownloadUrl;
+    this.rightsClass = props.rightsClass ?? 'unknown';
+    this.licenseRef = props.licenseRef;
   }
 }

@@ -3,7 +3,7 @@ import { WebAudioEngine } from '../infrastructure/audio/WebAudioEngine';
 import { PolyphonicAmbientPad } from '../infrastructure/audio/PolyphonicAmbientPad';
 import { Song } from '../domain/entities/Song';
 import { User } from '../domain/entities/User';
-import { FirebaseAuthService } from '../infrastructure/auth/FirebaseAuthService';
+import { useBackend } from './BackendContext';
 import { StageHeader } from './components/StageHeader';
 import { TransportBar } from './components/TransportBar';
 import { WaveformDisplay } from './components/WaveformDisplay';
@@ -36,7 +36,8 @@ import { useStageControls } from './hooks/useStageControls';
 
 export const App: React.FC = () => {
   // Serviços de Autenticação e Áudio
-  const authService = useMemo(() => new FirebaseAuthService(), []);
+  const backend = useBackend();
+  const authService = backend.accounts;
   const audioEngine = useMemo(() => new WebAudioEngine(), []);
   const padEngine = useMemo(() => new PolyphonicAmbientPad(), []);
   const midiService = useMemo(() => WebMidiHardwareService.getInstance(), []);
@@ -48,7 +49,7 @@ export const App: React.FC = () => {
   const engineState = useAudioEngineState(audioEngine);
 
   // Repertório do Culto e Pad Contínuo
-  const setlist = useSetlist(currentUser?.churchId);
+  const setlist = useSetlist(currentUser?.churchId, backend.deviceCache);
   const { songs, currentIndex: currentSongIndex } = setlist.state;
   const currentSong = setlist.currentSong;
   const pad = useAmbientPad(padEngine);
@@ -408,6 +409,7 @@ export const App: React.FC = () => {
           <CloudVSLibraryModal
             isOpen={isCloudLibraryOpen}
             canUpload={currentUser.canUploadVS}
+            churchId={currentUser.churchId}
             onClose={() => setIsCloudLibraryOpen(false)}
             onAddSongToSetlist={setlist.add}
           />

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
-import { FirebaseAuthService } from '../../../src/infrastructure/auth/FirebaseAuthService';
+import { LocalAuthAdapter } from '../../../src/infrastructure/auth/LocalAuthAdapter';
 
 // Mock localStorage para ambiente Node.js do Vitest
 const createLocalStorageMock = () => {
@@ -18,7 +18,7 @@ const createLocalStorageMock = () => {
   };
 };
 
-describe('FirebaseAuthService Infrastructure Suite', () => {
+describe('LocalAuthAdapter Infrastructure Suite', () => {
   beforeAll(() => {
     if (typeof globalThis.localStorage === 'undefined') {
       (globalThis as any).localStorage = createLocalStorageMock();
@@ -30,7 +30,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
   });
 
   it('initializes default admin (Leandro Machado) when no user is logged in', () => {
-    const auth = new FirebaseAuthService();
+    const auth = new LocalAuthAdapter();
     const current = auth.getCurrentUser();
     expect(current).not.toBeNull();
     expect(current?.displayName).toBe('Leandro Machado');
@@ -39,7 +39,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
   });
 
   it('registers a new user with pending status when no invite token is used', async () => {
-    const auth = new FirebaseAuthService();
+    const auth = new LocalAuthAdapter();
     const newUser = await auth.registerWithEmail(
       'novo.tecladista@lagoinhajp.com.br',
       'senha123',
@@ -58,7 +58,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
   });
 
   it('allows Admin to approve a pending user as Musician', async () => {
-    const auth = new FirebaseAuthService();
+    const auth = new LocalAuthAdapter();
     const admin = auth.getCurrentUser()!;
 
     // Cadastra um usuário pendente
@@ -81,7 +81,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
   });
 
   it('creates an invite link and auto-approves user who registers with it', async () => {
-    const auth = new FirebaseAuthService();
+    const auth = new LocalAuthAdapter();
     const admin = auth.getCurrentUser()!;
 
     // Admin gera um link de convite para Músico
@@ -117,7 +117,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
 
   describe('Segurança do login local', () => {
     it('recusa senha errada, email desconhecido e conta de exemplo sem senha', async () => {
-      const auth = new FirebaseAuthService();
+      const auth = new LocalAuthAdapter();
       await auth.registerWithEmail('ana@lagoinhajp.com.br', 'senha-forte-1', 'Ana Vocal');
       await auth.signOut();
 
@@ -130,14 +130,14 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
     });
 
     it('email com "admin"/"lider" não vira administrador sozinho', async () => {
-      const auth = new FirebaseAuthService();
+      const auth = new LocalAuthAdapter();
       await expect(auth.signInWithEmail('admin.louvor.lider@x.com', 'qualquer-1')).rejects.toThrow();
       const user = await auth.registerWithEmail('admin.louvor.lider@x.com', 'senha-forte-1', 'Tentativa');
       expect(user.role).toBe('pending');
     });
 
     it('guarda a senha com PBKDF2 (não reversível) e migra o formato antigo btoa', async () => {
-      const auth = new FirebaseAuthService();
+      const auth = new LocalAuthAdapter();
       await auth.registerWithEmail('bia@lagoinhajp.com.br', 'senha-forte-1', 'Bia');
       const users = JSON.parse(localStorage.getItem('lagoinha_vs_users_db')!) as { email: string; passwordHash?: string }[];
       const bia = users.find((u) => u.email === 'bia@lagoinhajp.com.br')!;
@@ -153,7 +153,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
     });
 
     it('editar papel/igreja na sessão salva não eleva o usuário', async () => {
-      const first = new FirebaseAuthService();
+      const first = new LocalAuthAdapter();
       const musico = await first.registerWithEmail('caio@lagoinhajp.com.br', 'senha-forte-1', 'Caio');
       const session = JSON.parse(localStorage.getItem('lagoinha_vs_auth_user')!);
       localStorage.setItem(
@@ -161,14 +161,14 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
         JSON.stringify({ ...session, role: 'admin', status: 'active', churchId: 'outra-igreja' })
       );
 
-      const reloaded = new FirebaseAuthService();
+      const reloaded = new LocalAuthAdapter();
       expect(reloaded.getCurrentUser()?.uid).toBe(musico.uid);
       expect(reloaded.getCurrentUser()?.role).toBe('pending');
       expect(reloaded.getCurrentUser()?.churchId).toBe('lagoinha-jp');
     });
 
     it('fora do modo demo: sem login automático, sem Google simulado e sem Acesso Demo', async () => {
-      const auth = new FirebaseAuthService({ demoMode: false });
+      const auth = new LocalAuthAdapter({ demoMode: false });
       expect(auth.getCurrentUser()).toBeNull();
       await expect(auth.signInWithGoogle()).rejects.toThrow();
       await expect(auth.signInDemo('leader', 'X')).rejects.toThrow();
@@ -181,7 +181,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
     });
 
     it('recusa senha curta e email repetido', async () => {
-      const auth = new FirebaseAuthService();
+      const auth = new LocalAuthAdapter();
       await expect(auth.registerWithEmail('d@x.com', '123', 'D')).rejects.toThrow(/8 caracteres/);
       await auth.registerWithEmail('d@x.com', 'senha-forte-1', 'D');
       await expect(auth.registerWithEmail('D@x.com', 'senha-forte-2', 'D2')).rejects.toThrow(/Já existe/);
@@ -189,7 +189,7 @@ describe('FirebaseAuthService Infrastructure Suite', () => {
 
     it('token de convite não usa Math.random', async () => {
       const spy = vi.spyOn(Math, 'random');
-      const auth = new FirebaseAuthService();
+      const auth = new LocalAuthAdapter();
       const invite = await auth.createInviteLink({ targetRole: 'musician', adminUser: auth.getCurrentUser()! });
       expect(invite.token).toMatch(/^lagoinha-musician-[a-z0-9]{18}$/);
       expect(spy).not.toHaveBeenCalled();

@@ -9,7 +9,9 @@ const loaders = {
   cifra: () => import('./components/CifraProModal'),
   vstRack: () => import('./components/VstPluginRackModal'),
   help: () => import('./components/HelpGuideModal'),
-  adminUsers: () => import('./components/AdminUsersModal')
+  adminUsers: () => import('./components/AdminUsersModal'),
+  // Acervo que o LocalSongLibraryAdapter carrega sob demanda: entra no mesmo pré-carregamento.
+  demoCatalog: () => import('../infrastructure/mock/DemoCloudVSLibrary')
 };
 
 export const CloudVSLibraryModal = lazy(() => loaders.cloudLibrary().then((m) => ({ default: m.CloudVSLibraryModal })));

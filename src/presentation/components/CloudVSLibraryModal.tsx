@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CloudSong } from '../../domain/entities/CloudSong';
-import { DemoCloudVSLibrary } from '../../infrastructure/mock/DemoCloudVSLibrary';
+import { churchScope, GLOBAL_SCOPE, LibraryScope } from '../../application/ports/SongLibraryPort';
+import { useBackend } from '../BackendContext';
 import { Song } from '../../domain/entities/Song';
-import { GoogleDriveStorageService } from '../../infrastructure/storage/GoogleDriveStorageService';
 import { GoogleDriveConfig } from '../../domain/entities/GoogleDriveConfig';
 import { X, Cloud, HardDrive, UploadCloud, Globe } from 'lucide-react';
 import { CatalogTab } from './cloud-library/CatalogTab';
@@ -13,6 +13,8 @@ import { ExternalRepositoriesTab } from './cloud-library/ExternalRepositoriesTab
 interface CloudVSLibraryModalProps {
   isOpen: boolean;
   canUpload: boolean;
+  /** Igreja do usuário: a biblioteca dela aparece junto do catálogo e recebe os uploads. */
+  churchId?: string;
   onClose: () => void;
   onAddSongToSetlist: (song: Song) => void;
 }
@@ -25,18 +27,19 @@ const tabClass = (active: boolean, activeClass: string, idleClass: string) =>
 export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   isOpen,
   canUpload,
+  churchId,
   onClose,
   onAddSongToSetlist
 }) => {
-  const [repository] = useState(() => new DemoCloudVSLibrary());
+  const { library, drive: driveService } = useBackend();
   const [songs, setSongs] = useState<CloudSong[]>([]);
+  const [scopeBySongId, setScopeBySongId] = useState<Map<string, LibraryScope>>(new Map());
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState<string>('');
   const [activeTab, setActiveTab] = useState<LibraryTab>('catalog');
   const [addedSongIds, setAddedSongIds] = useState<Set<string>>(new Set());
 
   // Google Drive Central Storage State
-  const [driveService] = useState(() => new GoogleDriveStorageService());
   const [driveConfig, setDriveConfig] = useState<GoogleDriveConfig | null>(null);
   const [driveFolderInput, setDriveFolderInput] = useState('');
   const [driveSongs, setDriveSongs] = useState<CloudSong[]>([]);
@@ -46,11 +49,20 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   const uploadForm = useVsUploadForm();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Biblioteca da igreja primeiro, depois o catálogo global; cada música lembra de qual prateleira veio.
+  const refreshSongs = useCallback(async () => {
+    const shelves: LibraryScope[] = churchId ? [churchScope(churchId), GLOBAL_SCOPE] : [GLOBAL_SCOPE];
+    const found = await Promise.all(
+      shelves.map(async (scope) => (await library.search(scope, searchQuery, selectedKey)).map((song) => ({ scope, song })))
+    );
+    const entries = found.flat();
+    setScopeBySongId(new Map(entries.map(({ scope, song }) => [song.id, scope])));
+    setSongs(entries.map(({ song }) => song));
+  }, [churchId, library, searchQuery, selectedKey]);
+
   useEffect(() => {
-    if (isOpen) {
-      void repository.searchSongs(searchQuery, selectedKey).then(setSongs);
-    }
-  }, [isOpen, searchQuery, selectedKey, repository]);
+    if (isOpen) void refreshSongs();
+  }, [isOpen, refreshSongs]);
 
   // Carrega configuração salva do Google Drive
   useEffect(() => {
@@ -90,7 +102,8 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   }, [isOpen, activeTab, driveSongs.length, loadDriveSongs]);
 
   const handleSelectSong = async (cloudSong: CloudSong) => {
-    const playbackSong = await repository.convertCloudSongToPlaybackSong(cloudSong);
+    const scope = scopeBySongId.get(cloudSong.id) ?? GLOBAL_SCOPE;
+    const playbackSong = await library.toPlaybackSong(scope, cloudSong);
     onAddSongToSetlist(playbackSong);
     setAddedSongIds((prev) => new Set([...prev, cloudSong.id]));
   };
@@ -98,21 +111,28 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
   const handleUploadSubmit = async (draft: VsUploadDraft) => {
     setIsSubmitting(true);
     try {
-      const created = await repository.uploadSong(
+      if (!churchId) throw new Error('Entre com uma conta de igreja para enviar VS.');
+      const shelf = churchScope(churchId);
+      // Upload vai para a biblioteca da igreja como origem não documentada (spec, seção 7).
+      const created = await library.upload(
+        shelf,
         {
           title: draft.title,
           artist: draft.artist || 'Lagoinha Worship',
           originalKey: draft.originalKey,
           bpm: draft.bpm,
-          duration: draft.duration
+          duration: draft.duration,
+          rightsClass: 'unknown'
         },
         draft.files
       );
 
       uploadForm.reset();
       setActiveTab('catalog');
-      setSongs(await repository.listAllSongs());
-      await handleSelectSong(created);
+      await refreshSongs();
+      const playbackSong = await library.toPlaybackSong(shelf, created);
+      onAddSongToSetlist(playbackSong);
+      setAddedSongIds((prev) => new Set([...prev, created.id]));
     } finally {
       setIsSubmitting(false);
     }

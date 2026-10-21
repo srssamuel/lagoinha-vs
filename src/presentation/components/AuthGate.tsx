@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../../domain/entities/User';
 import { InviteToken } from '../../domain/entities/InviteToken';
-import { FirebaseAuthService } from '../../infrastructure/auth/FirebaseAuthService';
+import { AccountService } from '../../application/ports/AuthPort';
 import { Music2, Lock, Mail, ArrowRight, Sparkles, UserPlus, LogIn, Link2, CheckCircle2 } from 'lucide-react';
 
 interface AuthGateProps {
-  authService: FirebaseAuthService;
+  authService: AccountService;
   onAuthenticated: (user: User) => void;
 }
 

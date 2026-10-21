@@ -7,7 +7,7 @@ import {
   SetlistState
 } from '../../application/setlist/setlistReducer';
 import { DemoWorshipSongs } from '../../infrastructure/mock/DemoWorshipSongs';
-import { IndexedDbStorageService } from '../../infrastructure/storage/IndexedDbStorageService';
+import { DeviceCachePort } from '../../application/ports/DeviceCachePort';
 
 export interface SetlistController {
   state: SetlistState;
@@ -26,14 +26,14 @@ export interface SetlistController {
  * Repertório do culto: presets + músicas próprias do IndexedDB (isoladas por churchId).
  * Efeitos de áudio (parar, crossfade do pad) ficam com quem chama.
  */
-export function useSetlist(churchId: string | undefined): SetlistController {
+export function useSetlist(churchId: string | undefined, deviceCache: DeviceCachePort): SetlistController {
   const [state, dispatch] = useReducer(setlistReducer, undefined, () =>
     createSetlistState(DemoWorshipSongs.getPresetSongs())
   );
 
   useEffect(() => {
     let cancelled = false;
-    void IndexedDbStorageService.loadCustomSongs(churchId).then((saved) => {
+    void deviceCache.loadCustomSongs(churchId).then((saved) => {
       if (cancelled) return;
       const presets = DemoWorshipSongs.getPresetSongs();
       const presetIds = new Set(presets.map((s) => s.id));
@@ -42,15 +42,15 @@ export function useSetlist(churchId: string | undefined): SetlistController {
     return () => {
       cancelled = true;
     };
-  }, [churchId]);
+  }, [churchId, deviceCache]);
 
   const remove = useCallback(
     (index: number) => {
       const target = state.songs[index];
-      if (target) void IndexedDbStorageService.deleteCustomSong(target.id, churchId);
+      if (target) void deviceCache.deleteCustomSong(target.id, churchId);
       dispatch({ type: 'remove', index });
     },
-    [state.songs, churchId]
+    [state.songs, churchId, deviceCache]
   );
 
   return {

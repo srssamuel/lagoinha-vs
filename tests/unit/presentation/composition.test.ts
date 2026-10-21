@@ -1,0 +1,79 @@
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createBackend, isDemoModeEnabled, resolveBackendKind } from '../../../src/presentation/composition';
+
+const createLocalStorageMock = () => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = String(value);
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    }
+  };
+};
+
+describe('composition root', () => {
+  beforeAll(() => {
+    if (typeof globalThis.localStorage === 'undefined') {
+      (globalThis as unknown as { localStorage: unknown }).localStorage = createLocalStorageMock();
+    }
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('backend local é o padrão; valor desconhecido é erro', () => {
+    expect(resolveBackendKind({})).toBe('local');
+    expect(resolveBackendKind({ VITE_BACKEND: 'LOCAL' })).toBe('local');
+    expect(resolveBackendKind({ VITE_BACKEND: 'firebase' })).toBe('firebase');
+    expect(() => resolveBackendKind({ VITE_BACKEND: 'supabase' })).toThrow(/VITE_BACKEND inválido/);
+  });
+
+  it('firebase ainda não monta (F2) em vez de cair em silêncio no local', () => {
+    expect(() => createBackend({ VITE_BACKEND: 'firebase' })).toThrow(/F2/);
+  });
+
+  it('I6: build de produção não traz admin automático nem usuários de exemplo', async () => {
+    const productionEnv = { DEV: false };
+    expect(isDemoModeEnabled(productionEnv)).toBe(false);
+
+    const backend = createBackend(productionEnv);
+    expect(backend.accounts.isDemoMode()).toBe(false);
+    expect(backend.accounts.getCurrentUser()).toBeNull();
+    expect(await backend.accounts.listAllUsers()).toEqual([]);
+    await expect(backend.accounts.signInDemo('admin', 'Qualquer')).rejects.toThrow();
+  });
+
+  it('modo demonstração só por DEV ou VITE_DEMO_MODE=true explícito', () => {
+    expect(isDemoModeEnabled({ DEV: true })).toBe(true);
+    expect(isDemoModeEnabled({ DEV: false, VITE_DEMO_MODE: 'true' })).toBe(true);
+    expect(isDemoModeEnabled({ DEV: false, VITE_DEMO_MODE: '1' })).toBe(false);
+  });
+
+  it('componentes não dão new em adaptador: tudo passa pelo composition root', () => {
+    const dir = join(__dirname, '../../../src/presentation/components');
+    const offenders: string[] = [];
+    const walk = (folder: string) => {
+      for (const entry of readdirSync(folder, { withFileTypes: true })) {
+        const path = join(folder, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(entry.name)) {
+          const source = readFileSync(path, 'utf8');
+          for (const match of source.matchAll(/new\s+\w*(Adapter|Service|Library|Repository|Store)\s*\(/g)) {
+            offenders.push(`${entry.name}: ${match[0]}`);
+          }
+        }
+      }
+    };
+    walk(dir);
+    expect(offenders).toEqual([]);
+  });
+});

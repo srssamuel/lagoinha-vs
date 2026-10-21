@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { User } from '../../domain/entities/User';
 import { Clock, RefreshCw, LogOut, CheckCircle, Music2 } from 'lucide-react';
-import { FirebaseAuthService } from '../../infrastructure/auth/FirebaseAuthService';
+import { MembershipPort } from '../../application/ports/MembershipPort';
 
 interface PendingApprovalModalProps {
   user: User;
-  authService: FirebaseAuthService;
+  authService: MembershipPort;
   onRefreshApproval: () => void;
   onSignOut: () => void;
 }
