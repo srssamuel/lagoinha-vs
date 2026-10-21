@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { WebAudioEngine } from '../infrastructure/audio/WebAudioEngine';
-import { PolyphonicAmbientPad, MusicalKey } from '../infrastructure/audio/PolyphonicAmbientPad';
-import { DemoWorshipSongs } from '../infrastructure/mock/DemoWorshipSongs';
+import { PolyphonicAmbientPad } from '../infrastructure/audio/PolyphonicAmbientPad';
 import { Song } from '../domain/entities/Song';
 import { User } from '../domain/entities/User';
 import { FirebaseAuthService } from '../infrastructure/auth/FirebaseAuthService';
@@ -21,11 +20,15 @@ import { VstPluginRackModal } from './components/VstPluginRackModal';
 import { HelpGuideModal } from './components/HelpGuideModal';
 import { AdminUsersModal } from './components/AdminUsersModal';
 import { PendingApprovalModal } from './components/PendingApprovalModal';
+import { RouteHealthBanner } from './components/RouteHealthBanner';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
 import { VstPluginRackService } from '../domain/services/VstPluginRackService';
 import { StemType, StemDspConfig } from '../domain/entities/TrackStem';
 import { WebMidiHardwareService } from '../infrastructure/midi/WebMidiHardwareService';
-import { IndexedDbStorageService } from '../infrastructure/storage/IndexedDbStorageService';
+import { useAudioEngineState } from './hooks/useAudioEngineState';
+import { useSetlist } from './hooks/useSetlist';
+import { useAmbientPad } from './hooks/useAmbientPad';
+import { useStageControls } from './hooks/useStageControls';
 
 export const App: React.FC = () => {
   // Serviços de Autenticação e Áudio
@@ -37,18 +40,14 @@ export const App: React.FC = () => {
   // Estado de Usuário Autenticado
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getCurrentUser());
 
-  // Repertório do Culto
-  const [songs, setSongs] = useState<Song[]>(() => DemoWorshipSongs.getPresetSongs());
-  const [currentSongIndex, setCurrentSongIndex] = useState<number>(0);
+  // Estado de transporte do motor (medidores vão direto ao DOM via meterSource)
+  const engineState = useAudioEngineState(audioEngine);
 
-  // Estado Reativo do Motor de Áudio
-  const [engineState, setEngineState] = useState(() => audioEngine.getState());
-
-  // Estado do Pad Contínuo
-  const [isPadActive, setIsPadActive] = useState<boolean>(false);
-  const [currentPadKey, setCurrentPadKey] = useState<MusicalKey | null>(null);
-  const [padVolume, setPadVolume] = useState<number>(0.35);
-  const [isAutoFollowPad, setIsAutoFollowPad] = useState<boolean>(true);
+  // Repertório do Culto e Pad Contínuo
+  const setlist = useSetlist(currentUser?.churchId);
+  const { songs, currentIndex: currentSongIndex } = setlist.state;
+  const currentSong = setlist.currentSong;
+  const pad = useAmbientPad(padEngine);
 
   // Modais de Palco
   const [isRoutingModalOpen, setIsRoutingModalOpen] = useState<boolean>(false);
@@ -74,29 +73,8 @@ export const App: React.FC = () => {
     void refreshPendingCount();
   }, [refreshPendingCount]);
 
-  const currentSong = songs[currentSongIndex] ?? null;
-
-  // Carrega músicas customizadas salvas previamente no IndexedDB (isoladas por tenant)
-  useEffect(() => {
-    void IndexedDbStorageService.loadCustomSongs(currentUser?.churchId).then((saved) => {
-      const defaultPresetSongs = DemoWorshipSongs.getPresetSongs();
-      if (saved.length > 0) {
-        const existingIds = new Set(defaultPresetSongs.map((s) => s.id));
-        const toAdd = saved.filter((s) => !existingIds.has(s.id));
-        setSongs([...defaultPresetSongs, ...toAdd]);
-      } else {
-        setSongs(defaultPresetSongs);
-      }
-    });
-  }, [currentUser?.churchId]);
-
   // Inscrição no estado de autenticação
-  useEffect(() => {
-    const unsubscribe = authService.onAuthStateChanged((user) => {
-      setCurrentUser(user);
-    });
-    return () => unsubscribe();
-  }, [authService]);
+  useEffect(() => authService.onAuthStateChanged(setCurrentUser), [authService]);
 
   // Carrega a música selecionada no motor
   useEffect(() => {
@@ -105,343 +83,121 @@ export const App: React.FC = () => {
     }
   }, [currentSong, audioEngine]);
 
-  // Observer de Telemetria do Motor
-  useEffect(() => {
-    const unsubscribe = audioEngine.subscribe((state) => {
-      setEngineState(state);
-    });
-    return () => unsubscribe();
-  }, [audioEngine]);
-
-  // Inicializa o contexto do Pad no primeiro gesto do usuário
-  useEffect(() => {
-    const handleGesture = () => {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
-      padEngine.init(ctx);
-      window.removeEventListener('click', handleGesture);
-    };
-    window.addEventListener('click', handleGesture, { once: true });
-  }, [padEngine]);
-
   // Navegação de Músicas com Pad Crossfade Automático
-  const handleSelectSong = (index: number) => {
-    if (index >= 0 && index < songs.length) {
+  const { select: selectSongIndex } = setlist;
+  const { followSong } = pad;
+  const handleSelectSong = useCallback(
+    (index: number) => {
+      const target = songs[index];
+      if (!target) return;
       audioEngine.stop();
-      setCurrentSongIndex(index);
-      const targetSong = songs[index];
-      if (targetSong && isAutoFollowPad && isPadActive) {
-        const rootKey = (targetSong.currentKey.replace('m', '') as MusicalKey) || 'C';
-        padEngine.crossfadeTo(rootKey, padVolume);
-        setCurrentPadKey(rootKey);
-      }
-    }
+      selectSongIndex(index);
+      followSong(target);
+    },
+    [songs, audioEngine, selectSongIndex, followSong]
+  );
+
+  const handleNextSong = useCallback(() => handleSelectSong(currentSongIndex + 1), [handleSelectSong, currentSongIndex]);
+  const handlePrevSong = useCallback(() => handleSelectSong(currentSongIndex - 1), [handleSelectSong, currentSongIndex]);
+
+  // Pedaleiras USB MIDI e Teclas de Atalho de Palco
+  useStageControls({
+    engine: audioEngine,
+    midiService,
+    currentSong,
+    keyboardEnabled: currentUser !== null,
+    onNextSong: handleNextSong,
+    onPrevSong: handlePrevSong,
+    onToggleHelp: () => setIsHelpGuideOpen((prev) => !prev)
+  });
+
+  // Edições no lugar do Song/TrackStem: aplica no motor e sinaliza re-render
+  const { touch } = setlist;
+  const withCurrentSong = (fn: (song: Song) => void) => () => {
+    if (!currentSong) return;
+    fn(currentSong);
+    touch();
   };
 
-  const handleNextSong = useCallback(() => {
-    if (currentSongIndex < songs.length - 1) {
-      handleSelectSong(currentSongIndex + 1);
-    }
-  }, [currentSongIndex, songs.length]);
+  const handleBpmChange = (newBpm: number) =>
+    withCurrentSong((song) => {
+      song.bpm = newBpm;
+    })();
 
-  const handlePrevSong = useCallback(() => {
-    if (currentSongIndex > 0) {
-      handleSelectSong(currentSongIndex - 1);
-    }
-  }, [currentSongIndex]);
-
-  // Integração com Pedaleiras e Controladores USB MIDI Reais
-  useEffect(() => {
-    void midiService.init();
-
-    const unbindPlay = midiService.registerActionHandler('play-pause', () => {
-      if (audioEngine.getState().isPlaying) {
-        audioEngine.pause();
-      } else {
-        audioEngine.play();
-      }
-    });
-
-    const unbindNextSong = midiService.registerActionHandler('next-song', handleNextSong);
-    const unbindPrevSong = midiService.registerActionHandler('prev-song', handlePrevSong);
-
-    const unbindNextSec = midiService.registerActionHandler('next-sec', () => {
-      if (!currentSong) return;
-      const activeId = engineState.activeSectionId;
-      const currentIdx = currentSong.sections.findIndex((s) => s.id === activeId);
-      const nextSec = currentSong.sections[currentIdx + 1];
-      if (nextSec) {
-        audioEngine.queueSectionJump(nextSec.id);
-      }
-    });
-
-    const unbindPrevSec = midiService.registerActionHandler('prev-sec', () => {
-      if (!currentSong) return;
-      const activeId = engineState.activeSectionId;
-      const currentIdx = currentSong.sections.findIndex((s) => s.id === activeId);
-      const prevSec = currentSong.sections[Math.max(0, currentIdx - 1)];
-      if (prevSec) {
-        audioEngine.queueSectionJump(prevSec.id);
-      }
-    });
-
-    const unbindLoop = midiService.registerActionHandler('loop-sec', () => {
-      audioEngine.toggleSectionLoop();
-    });
-
-    const unbindSoloClick = midiService.registerActionHandler('solo-click', () => {
-      audioEngine.toggleSoloClick();
-    });
-
-    const unbindPanic = midiService.registerActionHandler('panic', () => {
-      audioEngine.panic();
-    });
-
-    return () => {
-      unbindPlay();
-      unbindNextSong();
-      unbindPrevSong();
-      unbindNextSec();
-      unbindPrevSec();
-      unbindLoop();
-      unbindSoloClick();
-      unbindPanic();
-    };
-  }, [midiService, audioEngine, currentSong, engineState.activeSectionId, handleNextSong, handlePrevSong]);
-
-  // Teclas de Atalho de Palco
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      if (e.code === 'Space') {
-        e.preventDefault();
-        if (engineState.isPlaying) {
-          audioEngine.pause();
-        } else {
-          audioEngine.play();
-        }
-      } else if (e.code === 'KeyR') {
-        e.preventDefault();
-        audioEngine.toggleSectionLoop();
-      } else if (e.code === 'KeyC') {
-        e.preventDefault();
-        audioEngine.toggleSoloClick();
-      } else if (e.code === 'KeyN') {
-        e.preventDefault();
-        handleNextSong();
-      } else if (e.code === 'KeyP') {
-        e.preventDefault();
-        handlePrevSong();
-      } else if (e.code === 'Escape') {
-        e.preventDefault();
-        audioEngine.panic();
-      } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
-        e.preventDefault();
-        setIsHelpGuideOpen((prev) => !prev);
-      } else if (e.code.startsWith('Digit') && currentSong) {
-        const num = parseInt(e.code.replace('Digit', ''), 10);
-        if (num >= 1 && num <= currentSong.sections.length) {
-          const target = currentSong.sections[num - 1];
-          if (target) {
-            audioEngine.queueSectionJump(target.id);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentUser, engineState.isPlaying, audioEngine, currentSong, handleNextSong, handlePrevSong]);
-
-  // BPM direct change
-  const handleBpmChange = (newBpm: number) => {
-    if (currentSong) {
-      currentSong.bpm = newBpm;
-      setSongs([...songs]);
-    }
-  };
-
-  // Transposição de Tom em Tempo Real (Pitchproof Constant-Tempo Pitch Shift — Protege Bateria/Loops/Click/Guia)
+  // Transposição de Tom em Tempo Real (Pitchproof Constant-Tempo — protege Bateria/Loops/Click/Guia)
   const handlePitchShiftChange = (semitones: number) => {
     audioEngine.setPitchShift(semitones);
-    setSongs([...songs]);
+    touch();
   };
 
-  // Alternar Pitch Lock de um canal específico
-  const handleTogglePitchLock = (stemId: string) => {
-    if (!currentSong) return;
-    const target = currentSong.stems.find((s) => s.id === stemId);
-    if (target) {
+  const handleTogglePitchLock = (stemId: string) =>
+    withCurrentSong((song) => {
+      const target = song.stems.find((s) => s.id === stemId);
+      if (!target) return;
       target.isPitchShiftable = !target.isPitchShiftable;
-      audioEngine.setPitchShift(currentSong.pitchShiftSemitones);
-      setSongs([...songs]);
-    }
-  };
+      audioEngine.setPitchShift(song.pitchShiftSemitones);
+    })();
 
-  // EnsaioMix® (RehearsalMix MultiTracks.com.br: Mix Aumentada / Mix Diminuta)
-  const handleApplyEnsaioMix = (instrument: StemType, mode: EnsaioMixMode) => {
-    if (!currentSong) return;
-    EnsaioMixService.applyEnsaioMix(currentSong.stems, instrument, mode);
-    for (const stem of currentSong.stems) {
-      audioEngine.setStemVolume(stem.id, stem.volume);
-    }
-    setSongs([...songs]);
-  };
+  // EnsaioMix® (Mix Aumentada / Mix Diminuta)
+  const handleApplyEnsaioMix = (instrument: StemType, mode: EnsaioMixMode) =>
+    withCurrentSong((song) => {
+      EnsaioMixService.applyEnsaioMix(song.stems, instrument, mode);
+      for (const stem of song.stems) {
+        audioEngine.setStemVolume(stem.id, stem.volume);
+      }
+    })();
 
-  // VST Channel Strip & Smart Auto-Fix DSP (Plugin Boutique Engine)
+  // VST Channel Strip & Smart Auto-Fix DSP
   const handleOpenVstRack = (stemId?: string) => {
     setSelectedVstStemId(stemId || null);
     setIsVstRackOpen(true);
   };
 
-  const handleUpdateStemDsp = (stemId: string, partial: Partial<StemDspConfig>) => {
-    if (!currentSong) return;
-    const target = currentSong.stems.find((s) => s.id === stemId);
-    if (target) {
-      target.setDsp(partial);
+  const handleUpdateStemDsp = (stemId: string, partial: Partial<StemDspConfig>) =>
+    withCurrentSong((song) => {
+      song.stems.find((s) => s.id === stemId)?.setDsp(partial);
       audioEngine.refreshDspChain();
-      setSongs([...songs]);
-    }
-  };
+    })();
 
-  const handleAutoFixAllStems = () => {
-    if (!currentSong) return;
-    VstPluginRackService.applySmartAutoFixAll(currentSong.stems);
+  const handleAutoFixAllStems = withCurrentSong((song) => {
+    VstPluginRackService.applySmartAutoFixAll(song.stems);
     audioEngine.refreshDspChain();
-    setSongs([...songs]);
-  };
+  });
 
-  const handleResetAllDsp = () => {
-    if (!currentSong) return;
-    VstPluginRackService.resetAllDsp(currentSong.stems);
+  const handleResetAllDsp = withCurrentSong((song) => {
+    VstPluginRackService.resetAllDsp(song.stems);
     audioEngine.refreshDspChain();
-    setSongs([...songs]);
-  };
+  });
 
-  // Mixer Callbacks
-  const handleVolumeChange = (stemId: string, vol: number) => {
-    audioEngine.setStemVolume(stemId, vol);
-    setSongs([...songs]);
-  };
+  // Mixer: o motor muta o TrackStem; touch() redesenha faders e botões
+  const mixerCommand =
+    <A extends unknown[]>(command: (...args: A) => void) =>
+    (...args: A) => {
+      command(...args);
+      touch();
+    };
 
-  const handlePanChange = (stemId: string, pan: number) => {
-    audioEngine.setStemPan(stemId, pan);
-    setSongs([...songs]);
-  };
+  const handleVolumeChange = mixerCommand((stemId: string, vol: number) => audioEngine.setStemVolume(stemId, vol));
+  const handlePanChange = mixerCommand((stemId: string, pan: number) => audioEngine.setStemPan(stemId, pan));
+  const handleToggleMute = mixerCommand((stemId: string) => audioEngine.toggleStemMute(stemId));
+  const handleToggleSolo = mixerCommand((stemId: string) => audioEngine.toggleStemSolo(stemId));
+  const handleResetMixer = mixerCommand(() => audioEngine.resetMixer());
+  const handleClearAllSolos = mixerCommand(() => audioEngine.clearAllSolos());
 
-  const handleToggleMute = (stemId: string) => {
-    audioEngine.toggleStemMute(stemId);
-    setSongs([...songs]);
-  };
-
-  const handleToggleSolo = (stemId: string) => {
-    audioEngine.toggleStemSolo(stemId);
-    setSongs([...songs]);
-  };
-
-  const handleResetMixer = () => {
-    audioEngine.resetMixer();
-    setSongs([...songs]);
-  };
-
-  // Gerenciamento do Repertório do Culto (Excluir, Reordenar e Restaurar)
+  // Gerenciamento do Repertório (Excluir, Reordenar, Restaurar, Importar)
   const handleRemoveSong = (index: number) => {
-    if (index < 0 || index >= songs.length) return;
     audioEngine.stop();
-    const targetSong = songs[index];
-    if (targetSong) {
-      void IndexedDbStorageService.deleteCustomSong(targetSong.id);
-    }
-    const nextSongs = songs.filter((_, i) => i !== index);
-    setSongs(nextSongs);
-    if (nextSongs.length === 0) {
-      setCurrentSongIndex(0);
-    } else if (currentSongIndex >= nextSongs.length) {
-      setCurrentSongIndex(nextSongs.length - 1);
-    } else if (index < currentSongIndex) {
-      setCurrentSongIndex(Math.max(0, currentSongIndex - 1));
-    }
-  };
-
-  const handleMoveSong = (fromIndex: number, toIndex: number) => {
-    if (
-      fromIndex < 0 ||
-      fromIndex >= songs.length ||
-      toIndex < 0 ||
-      toIndex >= songs.length ||
-      fromIndex === toIndex
-    ) {
-      return;
-    }
-    const activeId = currentSong?.id;
-    const nextSongs = [...songs];
-    const [moved] = nextSongs.splice(fromIndex, 1);
-    if (moved) {
-      nextSongs.splice(toIndex, 0, moved);
-    }
-    setSongs(nextSongs);
-    if (activeId) {
-      const updatedIdx = nextSongs.findIndex((s) => s.id === activeId);
-      if (updatedIdx !== -1) {
-        setCurrentSongIndex(updatedIdx);
-      }
-    }
+    setlist.remove(index);
   };
 
   const handleRestoreDefaultSetlist = () => {
     audioEngine.stop();
-    setSongs(DemoWorshipSongs.getPresetSongs());
-    setCurrentSongIndex(0);
+    setlist.restoreDefaults();
   };
 
-  // Pad Handlers
-  const handleSelectPadKey = (key: MusicalKey) => {
-    setCurrentPadKey(key);
-    padEngine.play(key, padVolume);
-    setIsPadActive(true);
-  };
-
-  const handleTogglePad = () => {
-    if (isPadActive) {
-      padEngine.stop(1.5);
-      setIsPadActive(false);
-    } else {
-      const keyToPlay = currentPadKey || (currentSong?.currentKey as MusicalKey) || 'B';
-      setCurrentPadKey(keyToPlay);
-      padEngine.play(keyToPlay, padVolume);
-      setIsPadActive(true);
-    }
-  };
-
-  const handlePadVolumeChange = (vol: number) => {
-    setPadVolume(vol);
-    if (isPadActive && currentPadKey) {
-      padEngine.play(currentPadKey, vol);
-    }
-  };
-
-  // Importar música local (.ZIP ou WAV/MP3)
-  const handleImportCustomSong = (newSong: Song) => {
-    setSongs((prev) => [...prev, newSong]);
-    setCurrentSongIndex(songs.length);
-  };
-
-  // Importar setlist completo via JSON
   const handleImportFullSetlist = (importedSongs: Song[]) => {
     audioEngine.stop();
-    setSongs(importedSongs);
-    setCurrentSongIndex(0);
-  };
-
-  // Adicionar música do Banco de VS na Nuvem
-  const handleAddCloudSong = (cloudSong: Song) => {
-    setSongs((prev) => [...prev, cloudSong]);
-    setCurrentSongIndex(songs.length);
+    setlist.replaceAll(importedSongs);
   };
 
   // Se o usuário não estiver autenticado, exibe a tela de login
@@ -455,10 +211,7 @@ export const App: React.FC = () => {
       <PendingApprovalModal
         user={currentUser}
         authService={authService}
-        onRefreshApproval={() => {
-          const u = authService.getCurrentUser();
-          setCurrentUser(u);
-        }}
+        onRefreshApproval={() => setCurrentUser(authService.getCurrentUser())}
         onSignOut={() => {
           void authService.signOut();
           setCurrentUser(null);
@@ -470,42 +223,12 @@ export const App: React.FC = () => {
   return (
     <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
       {/* Alerta de Segurança de Rota de Áudio de Palco (ENG-02) */}
-      {engineState.routeHealth === 'lost' && (
-        <div className="bg-red-950/90 border-b border-red-500 text-red-100 px-4 py-2 flex items-center justify-between z-50 text-xs sm:text-sm animate-pulse">
-          <div className="flex items-center gap-2">
-            <span className="font-bold uppercase tracking-wider bg-red-600 px-2 py-0.5 rounded text-[10px] text-white">Falha de Saída</span>
-            <span>{engineState.routeLossReason || 'A interface de áudio foi desconectada. Reprodução interrompida para proteger PA e fones.'}</span>
-          </div>
-          <button
-            onClick={() => setIsRoutingModalOpen(true)}
-            className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-semibold rounded text-xs transition"
-          >
-            Abrir Roteamento
-          </button>
-        </div>
-      )}
-      {engineState.routeHealth === 'reconnected' && (
-        <div className="bg-amber-950/90 border-b border-amber-500 text-amber-100 px-4 py-2 flex items-center justify-between z-50 text-xs sm:text-sm">
-          <div className="flex items-center gap-2">
-            <span className="font-bold uppercase tracking-wider bg-amber-600 px-2 py-0.5 rounded text-[10px] text-white">Interface Reconectada</span>
-            <span>Interface de áudio restabelecida. Revalide a rota física antes de retomar o playback.</span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => void audioEngine.confirmRouteRecovery()}
-              className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded text-xs transition"
-            >
-              Revalidar Saída Agora
-            </button>
-            <button
-              onClick={() => setIsRoutingModalOpen(true)}
-              className="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs text-amber-200"
-            >
-              Verificar Canais
-            </button>
-          </div>
-        </div>
-      )}
+      <RouteHealthBanner
+        routeHealth={engineState.routeHealth}
+        routeLossReason={engineState.routeLossReason}
+        onOpenRouting={() => setIsRoutingModalOpen(true)}
+        onConfirmRecovery={() => void audioEngine.confirmRouteRecovery()}
+      />
 
       {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro, Plugins VST e Banco de VS */}
       <StageHeader
@@ -565,9 +288,9 @@ export const App: React.FC = () => {
           currentUser={currentUser}
           onSelectSong={handleSelectSong}
           onRemoveSong={handleRemoveSong}
-          onMoveSong={handleMoveSong}
+          onMoveSong={setlist.move}
           onRestoreDefaultSetlist={handleRestoreDefaultSetlist}
-          onImportCustomSong={handleImportCustomSong}
+          onImportCustomSong={setlist.add}
           onImportFullSetlist={handleImportFullSetlist}
         />
 
@@ -595,24 +318,23 @@ export const App: React.FC = () => {
             onSeek={(secs) => audioEngine.seek(secs)}
           />
 
-          {/* Mixer de Multitracks com Faders de Palco, Master Bus RTA, Mudança de Tom c/ Pitch Lock, EnsaioMix, Rack VST e VU Meters Estéreo */}
+          {/* Mixer de Multitracks com Faders de Palco, Master Bus RTA, Pitch Lock, EnsaioMix, Rack VST e VU Meters */}
           {currentSong && (
             <MultitrackMixer
               stems={currentSong.stems}
               routingMode={engineState.routingMode}
               isPlaying={engineState.isPlaying}
               isSoloClickActive={engineState.isSoloClickActive}
-              stemLevels={engineState.stemLevels}
+              meterSource={audioEngine}
               originalKey={currentSong.originalKey}
               currentKey={currentSong.currentKey}
               pitchShiftSemitones={currentSong.pitchShiftSemitones}
               masterVolume={engineState.masterVolume}
-              masterRta={engineState.masterRta}
               onVolumeChange={handleVolumeChange}
               onPanChange={handlePanChange}
               onToggleMute={handleToggleMute}
               onToggleSolo={handleToggleSolo}
-              onClearAllSolos={() => audioEngine.clearAllSolos()}
+              onClearAllSolos={handleClearAllSolos}
               onMasterVolumeChange={(vol) => audioEngine.setMasterVolume(vol)}
               onResetMixer={handleResetMixer}
               onPitchShiftChange={handlePitchShiftChange}
@@ -627,14 +349,14 @@ export const App: React.FC = () => {
 
       {/* Barra Inferior: Pad Contínuo para Oração / Transição de Músicas com Auto-Follow */}
       <AmbientPadBar
-        currentPadKey={currentPadKey}
-        isPadActive={isPadActive}
-        padVolume={padVolume}
-        isAutoFollowEnabled={isAutoFollowPad}
-        onSelectKey={handleSelectPadKey}
-        onTogglePad={handleTogglePad}
-        onToggleAutoFollow={() => setIsAutoFollowPad((prev) => !prev)}
-        onPadVolumeChange={handlePadVolumeChange}
+        currentPadKey={pad.currentKey}
+        isPadActive={pad.isActive}
+        padVolume={pad.volume}
+        isAutoFollowEnabled={pad.isAutoFollow}
+        onSelectKey={pad.selectKey}
+        onTogglePad={() => pad.toggle(currentSong)}
+        onToggleAutoFollow={pad.toggleAutoFollow}
+        onPadVolumeChange={pad.setVolume}
       />
 
       {/* Modal de Configuração de Roteamento (4CH Discreto / IEM / PA Split) */}
@@ -666,20 +388,17 @@ export const App: React.FC = () => {
       />
 
       {/* Modal de Mapeamento MIDI e Pedaleiras USB */}
-      <MidiModal
-        isOpen={isMidiModalOpen}
-        onClose={() => setIsMidiModalOpen(false)}
-      />
+      <MidiModal isOpen={isMidiModalOpen} onClose={() => setIsMidiModalOpen(false)} />
 
-      {/* Modal do Banco de VS na Nuvem (Google Cloud) */}
+      {/* Modal do Banco de VS na Nuvem */}
       <CloudVSLibraryModal
         isOpen={isCloudLibraryOpen}
         canUpload={currentUser.canUploadVS}
         onClose={() => setIsCloudLibraryOpen(false)}
-        onAddSongToSetlist={handleAddCloudSong}
+        onAddSongToSetlist={setlist.add}
       />
 
-      {/* Modal Cifra Pro® & Mapa Dinâmico Sincronizado (ChartBuilder MultiTracks.com.br) */}
+      {/* Modal Cifra Pro® & Mapa Dinâmico Sincronizado */}
       <CifraProModal
         isOpen={isCifraModalOpen}
         song={currentSong}
@@ -689,7 +408,7 @@ export const App: React.FC = () => {
         onPitchShiftChange={handlePitchShiftChange}
       />
 
-      {/* Modal Rack de Plugins VST & Channel Strip DSP (Plugin Boutique Free FX Engine) */}
+      {/* Modal Rack de Plugins VST & Channel Strip DSP */}
       {currentSong && (
         <VstPluginRackModal
           isOpen={isVstRackOpen}
@@ -703,10 +422,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Modal Didático de Operação no Culto (Manual de Palco) */}
-      <HelpGuideModal
-        isOpen={isHelpGuideOpen}
-        onClose={() => setIsHelpGuideOpen(false)}
-      />
+      <HelpGuideModal isOpen={isHelpGuideOpen} onClose={() => setIsHelpGuideOpen(false)} />
 
       {/* Modal de Gestão de Usuários, Aprovações e Convites (Admin / Líder) */}
       <AdminUsersModal

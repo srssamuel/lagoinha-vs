@@ -13,6 +13,16 @@ export interface MasterRtaData {
   peakR: number;     // 0.0 to 1.5
 }
 
+/**
+ * Telemetria de medidores (VU por stem + RTA/peaks do Master), publicada a cada quadro
+ * enquanto toca. Fica fora do AudioEngineState para que a UI possa desenhar medidores
+ * via requestAnimationFrame sem re-renderizar a árvore React a 60 fps.
+ */
+export interface MeterFrame {
+  stemLevels: Record<string, number>;
+  masterRta: MasterRtaData;
+}
+
 export interface AudioOutputDeviceInfo {
   deviceId: string;
   label: string;
@@ -37,11 +47,9 @@ export interface AudioEngineState {
   isSoloClickActive: boolean;
   isLoopClickActive: boolean;
   masterVolume: number;
-  stemLevels?: Record<string, number>;
   countInBars: number;     // 0 = Off, 1 = 1 Bar, 2 = 2 Bars
   isCountingIn: boolean;   // True during pre-roll count-in
   countInBeat: number;     // Current countdown beat (1, 2, 3, 4...)
-  masterRta?: MasterRtaData;
   audioHardwareChannels?: number; // Detected physical hardware channels on destination
   availableAudioDevices?: AudioOutputDeviceInfo[];
   selectedAudioDeviceId?: string;
@@ -78,5 +86,12 @@ export interface AudioEnginePort {
   confirmRouteRecovery(): Promise<boolean>;
   panic(): void; // Emergency fade out
   getState(): AudioEngineState;
+  /** Estado de transporte/roteamento; emitido só quando muda (tempo quantizado em 100 ms). */
   subscribe(listener: (state: AudioEngineState) => void): () => void;
+  getMeterFrame(): MeterFrame;
+  /** Medidores a cada quadro de animação enquanto toca; um quadro zerado ao parar. */
+  subscribeMeters(listener: (frame: MeterFrame) => void): () => void;
 }
+
+/** Fatia mínima do motor que os componentes de medidor precisam. */
+export type MeterSource = Pick<AudioEnginePort, 'getMeterFrame' | 'subscribeMeters'>;

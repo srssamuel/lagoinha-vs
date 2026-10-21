@@ -1,4 +1,14 @@
-import { AudioEnginePort, AudioEngineState, AudioOutputDeviceInfo, AudioRouteHealth } from '../../application/ports/AudioEnginePort';
+import {
+  AudioEnginePort,
+  AudioEngineState,
+  AudioOutputDeviceInfo,
+  AudioRouteHealth,
+  MasterRtaData,
+  MeterFrame
+} from '../../application/ports/AudioEnginePort';
+
+/** Resolução temporal do estado emitido ao React durante o playback (playhead/relógio). */
+const STATE_TIME_RESOLUTION_S = 0.1;
 import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
@@ -66,6 +76,8 @@ export class WebAudioEngine implements AudioEnginePort {
 
   // State update listeners
   private listeners: Set<(state: AudioEngineState) => void> = new Set();
+  private meterListeners: Set<(frame: MeterFrame) => void> = new Set();
+  private lastStateSignature: string = '';
   private animationFrameId: number | null = null;
 
   // Detecção de Hardware e Canais Físicos/Virtuais
@@ -637,7 +649,33 @@ export class WebAudioEngine implements AudioEnginePort {
     const currentBar = Math.floor(currentTime / secondsPerBar) + 1;
     const beatInBar = Math.floor((currentTime % secondsPerBar) / secondsPerBeat) + 1;
     const activeSection = this.currentSong?.getActiveSection(currentTime);
+    const audioHardwareChannels = this.ctx ? (this.ctx.destination.maxChannelCount || 2) : 2;
 
+    return {
+      isPlaying: this.isPlaying,
+      currentTime,
+      duration,
+      currentBar,
+      currentBeat: beatInBar,
+      routingMode: this.routingMode,
+      queuedSectionId: this.queuedSectionId,
+      activeSectionId: activeSection?.id || null,
+      isLoopingSection: this.isLoopingSection,
+      isSoloClickActive: this.isSoloClickActive,
+      isLoopClickActive: this.isLoopClickActive,
+      masterVolume: this.masterVolume,
+      countInBars: this.countInBars,
+      isCountingIn: this.isCountingIn,
+      countInBeat: this.countInBeat,
+      audioHardwareChannels,
+      availableAudioDevices: this.availableAudioDevices,
+      selectedAudioDeviceId: this.selectedAudioDeviceId,
+      routeHealth: this.routeHealth,
+      routeLossReason: this.routeLossReason
+    };
+  }
+
+  public getMeterFrame(): MeterFrame {
     const stemLevels: Record<string, number> = {};
     if (this.currentSong) {
       const hasAnySolo = this.currentSong.hasSoloTrack;
@@ -740,7 +778,7 @@ export class WebAudioEngine implements AudioEnginePort {
     const peakL = Number(Math.min(1.5, maxLeft * this.masterVolume).toFixed(2));
     const peakR = Number(Math.min(1.5, maxRight * this.masterVolume).toFixed(2));
 
-    const masterRta = {
+    const masterRta: MasterRtaData = {
       sub,
       low,
       mid,
@@ -752,38 +790,19 @@ export class WebAudioEngine implements AudioEnginePort {
       peakR
     };
 
-    const audioHardwareChannels = this.ctx ? (this.ctx.destination.maxChannelCount || 2) : 2;
-
-    return {
-      isPlaying: this.isPlaying,
-      currentTime,
-      duration,
-      currentBar,
-      currentBeat: beatInBar,
-      routingMode: this.routingMode,
-      queuedSectionId: this.queuedSectionId,
-      activeSectionId: activeSection?.id || null,
-      isLoopingSection: this.isLoopingSection,
-      isSoloClickActive: this.isSoloClickActive,
-      isLoopClickActive: this.isLoopClickActive,
-      masterVolume: this.masterVolume,
-      stemLevels,
-      countInBars: this.countInBars,
-      isCountingIn: this.isCountingIn,
-      countInBeat: this.countInBeat,
-      masterRta,
-      audioHardwareChannels,
-      availableAudioDevices: this.availableAudioDevices,
-      selectedAudioDeviceId: this.selectedAudioDeviceId,
-      routeHealth: this.routeHealth,
-      routeLossReason: this.routeLossReason
-    };
+    return { stemLevels, masterRta };
   }
 
   public subscribe(listener: (state: AudioEngineState) => void): () => void {
     this.listeners.add(listener);
     listener(this.getState());
     return () => this.listeners.delete(listener);
+  }
+
+  public subscribeMeters(listener: (frame: MeterFrame) => void): () => void {
+    this.meterListeners.add(listener);
+    listener(this.getMeterFrame());
+    return () => this.meterListeners.delete(listener);
   }
 
   private getCurrentPlaybackTime(): number {
@@ -1014,7 +1033,8 @@ export class WebAudioEngine implements AudioEnginePort {
         }
       }
 
-      this.notifyState();
+      this.notifyMeters();
+      this.notifyStateIfChanged();
       this.animationFrameId = requestAnimationFrame(loop);
     };
 
@@ -1254,8 +1274,41 @@ export class WebAudioEngine implements AudioEnginePort {
     return false;
   }
 
+  /** Emissão forçada: comandos do operador e eventos de rota sempre chegam à UI. */
   private notifyState(): void {
     const state = this.getState();
+    this.lastStateSignature = WebAudioEngine.stateSignature(state);
     this.listeners.forEach((l) => l(state));
+    // Ao parar/pausar o loop rAF não roda mais: um quadro final zera os medidores.
+    if (!this.isPlaying) this.notifyMeters();
+  }
+
+  /** Emissão do loop rAF: só quando algo visível mudou (tempo arredondado em 100 ms). */
+  private notifyStateIfChanged(): void {
+    if (this.listeners.size === 0) return;
+    const state = this.getState();
+    const signature = WebAudioEngine.stateSignature(state);
+    if (signature === this.lastStateSignature) return;
+    this.lastStateSignature = signature;
+    this.listeners.forEach((l) => l(state));
+  }
+
+  private notifyMeters(): void {
+    if (this.meterListeners.size === 0) return;
+    const frame = this.getMeterFrame();
+    this.meterListeners.forEach((l) => l(frame));
+  }
+
+  private static stateSignature(state: AudioEngineState): string {
+    return [
+      state.isPlaying,
+      Math.floor(state.currentTime / STATE_TIME_RESOLUTION_S),
+      state.currentBar,
+      state.currentBeat,
+      state.activeSectionId,
+      state.queuedSectionId,
+      state.isCountingIn,
+      state.countInBeat
+    ].join('|');
   }
 }
