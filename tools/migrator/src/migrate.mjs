@@ -121,6 +121,7 @@ export function pickPilot(db, { maxSongBytes = 1.5e9, maxZipBytes = 2e9 } = {}) 
 export async function runMigrate({
   cfg, db, storage, registry, log = () => {}, pilot = false, signal, abortAfter, assumeTimeSignature = null,
   categories = DEFAULT_CATEGORIES, hooks = {}, openContent = makeContentOpener(cfg), retryFailed = false, concurrency = 1,
+  readRetryMs = 10_000,
 }) {
   const runId = startRun(db, pilot ? 'migrate-pilot' : 'migrate');
   const summary = {
@@ -170,7 +171,7 @@ export async function runMigrate({
         }
         inFlight.add(key);
         try {
-          await processUnit(ctx, key);
+          await withReadRetry(() => processUnit(ctx, key), { log, key, waitMs: readRetryMs });
           summary.processed++;
           if (summary.processed % 25 === 0) log(`${summary.processed} de ${work.length} itens processados`);
         } catch (e) {
@@ -205,6 +206,22 @@ export async function runMigrate({
   summary.registryStats = registry.stats;
   finishRun(db, runId, summary);
   return summary;
+}
+
+// Drive para desktop, ao baixar sob demanda, devolve erros passageiros de leitura (visto: EISDIR e ETIMEDOUT em
+// arquivos comuns que leem normalmente depois). Esses repetem com espera crescente; o resto falha na hora.
+const TRANSIENT_READ = new Set(['EISDIR', 'ETIMEDOUT', 'EIO', 'EBUSY', 'ECONNRESET', 'EAGAIN', 'UNKNOWN']);
+
+export async function withReadRetry(fn, { attempts = 4, waitMs = 10_000, log = () => {}, key, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!TRANSIENT_READ.has(e?.code) || i >= attempts - 1) throw e;
+      log(`leitura do item ${key} falhou (${e.code}); nova tentativa ${i + 2} de ${attempts}`);
+      await sleep(waitMs * 2 ** i);
+    }
+  }
 }
 
 function checkAbort(signal, summary, abortAfter) {

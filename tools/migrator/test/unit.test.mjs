@@ -15,6 +15,28 @@ import { toFields, fromFields } from '../src/targets/registry-firestore.mjs';
 import { r2Key, routeScope } from '../src/targets/keys.mjs';
 import { listZipEntries, openZipEntryStream } from '../src/zip.mjs';
 import { buildZip, makeMp3, makeWav, sha256 } from './helpers.mjs';
+import { withReadRetry } from '../src/migrate.mjs';
+
+test('leitura passageira do Drive (EISDIR/ETIMEDOUT) tenta de novo; erro de verdade falha na hora', async () => {
+  const waits = [];
+  const sleep = async (ms) => void waits.push(ms);
+  let n = 0;
+  const flaky = async () => {
+    n++;
+    if (n < 3) throw Object.assign(new Error('x'), { code: n === 1 ? 'EISDIR' : 'ETIMEDOUT' });
+    return 'ok';
+  };
+  assert.equal(await withReadRetry(flaky, { waitMs: 10, sleep }), 'ok');
+  assert.deepEqual(waits, [10, 20]);
+
+  let m = 0;
+  await assert.rejects(withReadRetry(async () => { m++; throw new Error('sha256_mismatch'); }, { sleep }), /sha256_mismatch/);
+  assert.equal(m, 1);
+
+  let k = 0;
+  await assert.rejects(withReadRetry(async () => { k++; throw Object.assign(new Error('t'), { code: 'ETIMEDOUT' }); }, { attempts: 3, sleep }), /t/);
+  assert.equal(k, 3);
+});
 
 const B = (...a) => Buffer.from(a);
 const pad = (b, n = 64) => Buffer.concat([b, Buffer.alloc(Math.max(0, n - b.length))]);
