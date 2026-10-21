@@ -90,6 +90,33 @@ export interface FirebaseAccountOptions {
   defaultChurchId?: string;
   /** Convite vindo da URL (?invite=...): resgatado no primeiro login de quem ainda não é membro. */
   pendingInviteToken?: string | null;
+  /** Onde lembrar o último papel conhecido para abrir o app sem internet (padrão: localStorage; null desliga). */
+  memberStorage?: MemberStorage | null;
+}
+
+/** Último membro lido com sucesso: só serve para reabrir o app SEM REDE; online o Firestore sempre manda e as regras decidem. */
+interface RememberedMember {
+  churchId: string;
+  role: string;
+  status: string;
+  displayName: string;
+  instrument?: string;
+}
+
+const REMEMBERED_PREFIX = 'lvs.member.';
+
+type MemberStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+function defaultMemberStorage(): MemberStorage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isOfflineError(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === 'unavailable';
 }
 
 /**
@@ -103,6 +130,7 @@ export class FirebaseAccountService implements AuthPort, MembershipPort {
   private readonly defaultChurchId: string;
   private pendingInvite: string | null;
   private refreshing: Promise<void> = Promise.resolve();
+  private readonly memberStorage: MemberStorage | null;
 
   constructor(
     private readonly auth: Auth,
@@ -111,6 +139,7 @@ export class FirebaseAccountService implements AuthPort, MembershipPort {
   ) {
     this.defaultChurchId = options.defaultChurchId ?? 'lagoinha-jp';
     this.pendingInvite = options.pendingInviteToken ?? null;
+    this.memberStorage = options.memberStorage === undefined ? defaultMemberStorage() : options.memberStorage;
     onAuthStateChanged(this.auth, (fbUser) => {
       this.refreshing = this.refresh(fbUser).catch(() => {
         this.currentUser = null;
@@ -368,12 +397,24 @@ export class FirebaseAccountService implements AuthPort, MembershipPort {
       this.notify();
       return;
     }
-    const profile = (await getDoc(doc(this.db, 'users', fbUser.uid))).data();
-    const church =
-      typeof profile?.primaryChurchId === 'string' && CHURCH_ID.test(profile.primaryChurchId)
-        ? profile.primaryChurchId
-        : this.defaultChurchId;
-    const member = (await getDoc(doc(this.db, 'churches', church, 'members', fbUser.uid))).data();
+    let church: string;
+    let member: DocumentData | undefined;
+    try {
+      const profile = (await getDoc(doc(this.db, 'users', fbUser.uid))).data();
+      church =
+        typeof profile?.primaryChurchId === 'string' && CHURCH_ID.test(profile.primaryChurchId)
+          ? profile.primaryChurchId
+          : this.defaultChurchId;
+      member = (await getDoc(doc(this.db, 'churches', church, 'members', fbUser.uid))).data();
+      this.remember(fbUser.uid, church, member);
+    } catch (err) {
+      // Sem rede (palco sem Wi-Fi): reabre com o último papel conhecido desta mesma conta. Só vale para
+      // 'unavailable'; negação das regras ou outro erro continuam derrubando o login.
+      const remembered = isOfflineError(err) ? this.recall(fbUser.uid) : null;
+      if (!remembered) throw err;
+      church = remembered.churchId;
+      member = { role: remembered.role, status: remembered.status, displayName: remembered.displayName, instrument: remembered.instrument };
+    }
     this.currentUser = member
       ? memberToUser(fbUser.uid, church, { displayName: fbUser.displayName, ...member }, fbUser.email ?? '')
       : new User({
@@ -387,6 +428,48 @@ export class FirebaseAccountService implements AuthPort, MembershipPort {
           churchBranch: CHURCH_NAMES[church] ?? church
         });
     this.notify();
+  }
+
+  private remember(uid: string, churchId: string, member: DocumentData | undefined): void {
+    if (!this.memberStorage) return;
+    if (!member) {
+      // Saiu da igreja (ou nunca entrou): não pode reabrir offline com o papel antigo.
+      try {
+        this.memberStorage.removeItem(`${REMEMBERED_PREFIX}${uid}`);
+      } catch {
+        // armazenamento bloqueado: nada a limpar
+      }
+      return;
+    }
+    const entry: RememberedMember = {
+      churchId,
+      role: String(member.role ?? ''),
+      status: String(member.status ?? ''),
+      displayName: String(member.displayName ?? ''),
+      instrument: typeof member.instrument === 'string' ? member.instrument : undefined
+    };
+    try {
+      this.memberStorage.setItem(`${REMEMBERED_PREFIX}${uid}`, JSON.stringify(entry));
+    } catch {
+      // armazenamento cheio ou bloqueado: o app só perde a abertura offline
+    }
+  }
+
+  private recall(uid: string): RememberedMember | null {
+    try {
+      const raw = this.memberStorage?.getItem(`${REMEMBERED_PREFIX}${uid}`);
+      const parsed = raw ? (JSON.parse(raw) as Partial<RememberedMember>) : null;
+      if (!parsed || typeof parsed.churchId !== 'string' || !CHURCH_ID.test(parsed.churchId)) return null;
+      return {
+        churchId: parsed.churchId,
+        role: String(parsed.role ?? ''),
+        status: String(parsed.status ?? ''),
+        displayName: String(parsed.displayName ?? ''),
+        instrument: parsed.instrument
+      };
+    } catch {
+      return null;
+    }
   }
 
   private friendlyAuthError(err: unknown): string {

@@ -14,7 +14,7 @@ export function makeTargets(cfg, { storage = 'local', registry = 'local' } = {})
           })();
   const r =
     registry === 'firestore'
-      ? new FirestoreRegistry({ projectId: cfg.firebaseProjectId, tokenFile: cfg.tokenFile })
+      ? new FirestoreRegistry({ projectId: cfg.firebaseProjectId, tokenFile: cfg.tokenFile, ...(cfg.firestoreBaseUrl ? { baseUrl: cfg.firestoreBaseUrl.replace(/\/+$/, '') } : {}) })
       : registry === 'local'
         ? new LocalRegistry(cfg.firestoreLocalDir)
         : (() => {

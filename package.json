@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rules": "node scripts/test-rules.mjs",
+    "demo:e2e": "node --no-warnings scripts/demo-e2e.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

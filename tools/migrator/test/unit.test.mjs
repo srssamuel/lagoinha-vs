@@ -199,3 +199,19 @@ test('firestore REST: codifica/decodifica valores tipados', () => {
 test('gzip de ALS e sniff: gzip nao e confundido com audio', () => {
   assert.equal(detectFormat(zlib.gzipSync(Buffer.from('x'))).kind, 'archive');
 });
+
+test('makeTargets: MIGRATOR_FIRESTORE_BASE aponta o registro para o emulador (e o padrao continua o Firestore real)', async () => {
+  const { loadConfig } = await import('../src/config.mjs');
+  const { makeTargets } = await import('../src/targets/index.mjs');
+  const tokenFile = path.join(os.tmpdir(), `tok-${process.pid}.txt`);
+  fs.writeFileSync(tokenFile, 'a.b.c');
+  try {
+    const base = { home: os.tmpdir(), tokenFile };
+    const emu = makeTargets(loadConfig({ MIGRATOR_FIRESTORE_BASE: 'http://127.0.0.1:8080/' }, base), { registry: 'firestore' });
+    assert.equal(emu.registry.root, 'http://127.0.0.1:8080/v1/projects/lagoinha-joao-pessoa/databases/(default)/documents');
+    const prod = makeTargets(loadConfig({}, base), { registry: 'firestore' });
+    assert.ok(prod.registry.root.startsWith('https://firestore.googleapis.com/'));
+  } finally {
+    fs.rmSync(tokenFile, { force: true });
+  }
+});

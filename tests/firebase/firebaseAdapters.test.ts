@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { initializeTestEnvironment, RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { deleteApp, getApps } from 'firebase/app';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { deleteDoc, disableNetwork, doc, enableNetwork, setDoc, Timestamp } from 'firebase/firestore';
 import { connectFirebase, FirebaseHandles } from '../../src/infrastructure/firebase/firebaseApp';
 import { FirebaseAccountService } from '../../src/infrastructure/firebase/FirebaseAccountService';
 import { FirestoreSetlistRepository } from '../../src/infrastructure/firebase/FirestoreSetlistRepository';
@@ -229,5 +230,61 @@ describe('F2: adaptadores Firebase no emulador', () => {
     await expect(
       repo.create({ id: `x-${run}`, churchId: CHURCH, title: 'x', serviceDate: '2026-10-26', status: 'draft', updatedBy: '', items: [] })
     ).rejects.toThrow();
+  });
+  it('sem rede, reabre com o último papel conhecido da mesma conta; sem lembrança, não', async () => {
+    const mem = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k)
+    };
+    const first = connectFirebase(ENV, `app-${run}-lembrar`);
+    const online = new FirebaseAccountService(first.auth, first.db, { memberStorage: storage });
+    await online.signInWithEmail(email('admin'), 'senha-forte-1');
+    expect(online.getCurrentUser()?.role).toBe('admin');
+    expect(mem.size).toBe(1);
+
+    // Aparelho que reabre o app: login já guardado, cache do Firestore vazio e rede de dados fora.
+    const reopened = connectFirebase(ENV, `app-${run}-offline`);
+    await signInWithEmailAndPassword(reopened.auth, email('admin'), 'senha-forte-1');
+    await disableNetwork(reopened.db);
+    try {
+      const offline = new FirebaseAccountService(reopened.auth, reopened.db, { memberStorage: storage });
+      await offline.whenReady();
+      expect(offline.getCurrentUser()).toMatchObject({ role: 'admin', isActive: true, churchId: CHURCH });
+
+      const blank = new FirebaseAccountService(reopened.auth, reopened.db, {
+        memberStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
+      });
+      await blank.whenReady();
+      expect(blank.getCurrentUser()).toBeNull();
+    } finally {
+      await enableNetwork(reopened.db);
+    }
+  });
+
+  it('quem sai da igreja perde a lembrança e não reabre offline com o papel antigo', async () => {
+    const mem = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k)
+    };
+    const handles = connectFirebase(ENV, `app-${run}-saiu`);
+    const accounts = new FirebaseAccountService(handles.auth, handles.db, { memberStorage: storage });
+    const user = await accounts.registerWithEmail(email('saiu'), 'senha-forte-6', 'Saiu');
+    await asAdmin(async (db) => {
+      await setDoc(doc(db, 'churches', CHURCH, 'members', user.uid), { role: 'musician', status: 'active', displayName: 'Saiu' });
+    });
+    const again = new FirebaseAccountService(handles.auth, handles.db, { memberStorage: storage });
+    await again.whenReady();
+    expect(mem.size).toBe(1);
+
+    await asAdmin(async (db) => {
+      await deleteDoc(doc(db, 'churches', CHURCH, 'members', user.uid));
+    });
+    const removed = new FirebaseAccountService(handles.auth, handles.db, { memberStorage: storage });
+    await removed.whenReady();
+    expect(mem.size).toBe(0);
   });
 });

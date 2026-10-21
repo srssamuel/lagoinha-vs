@@ -52,6 +52,8 @@ export function loadConfig(env = process.env, overrides = {}) {
     workerUrl: pick('workerUrl', 'MIGRATOR_WORKER_URL', null),
     tokenFile: overrides.tokenFile ?? env.MIGRATOR_ID_TOKEN_FILE ?? null,
     firebaseProjectId: pick('firebaseProjectId', 'MIGRATOR_FIREBASE_PROJECT_ID', 'lagoinha-joao-pessoa'),
+    // Emulador do Firestore (ex.: http://127.0.0.1:8080); vazio = firestore.googleapis.com
+    firestoreBaseUrl: pick('firestoreBaseUrl', 'MIGRATOR_FIRESTORE_BASE', null),
     // guarda de disco (bytes livres minimos no volume do cache do Drive)
     minFreeBytes: overrides.minFreeBytes ?? 8 * 1024 ** 3,
     ...(overrides.extra ?? {}),

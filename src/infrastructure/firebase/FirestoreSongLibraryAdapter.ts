@@ -19,6 +19,7 @@ import { isCatalogEligible } from '../../domain/services/AccessPolicy';
 import { inferSectionType, inferStemType } from '../../domain/services/StemNameClassifier';
 import { formatCloudSongKey } from '../../domain/services/CloudSongKey';
 import { SongSection } from '../../domain/value-objects/SongSection';
+import { probeAudioDuration } from '../audio/probeAudioDuration';
 
 /** Item de `versions/{id}.stems` (contrato-stems-worker, seção 7). */
 export interface VersionStem {
@@ -153,11 +154,11 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
     const timeSignature = timeSignatureOf(data.timeSignature);
     const secondsPerBar = (60 / bpm) * timeSignature.beats;
 
-    const tracks = await Promise.all(
+    const loaded = await Promise.all(
       stems.map(async (stem, index) => {
         const blob = await this.stems.get(stem.sha256, { scope, songId: song.id, versionId: chosen });
         if (!blob) throw new Error(`Arquivo do stem "${stem.name}" não está no acervo.`);
-        return new TrackStem({
+        const track = new TrackStem({
           id: `${song.id}-${index}-${stem.sha256.slice(0, 8)}`,
           name: stem.name,
           type: stem.type,
@@ -167,8 +168,13 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
           isSolo: false,
           audioUrl: this.objectUrl(blob)
         });
+        return { track, blob };
       })
     );
+    const tracks = loaded.map((l) => l.track);
+    // O migrador só mede a duração de WAV; mp3/m4a chegam sem durationSec e o motor encerraria a música no instante 0.
+    let duration = typeof data.durationSec === 'number' && data.durationSec > 0 ? data.durationSec : 0;
+    if (duration === 0) duration = Math.max(0, ...(await Promise.all(loaded.map((l) => probeAudioDuration(l.blob)))));
 
     const sections = ((Array.isArray(version.sections) ? version.sections : []) as VersionSection[]).map(
       (sec, i) =>
@@ -192,7 +198,7 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
       currentKey: String(data.originalKey ?? ''),
       bpm,
       timeSignature,
-      duration: typeof data.durationSec === 'number' ? data.durationSec : 0,
+      duration,
       sections,
       stems: tracks,
       churchId: scope.kind === 'church' ? scope.churchId : undefined
