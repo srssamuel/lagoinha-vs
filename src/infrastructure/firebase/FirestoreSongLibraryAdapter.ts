@@ -1,3 +1,4 @@
+import { keyFromStored, keyMetaOf } from '../../domain/value-objects/SongKey';
 import {
   collection,
   doc,
@@ -79,7 +80,8 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
       id,
       title: String(data.title ?? 'Sem título'),
       artist: String(data.artist ?? ''),
-      originalKey: String(data.originalKey ?? ''),
+      originalKey: keyFromStored(data.originalKey, data.keyMeta).value,
+      keyInfo: keyFromStored(data.originalKey, data.keyMeta),
       bpm: typeof data.bpm === 'number' ? data.bpm : 0,
       timeSignature: timeSignatureOf(data.timeSignature),
       duration: typeof data.durationSec === 'number' ? data.durationSec : 0,
@@ -189,13 +191,15 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
         })
     );
 
+    const keyInfo = keyFromStored(data.originalKey, data.keyMeta);
     return new Song({
       // A versão entra no id: o setlist e o cache do aparelho ficam presos à versão ensaiada.
       id: formatCloudSongKey({ source: scope.kind === 'global' ? 'global' : 'church', songId: song.id, versionId: chosen }),
       title: String(data.title ?? song.title),
       artist: String(data.artist ?? ''),
-      originalKey: String(data.originalKey ?? ''),
-      currentKey: String(data.originalKey ?? ''),
+      originalKey: keyInfo.value,
+      keyInfo,
+      currentKey: keyInfo.value,
       bpm,
       timeSignature,
       duration,
@@ -223,13 +227,16 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
     }
 
     const bpm = typeof draft.bpm === 'number' ? draft.bpm : 0;
+    const uploadKey = draft.keyInfo ?? keyFromStored(draft.originalKey);
     const missing = missingForPlayback(bpm, stems);
     const songRef = doc(collection(this.db, songsPath(scope).join('/')));
     const song: DocumentData = {
       title: draft.title.trim().slice(0, 200),
       artist: (draft.artist ?? '').slice(0, 200),
       kind: draft.kind ?? 'song',
-      originalKey: draft.originalKey ?? '',
+      // Sem tom conhecido grava vazio (nunca um tom padrão); a procedência vai em keyMeta.
+      originalKey: uploadKey.value ?? '',
+      keyMeta: keyMetaOf(uploadKey),
       bpm,
       timeSignature: draft.timeSignature ?? { beats: 4, value: 4 },
       durationSec: draft.duration ?? 0,

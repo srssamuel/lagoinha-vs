@@ -10,48 +10,89 @@ import type { StemType } from '../entities/TrackStem';
  *    tonais — Click, Guia, Bateria, Loop e FX ficam fora para não contaminar o cromagrama.
  */
 
-const KEY_TOKEN = /^[A-G](?:#|b)?m?$/;
 const BPM_RES = [/(\d{2,3}(?:[.,]\d+)?)\s*bpm/i, /bpm\s*[:\-_ ]?\s*(\d{2,3}(?:[.,]\d+)?)/i];
-const upperFirst = (k: string) => k.charAt(0).toUpperCase() + k.slice(1);
+/** Marca onde estava o BPM: o tom do nome costuma vir colado nele ("... F 72bpm", "BPM 100 F"). */
+const BPM_MARK = '\u0001';
+/** Separadores fortes: dividem o nome em segmentos. Espaço e sublinhado só dividem em palavras. */
+const HARD_SEPARATORS = /[-–—()[\]{}|｜]+/;
 
-/** Tom escrito no nome (ou null se o nome não traz tom). */
+const SOLFEGE: Record<string, string> = { do: 'C', dó: 'C', re: 'D', ré: 'D', mi: 'E', fa: 'F', fá: 'F', sol: 'G', la: 'A', lá: 'A', si: 'B' };
+
+/**
+ * Gramática de um tom escrito: letra MAIÚSCULA A-G (ou solfejo capitalizado, só depois de "Tom"),
+ * acidente (# b ♯ ♭ "sustenido" "bemol") e modo (m, min, minor, menor; maior/major/maj = maior).
+ * Letras dentro de palavras ("Deus", "Abba") nunca casam: o tom é sempre um token inteiro.
+ */
+const KEY_BODY =
+  '(?:([A-G])|(Do|Dó|Re|Ré|Mi|Fa|Fá|Sol|La|Lá|Si))' + // 1 = letra, 2 = solfejo
+  '(?:\\s?(#|b|♯|♭|sustenido|bemol))?' + // 3 = acidente
+  '(?:\\s?(maior|major|maj|menor|minor|min|m)(?![\\p{L}]))?'; // 4 = modo
+const KEY_ONLY = new RegExp(`^${KEY_BODY}$`, 'u');
+const KEY_AFTER_TOM = new RegExp(`(?:^|[\\s_\\-(\\[:])(?:[Tt]om|TOM|[Kk]ey|KEY|[Tt]onalidade)[\\s_:\\-]*${KEY_BODY}(?![\\p{L}\\d#])`, 'gu');
+
+function buildKey(m: RegExpExecArray | RegExpMatchArray, allowSolfege: boolean): string | null {
+  const letter = m[1] ?? (allowSolfege && m[2] ? SOLFEGE[m[2].toLowerCase()] : undefined);
+  if (!letter) return null;
+  const acc = m[3];
+  const accidental = acc === '#' || acc === '♯' || acc === 'sustenido' ? '#' : acc ? 'b' : '';
+  const mode = m[4];
+  const minor = mode === 'm' || mode === 'min' || mode === 'minor' || mode === 'menor';
+  return `${letter}${accidental}${minor ? 'm' : ''}`;
+}
+
+/** Tom que ocupa o texto inteiro (uma palavra ou "F# menor"), ou null. */
+function wholeKey(text: string, allowSolfege = false): string | null {
+  const m = KEY_ONLY.exec(text.trim());
+  return m ? buildKey(m, allowSolfege) : null;
+}
+
+/** Tom escrito no nome (ou null se o nome não traz tom, ou traz tons que se contradizem). */
 export function parseKeyFromName(rawName: string): string | null {
   let s = rawName.replace(/\.(zip|rar|7z)$/i, '').normalize('NFC');
   s = s.replace(/^\s*\d{1,3}\s*[.\-)]\s*/, '');
   s = s.replace(/^\s*multi-?tracks?\s*[-:_ ]+\s*/i, '');
 
-  let hasBpm = false;
   for (const re of BPM_RES) {
     const m = re.exec(s);
     if (m) {
       const v = Number(m[1]!.replace(',', '.'));
       if (v >= 40 && v <= 240) {
-        hasBpm = true;
-        s = s.replace(m[0], ' ');
+        s = s.replace(m[0], ` ${BPM_MARK} `);
         break;
       }
     }
   }
 
-  // "Tom X" / "Key X"
-  const tom = /(?:^|[\s_\-(])(?:tom|key)[\s_:-]*([A-G](?:#|b)?m?)(?![A-Za-z])/i.exec(s);
-  if (tom) return upperFirst(tom[1]!);
+  const found = new Set<string>();
 
-  // Segmentos entre hífens/parênteses: o último que é só um tom (o primeiro só conta com 3+ segmentos)
-  const parts = s.split(/\s*[-–]\s*|[()]/);
-  for (let i = parts.length - 1; i >= (parts.length > 2 ? 0 : 1); i--) {
-    const seg = parts[i]!.trim().replace(/^_+|_+$/g, '');
-    if (KEY_TOKEN.test(seg)) return seg;
+  // 1. "Tom X" / "Key X" / "Tonalidade X" (aceita solfejo: "Tom Sol maior")
+  for (const m of s.matchAll(KEY_AFTER_TOM)) {
+    const key = buildKey(m, true);
+    if (key) found.add(key);
   }
 
-  // Tom solto no fim depois do BPM: "... 100 F", "..._135 bpm_G", "..._D_72bpm"
-  if (hasBpm) {
-    const tail = /(?:^|[\s_-])([A-G](?:#|b)?m?)[\s_-]*$/.exec(s);
-    if (tail && tail.index > 0) return tail[1]!;
-  }
-  return null;
+  // 2. Segmentos entre separadores fortes: o segmento inteiro é um tom ("- F -", "(F)", "- F# menor")
+  //    No fim do nome, ou no meio com 3+ segmentos (o primeiro segmento é o título).
+  const segments = s.split(HARD_SEPARATORS).map((seg) => seg.replace(/_+/g, ' ').trim()).filter(Boolean);
+  segments.forEach((seg, i) => {
+    const content = seg.replace(BPM_MARK, '').trim();
+    const key = content === seg ? wholeKey(seg) : null;
+    const isEnd = i === segments.length - 1;
+    const leadingKey = i === 0 && /^multi-?tracks?\b/i.test(segments[1] ?? ''); // "C - Multitrack - Titulo"
+    if (key && (isEnd || (i > 0 && segments.length > 2) || leadingKey)) found.add(key);
+    // 3. Tom colado ao BPM dentro do segmento ("F 72bpm", "Gb 62.00bpm", "BPM 100 F", "..._135 bpm_G")
+    const tokens = seg.split(/\s+/);
+    const at = tokens.indexOf(BPM_MARK);
+    if (at >= 0) {
+      const before = at > 0 ? wholeKey(tokens[at - 1]!) : null;
+      if (before) found.add(before);
+      const after = tokens.length === at + 2 && isEnd ? wholeKey(tokens[at + 1]!) : null;
+      if (after) found.add(after);
+    }
+  });
+
+  return found.size === 1 ? [...found][0]! : null;
 }
-
 /** Stems que entram na análise de tom (os demais não têm altura definida ou não seguem a harmonia). */
 export function isTonalStemForKeyDetection(type: StemType): boolean {
   return !['click', 'guide', 'drums', 'loop', 'fx'].includes(type);
@@ -63,21 +104,26 @@ const MINOR_NAMES = ['Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'G#m', '
 const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
-/** Diferença de correlação abaixo da qual maior e relativo menor contam como empate. */
-const RELATIVE_TIE = 0.05;
-
-/** Relativo menor de um tom maior (G -> Em); null se não for um nome de tom maior. */
-function relativeMinorOf(majorKey: string): string | null {
-  const tonic = MAJOR_NAMES.indexOf(majorKey);
-  return tonic < 0 ? null : MINOR_NAMES[(tonic + 9) % 12]!;
-}
-
+/** Abaixo disso o cromagrama não se parece com nenhum tom: não afirmar nada. */
+export const MIN_CORRELATION = 0.5;
+/**
+ * Candidatos a menos de AMBIGUITY_MARGIN (diferença de correlação de Pearson) do melhor são "próximos":
+ * a análise não escolhe entre eles. Inclui maior x relativo menor (G x Em) — o erro clássico do método.
+ */
+export const AMBIGUITY_MARGIN = 0.05;
+const MAX_CANDIDATES = 3;
 export interface KeyEstimate {
   key: string;
   /** Correlação de Pearson do cromagrama com o perfil vencedor (-1..1). */
   correlation: number;
-  /** Diferença para o segundo colocado: perto de 0 = ambíguo (ex.: relativo maior/menor). */
+  /** Diferença para o segundo colocado. Pontuação interna: não é porcentagem de certeza e não vai para a UI. */
   margin: number;
+  /** Tons a menos de AMBIGUITY_MARGIN do melhor (inclui o melhor), do mais ao menos correlacionado. */
+  candidates: string[];
+  /** Mais de um candidato próximo: a análise não escolhe. */
+  ambiguous: boolean;
+  /** Os 5 melhores tons com a correlação (diagnóstico e medição; não vai para a UI). */
+  ranking?: { key: string; r: number }[];
   chroma: number[];
 }
 
@@ -127,7 +173,11 @@ function fftMagnitudes(re: Float64Array): Float64Array {
 }
 
 /** Cromagrama (12 classes, C = 0, referência A4 = 440 Hz) de um sinal mono. */
-export function computeChroma(samples: Float32Array, sampleRate: number): number[] {
+export function computeChroma(
+  samples: Float32Array,
+  sampleRate: number,
+  onProgress?: (fraction: number) => void
+): number[] {
   const factor = Math.max(1, Math.round(sampleRate / ANALYSIS_RATE));
   const rate = sampleRate / factor;
   const length = Math.floor(samples.length / factor);
@@ -161,6 +211,7 @@ export function computeChroma(samples: Float32Array, sampleRate: number): number
       energy += v * v;
       frame[i] = v * window[i]!;
     }
+    if (start % (FRAME * 64) === 0) onProgress?.(length > 0 ? start / length : 1);
     if (energy / FRAME < 1e-7) continue; // silêncio
     const mag = fftMagnitudes(frame);
     const local = new Array<number>(12).fill(0);
@@ -200,16 +251,30 @@ export function estimateKeyFromChroma(chroma: number[]): KeyEstimate | null {
     scores.push({ key: MINOR_NAMES[tonic]!, r: pearson(chroma, rotate(KK_MINOR)) });
   }
   scores.sort((x, y) => y.r - x.r);
-  let [best, second] = scores;
-  // Relativos (G x Em) usam as mesmas notas e são o erro clássico do método. Empate técnico: o
-  // repertório de louvor é majoritariamente maior, então fica o maior.
-  if (best!.r - second!.r < RELATIVE_TIE && best!.key === relativeMinorOf(second!.key)) {
-    [best, second] = [second, best];
-  }
-  return { key: best!.key, correlation: best!.r, margin: Math.abs(best!.r - second!.r), chroma };
+  const best = scores[0]!;
+  const candidates = scores
+    .filter((s) => best.r - s.r < AMBIGUITY_MARGIN)
+    .slice(0, MAX_CANDIDATES)
+    .map((s) => s.key);
+  return {
+    key: best.key,
+    correlation: best.r,
+    margin: best.r - scores[1]!.r,
+    candidates,
+    ambiguous: candidates.length > 1,
+    ranking: scores.slice(0, 5).map((s) => ({ key: s.key, r: Number(s.r.toFixed(4)) })),
+    chroma
+  };
+}
+/** Tom de um sinal mono (mixdown dos stems tonais). */
+export function detectKeyFromPcm(
+  samples: Float32Array,
+  sampleRate: number,
+  onProgress?: (fraction: number) => void
+): KeyEstimate | null {
+  return estimateKeyFromChroma(computeChroma(samples, sampleRate, onProgress));
 }
 
-/** Tom de um sinal mono (mixdown dos stems tonais). */
-export function detectKeyFromPcm(samples: Float32Array, sampleRate: number): KeyEstimate | null {
-  return estimateKeyFromChroma(computeChroma(samples, sampleRate));
-}
+
+
+

@@ -4,6 +4,8 @@ import { TrackStem, StemType } from '../../../domain/entities/TrackStem';
 import { EnsaioMixMode } from '../../../domain/services/EnsaioMixService';
 import { formatSemitones } from './meterMath';
 import { isMinorKey, pitchClass } from './keyMath';
+import { canChooseAbsoluteTarget, type SongKeyInfo } from '../../../domain/value-objects/SongKey';
+import { KeyIdentity } from './KeyIdentity';
 
 export type MixerFilterGroup = 'ALL' | 'STRINGS' | 'RHYTHM_KEYS' | 'CUES_VOCALS';
 
@@ -22,8 +24,11 @@ interface MixerToolbarProps {
   stems: TrackStem[];
   filterGroup: MixerFilterGroup;
   onFilterGroupChange: (group: MixerFilterGroup) => void;
-  originalKey: string;
-  currentKey: string;
+  originalKey: string | null;
+  currentKey: string | null;
+  /** Procedência do tom; ausente = registro antigo (não confirmado). */
+  keyInfo?: SongKeyInfo;
+  onConfirmKey?: (key: string) => void;
   pitchShiftSemitones: number;
   isSoloClickActive: boolean;
   ensaioTarget: StemType;
@@ -55,6 +60,8 @@ export const MixerToolbar: React.FC<MixerToolbarProps> = ({
   onFilterGroupChange,
   originalKey,
   currentKey,
+  keyInfo,
+  onConfirmKey,
   pitchShiftSemitones,
   isSoloClickActive,
   ensaioTarget,
@@ -89,12 +96,22 @@ export const MixerToolbar: React.FC<MixerToolbarProps> = ({
 
   // Tom menor ("Em") lista as opções em menor; o valor do select é casado por classe de altura
   // (Gb = F#), senão o navegador mostrava a primeira opção ("Tom C") para músicas em menor.
-  const minorSuffix = isMinorKey(originalKey) ? 'm' : '';
+  const minorSuffix = originalKey && isMinorKey(originalKey) ? 'm' : '';
   const keyOptions = ALL_KEYS.map((k) => `${k}${minorSuffix}`);
-  const selectedOption = keyOptions.find((k) => pitchClass(k) === pitchClass(currentKey)) ?? keyOptions[0];
+  const info: SongKeyInfo = keyInfo ?? {
+    value: originalKey,
+    origin: originalKey ? 'legacy' : null,
+    confirmed: false,
+    estimated: false,
+    candidates: []
+  };
+  // Tom de destino absoluto só com tom original escrito no nome ou confirmado; semitons sempre funcionam.
+  const canPickTarget = canChooseAbsoluteTarget(info) && originalKey !== null;
+  const selectedOption = currentKey ? keyOptions.find((k) => pitchClass(k) === pitchClass(currentKey)) : undefined;
 
   const handleSelectTargetKey = (targetKey: string) => {
     if (!onPitchShiftChange) return;
+    if (!canPickTarget) return;
     const from = pitchClass(originalKey);
     const to = pitchClass(targetKey);
     if (from === null || to === null) return;
@@ -144,6 +161,8 @@ export const MixerToolbar: React.FC<MixerToolbarProps> = ({
           </button>
         </div>
 
+        <KeyIdentity keyInfo={info} onConfirm={onConfirmKey} />
+
         {/* Controle Visível de Mudança de Tom + Proteção Rítmica (Pitchproof Constant-Tempo DSP) */}
         {onPitchShiftChange && (
           <div className="flex flex-wrap items-center gap-2 bg-[#121824] border border-amber-500/35 rounded-xl px-2.5 py-1">
@@ -153,27 +172,34 @@ export const MixerToolbar: React.FC<MixerToolbarProps> = ({
               <button
                 type="button"
                 onClick={() => onPitchShiftChange(pitchShiftSemitones - 1)}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black transition"
+                className="px-2 py-0.5 min-h-[44px] min-w-[44px] rounded bg-slate-800 hover:bg-slate-700 text-white text-xs font-black transition"
                 title="Baixar 1 semitom (-1) apenas nos instrumentos harmônicos"
               >
                 -1
               </button>
               <select
-                value={selectedOption}
+                value={selectedOption ?? ''}
+                disabled={!canPickTarget}
+                title={canPickTarget ? undefined : 'Confirme o tom original para escolher o tom de destino.'}
                 onChange={(e) => handleSelectTargetKey(e.target.value)}
                 aria-label="Selecionar Tom da Música"
                 className="bg-slate-950 text-amber-300 text-xs font-mono font-black rounded px-2 py-1.5 min-h-[44px] sm:min-h-0 border border-amber-500/40 cursor-pointer"
               >
+                {!selectedOption && (
+                  <option value="" disabled>
+                    {canPickTarget ? 'Tom ?' : 'Tom não identificado'}
+                  </option>
+                )}
                 {keyOptions.map((k) => (
                   <option key={k} value={k}>
-                    Tom {k} {pitchClass(k) === pitchClass(originalKey) ? '(Orig)' : ''}
+                    Tom {k} {originalKey && pitchClass(k) === pitchClass(originalKey) ? '(Orig)' : ''}
                   </option>
                 ))}
               </select>
               <button
                 type="button"
                 onClick={() => onPitchShiftChange(pitchShiftSemitones + 1)}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black transition"
+                className="px-2 py-0.5 min-h-[44px] min-w-[44px] rounded bg-slate-800 hover:bg-slate-700 text-white text-xs font-black transition"
                 title="Subir 1 semitom (+1) apenas nos instrumentos harmônicos"
               >
                 +1

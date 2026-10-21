@@ -1,3 +1,4 @@
+import { keyFromStored, keyMetaOf, type SongKeyMeta } from '../../domain/value-objects/SongKey';
 import { Song } from '../../domain/entities/Song';
 import { TrackStem, PitchPolicy } from '../../domain/entities/TrackStem';
 import { SongSection, SectionType } from '../../domain/value-objects/SongSection';
@@ -52,8 +53,11 @@ export interface SerializedSong {
   id: string;
   title: string;
   artist: string;
-  originalKey: string;
-  currentKey: string;
+  /** Vazio/ausente = tom não identificado. */
+  originalKey: string | null;
+  currentKey: string | null;
+  /** Procedência do tom; ausente em registro antigo (vira legacy, não confirmado). */
+  keyMeta?: SongKeyMeta;
   bpm: number;
   timeSignature: { beats: number; value: number };
   duration: number;
@@ -166,6 +170,7 @@ export class IndexedDbStorageService {
       artist: song.artist,
       originalKey: song.originalKey,
       currentKey: song.currentKey,
+      keyMeta: keyMetaOf(song.keyInfo),
       bpm: song.bpm,
       timeSignature: song.timeSignature,
       duration: song.duration,
@@ -229,12 +234,14 @@ export class IndexedDbStorageService {
       return stem;
     });
 
+    const keyInfo = keyFromStored(data.originalKey, data.keyMeta);
     return new Song({
       id: data.id,
       title: data.title,
       artist: data.artist,
-      originalKey: data.originalKey,
-      currentKey: data.currentKey || data.originalKey,
+      originalKey: keyInfo.value,
+      keyInfo,
+      currentKey: data.currentKey || keyInfo.value,
       bpm: data.bpm,
       timeSignature: data.timeSignature || { beats: 4, value: 4 },
       duration: data.duration,

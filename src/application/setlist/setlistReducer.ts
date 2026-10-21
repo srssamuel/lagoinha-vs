@@ -52,12 +52,22 @@ export const setlistReducer = (state: SetlistState, action: SetlistAction): Setl
       return applyOnDomain(state, (s) => s.removeSongAt(action.index));
     case 'move':
       return applyOnDomain(state, (s) => s.moveSong(action.from, action.to));
-    case 'add':
+    case 'add': {
+      // Reimportar a mesma música (id estável) substitui a entrada em vez de duplicar
+      const existing = state.songs.findIndex((s) => s.id === action.song.id);
+      if (existing >= 0) {
+        return {
+          songs: state.songs.map((s, i) => (i === existing ? action.song : s)),
+          currentIndex: existing,
+          revision: state.revision + 1
+        };
+      }
       return {
         songs: [...state.songs, action.song],
         currentIndex: state.songs.length,
         revision: state.revision + 1
       };
+    }
     case 'replaceAll':
       return { songs: action.songs, currentIndex: 0, revision: state.revision + 1 };
     case 'hydrate': {

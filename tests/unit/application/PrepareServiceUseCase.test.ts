@@ -44,8 +44,8 @@ class FakeLibrary implements SongLibraryPort {
       id: `tmp-${song.id}`,
       title: song.title,
       artist: 'A',
-      originalKey: 'G',
-      currentKey: 'G',
+      originalKey: song.id === 'semtom' ? null : 'G',
+      currentKey: song.id === 'semtom' ? null : 'G',
       bpm: 70,
       timeSignature: { beats: 4, value: 4 },
       duration: 200,
@@ -108,6 +108,25 @@ describe('PrepareServiceUseCase (F4)', () => {
     expect(cache.blobs.get(`${id}/casa-bass`)).toBe('blob:casa/v1/bass');
   });
 
+  it('tom confirmado à mão neste aparelho prevalece sobre o que a nuvem traz ao preparar de novo', async () => {
+    const cache = new MemoryCache();
+    const id = formatCloudSongKey({ source: 'church', songId: 'casa', versionId: 'v1' });
+    const confirmed = new Song({ id, title: 'casa', artist: 'A', originalKey: 'F', currentKey: 'F', bpm: 70, timeSignature: { beats: 4, value: 4 }, duration: 200, sections: [], stems: [] });
+    confirmed.confirmKey('F');
+    cache.songs.set(id, confirmed);
+    const report = await new PrepareServiceUseCase(new FakeLibrary(), cache, reader).prepare(
+      setlist([{ order: 1, source: 'church', songId: 'casa', versionId: 'v1' }])
+    );
+    expect(report.prepared[0]!.song.keyInfo).toMatchObject({ value: 'F', origin: 'manual', confirmed: true });
+  });
+  it('tom de destino do setlist é ignorado quando o tom original é desconhecido', async () => {
+    const report = await new PrepareServiceUseCase(new FakeLibrary(), new MemoryCache(), reader).prepare(
+      setlist([{ order: 1, source: 'church', songId: 'semtom', versionId: 'v1', keyOverride: 'A' }])
+    );
+    const song = report.prepared[0]!.song;
+    expect(song.originalKey).toBeNull();
+    expect(song.currentKey).toBeNull();
+  });
   it('versão nova no acervo não substitui a preparada: as duas convivem com ids diferentes', async () => {
     const cache = new MemoryCache();
     const useCase = new PrepareServiceUseCase(new FakeLibrary(), cache, reader);

@@ -1,3 +1,4 @@
+import type { SongKeyInfo } from '../../domain/value-objects/SongKey';
 import React, { useState } from 'react';
 import { TrackStem, StemType } from '../../domain/entities/TrackStem';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
@@ -14,8 +15,10 @@ interface MultitrackMixerProps {
   isSoloClickActive: boolean;
   /** Fonte dos medidores (VU/RTA), desenhados por requestAnimationFrame fora do React. */
   meterSource?: MeterSource;
-  originalKey?: string;
-  currentKey?: string;
+  originalKey?: string | null;
+  currentKey?: string | null;
+  keyInfo?: SongKeyInfo;
+  onConfirmKey?: (key: string) => void;
   pitchShiftSemitones?: number;
   masterVolume?: number;
   onVolumeChange: (stemId: string, vol: number) => void;
@@ -38,8 +41,10 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
   isPlaying,
   isSoloClickActive,
   meterSource,
-  originalKey = 'B',
-  currentKey = 'B',
+  originalKey = null,
+  currentKey = null,
+  keyInfo,
+  onConfirmKey,
   pitchShiftSemitones = 0,
   masterVolume = 1.0,
   onVolumeChange,
@@ -74,6 +79,8 @@ export const MultitrackMixer: React.FC<MultitrackMixerProps> = ({
         onFilterGroupChange={setFilterGroup}
         originalKey={originalKey}
         currentKey={currentKey}
+        keyInfo={keyInfo}
+        onConfirmKey={onConfirmKey}
         pitchShiftSemitones={pitchShiftSemitones}
         isSoloClickActive={isSoloClickActive}
         ensaioTarget={ensaioTarget}

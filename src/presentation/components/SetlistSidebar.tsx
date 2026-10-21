@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Song } from '../../domain/entities/Song';
 import { User } from '../../domain/entities/User';
 import { SongSection } from '../../domain/value-objects/SongSection';
@@ -17,7 +17,10 @@ import {
 } from 'lucide-react';
 import { TrackStem } from '../../domain/entities/TrackStem';
 import { ZipMultitrackExtractor } from '../../infrastructure/audio/ZipMultitrackExtractor';
-import { detectKeyFromStems } from '../../infrastructure/audio/AudioKeyAnalyzer';
+import { analyzeKeyFromStems, isAbortError } from '../../infrastructure/audio/AudioKeyAnalyzer';
+import { KeyAnalysisSlot } from '../../infrastructure/audio/KeyAnalysisSlot';
+import { resolveImportKey, stableImportId, stableStemId } from '../../application/setlist/importIdentity';
+import { keyFromName, UNKNOWN_KEY, type SongKeyInfo } from '../../domain/value-objects/SongKey';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 import { IndexedDbStorageService } from '../../infrastructure/storage/IndexedDbStorageService';
 import { useBackend } from '../BackendContext';
@@ -52,6 +55,42 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
   const { deviceCache } = useBackend();
   const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [zipProgressText, setZipProgressText] = useState<string>('');
+  const keySlotRef = useRef<KeyAnalysisSlot>(new KeyAnalysisSlot());
+  const pendingImportsRef = useRef(0);
+  useEffect(() => {
+    const slot = keySlotRef.current;
+    return () => slot.cancelAll();
+  }, []);
+
+  /** Música já conhecida neste aparelho (mesmo id estável): a confirmação manual do tom prevalece. */
+  const knownKeyOf = async (songId: string): Promise<SongKeyInfo | null> => {
+    try {
+      const known = (await deviceCache.loadCustomSongs(currentUser?.churchId || 'lagoinha-jp')).find((s) => s.id === songId);
+      return known ? known.keyInfo : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** Análise de tom em segundo plano, com porcentagem de progresso do trabalho (não de certeza) e cancelamento. */
+  const analyzeStemKey = async (pairs: { stem: TrackStem; blob: Blob }[]): Promise<SongKeyInfo> => {
+    // Uma execução por importação: Cancelar aborta todas as enfileiradas
+    const run = keySlotRef.current.begin(false);
+    try {
+      return await analyzeKeyFromStems(
+        pairs.map((p) => ({ type: p.stem.type, blob: p.blob })),
+        {
+          signal: run.signal,
+          onProgress: (p) => setZipProgressText(`Identificando o tom pelo áudio... ${Math.round(p.fraction * 100)}%`)
+        }
+      );
+    } catch (err) {
+      if (isAbortError(err)) return UNKNOWN_KEY;
+      throw err;
+    } finally {
+      run.release();
+    }
+  };
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const buildStandardSections = (prefix: string, duration: number, bpm: number): SongSection[] => {
@@ -84,8 +123,10 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
 
     // Caso 1: Pacote Multitrack completo em .ZIP
     if (zipFile) {
+      pendingImportsRef.current++;
       setIsExtractingZip(true);
       setZipProgressText('Lendo pacote .ZIP...');
+      const songId = stableImportId('zip', [{ name: zipFile.name, size: zipFile.size }]);
       try {
         const meta = ZipMultitrackExtractor.parseMetadataFromZipName(zipFile.name);
         const entries = await ZipMultitrackExtractor.extractFromZipBlob(
@@ -102,7 +143,7 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           }
           const info = TrackStem.classifyStemFromFilename(entry.filename);
           const stem = new TrackStem({
-            id: `zip-stem-${Date.now()}-${idx}`,
+            id: stableStemId(songId, idx),
             name: info.displayName,
             type: info.type,
             volume: info.type === 'click' ? 0.85 : info.type === 'guide' ? 0.95 : 1.0,
@@ -135,20 +176,19 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
         VstPluginRackService.applySmartAutoFixAll(stems);
 
         const duration = detectedDuration > 10 ? detectedDuration : 247;
-        // Nome sem tom: analisa o áudio dos stems tonais em vez de assumir 'G'
-        let originalKey = meta.originalKey;
-        if (!meta.keyFromName) {
-          setZipProgressText('Identificando o tom pelo áudio...');
-          const estimate = await detectKeyFromStems(stemBlobPairs.map((p) => ({ type: p.stem.type, blob: p.blob })));
-          if (estimate) originalKey = estimate.key;
-        }
-        const songId = `zip-song-${Date.now()}`;
+        // Nome sem tom: analisa o áudio (Worker, uma música por vez). Inconclusivo = sem tom, nunca um tom padrão.
+        const keyInfo = await resolveImportKey(
+          await knownKeyOf(songId),
+          meta.keyFromName ? keyFromName(meta.originalKey) : null,
+          () => analyzeStemKey(stemBlobPairs)
+        );
         const newSong = new Song({
           id: songId,
           title: meta.title,
           artist: `${meta.artist} (ZIP ${stems.length} Stems)`,
-          originalKey,
-          currentKey: originalKey,
+          originalKey: keyInfo.value,
+          keyInfo,
+          currentKey: keyInfo.value,
           bpm: meta.bpm,
           timeSignature: { beats: 4, value: 4 },
           duration,
@@ -167,8 +207,11 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       } catch (err) {
         console.error('Erro ao extrair pacote Multitrack .ZIP:', err);
       } finally {
-        setIsExtractingZip(false);
-        setZipProgressText('');
+        pendingImportsRef.current = Math.max(0, pendingImportsRef.current - 1);
+        if (pendingImportsRef.current === 0) {
+          setIsExtractingZip(false);
+          setZipProgressText('');
+        }
       }
       return;
     }
@@ -189,10 +232,12 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       }
     }
 
-    const stemBlobPairs = fileArray.map((file, idx) => {
+    const sortedFiles = [...fileArray].sort((a, b) => a.name.localeCompare(b.name) || a.size - b.size);
+    const songId = stableImportId('stems', sortedFiles.map((x) => ({ name: x.name, size: x.size })));
+    const stemBlobPairs = sortedFiles.map((file, idx) => {
       const info = TrackStem.classifyStemFromFilename(file.name);
       const stem = new TrackStem({
-        id: `imported-stem-${Date.now()}-${idx}`,
+        id: stableStemId(songId, idx),
         name: info.displayName,
         type: info.type,
         volume: info.type === 'click' ? 0.85 : info.type === 'guide' ? 0.95 : 1.0,
@@ -225,16 +270,15 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
     VstPluginRackService.applySmartAutoFixAll(stems);
 
     const duration = detectedDuration > 10 ? detectedDuration : 240;
-    // Stems soltos não têm nome de pacote: tom pelo áudio ('G' só se a análise não for conclusiva)
-    const estimate = await detectKeyFromStems(stemBlobPairs.map((p) => ({ type: p.stem.type, blob: p.blob })));
-    const originalKey = estimate?.key ?? 'G';
-    const songId = `imported-song-${Date.now()}`;
+    // Stems soltos não têm nome de pacote: tom pelo áudio; inconclusivo fica sem tom
+    const keyInfo = await resolveImportKey(await knownKeyOf(songId), null, () => analyzeStemKey(stemBlobPairs));
     const newSong = new Song({
       id: songId,
       title: 'Multitrack Importada (Stems Locais)',
       artist: 'Lagoinha Worship',
-      originalKey,
-      currentKey: originalKey,
+      originalKey: keyInfo.value,
+      keyInfo,
+      currentKey: keyInfo.value,
       bpm: 120,
       timeSignature: { beats: 4, value: 4 },
       duration,
@@ -482,6 +526,16 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
             Arraste ou clique para selecionar
           </span>
         </button>
+
+        {isExtractingZip && zipProgressText.startsWith('Identificando') && (
+          <button
+            type="button"
+            onClick={() => keySlotRef.current.abortAnalyses()}
+            className="w-full min-h-[44px] rounded-xl border border-slate-600 text-slate-200 text-xs font-bold"
+          >
+            Cancelar análise do tom (importa sem tom)
+          </button>
+        )}
 
         {/* Barra de Backup do Setlist (JSON) */}
         <div className="grid grid-cols-2 gap-1.5 pt-1">

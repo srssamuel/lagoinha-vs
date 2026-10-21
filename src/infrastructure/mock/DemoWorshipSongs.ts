@@ -1,3 +1,4 @@
+import { manualKey } from '../../domain/value-objects/SongKey';
 import { Song } from '../../domain/entities/Song';
 import { SongSection } from '../../domain/value-objects/SongSection';
 import { TrackStem } from '../../domain/entities/TrackStem';
@@ -191,6 +192,7 @@ export class DemoWorshipSongs {
       title: 'O Nosso General',
       artist: 'Mateus Brito (Multitrack Oficial 13 Canais)',
       originalKey: 'B',
+      keyInfo: manualKey('B'),
       currentKey: 'B',
       bpm,
       timeSignature: { beats: 4, value: 4 },
@@ -314,6 +316,7 @@ export class DemoWorshipSongs {
       title: 'A Casa É Sua',
       artist: 'Casa Worship',
       originalKey: 'G',
+      keyInfo: manualKey('G'),
       currentKey: 'G',
       bpm,
       timeSignature: { beats: 4, value: 4 },
@@ -339,6 +342,7 @@ export class DemoWorshipSongs {
       title: 'Vitorioso És',
       artist: 'Gabriel Guedes',
       originalKey: 'D',
+      keyInfo: manualKey('D'),
       currentKey: 'D',
       bpm,
       timeSignature: { beats: 4, value: 4 },
@@ -364,6 +368,7 @@ export class DemoWorshipSongs {
       title: 'Ousado Amor',
       artist: 'Isaías Saad',
       originalKey: 'Gb',
+      keyInfo: manualKey('Gb'),
       currentKey: 'Gb',
       bpm,
       timeSignature: { beats: 6, value: 8 },
@@ -389,6 +394,7 @@ export class DemoWorshipSongs {
       title: 'Ruja o Leão',
       artist: 'Talita Catanzaro / FHOP',
       originalKey: 'Em',
+      keyInfo: manualKey('Em'),
       currentKey: 'Em',
       bpm,
       timeSignature: { beats: 4, value: 4 },

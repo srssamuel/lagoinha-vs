@@ -1,3 +1,4 @@
+import { reconcileKey } from '../../domain/value-objects/SongKey';
 import { DeviceCachePort } from '../ports/DeviceCachePort';
 import { churchScope, GLOBAL_SCOPE, LibraryScope, SongLibraryPort } from '../ports/SongLibraryPort';
 import { CloudSong } from '../../domain/entities/CloudSong';
@@ -78,12 +79,17 @@ export class PrepareServiceUseCase {
     const playback = await this.library.toPlaybackSong(scope, cloudSong as CloudSong, item.versionId);
 
     const id = formatCloudSongKey({ source: item.source, songId: item.songId, versionId: item.versionId });
+    // Tom confirmado à mão neste aparelho prevalece sobre o que a nuvem trouxe (e sobre qualquer análise).
+    const known = (await this.deviceCache.loadCustomSongs(churchId)).find((s) => s.id === id);
+    const keyInfo = known ? reconcileKey(known.keyInfo, playback.keyInfo) : playback.keyInfo;
     const prepared = new Song({
       id,
       title: playback.title,
       artist: playback.artist,
-      originalKey: playback.originalKey,
-      currentKey: item.keyOverride ?? playback.currentKey,
+      originalKey: keyInfo.value,
+      keyInfo,
+      // Tom de destino absoluto só vale com tom original conhecido; sem ele a transposição segue por semitons.
+      currentKey: keyInfo.value === null ? null : (item.keyOverride ?? keyInfo.value),
       bpm: item.bpmOverride ?? playback.bpm,
       timeSignature: playback.timeSignature,
       duration: playback.duration,

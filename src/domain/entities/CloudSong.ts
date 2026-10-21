@@ -1,5 +1,6 @@
 import { TimeSignature } from './Song';
 import { LicenseRef, RightsClass } from '../services/AccessPolicy';
+import { keyFromStored, type SongKeyInfo } from '../value-objects/SongKey';
 
 export interface CloudStemInfo {
   id: string;
@@ -13,7 +14,10 @@ export interface CloudSongProps {
   id: string;
   title: string;
   artist: string;
-  originalKey: string;
+  /** null = tom não identificado. */
+  originalKey: string | null;
+  /** Procedência do tom; ausente = registro antigo (legacy, não confirmado). */
+  keyInfo?: SongKeyInfo;
   bpm: number;
   timeSignature: TimeSignature;
   duration: number; // in seconds
@@ -41,7 +45,8 @@ export class CloudSong {
   public readonly id: string;
   public readonly title: string;
   public readonly artist: string;
-  public readonly originalKey: string;
+  public readonly originalKey: string | null;
+  public readonly keyInfo: SongKeyInfo;
   public readonly bpm: number;
   public readonly timeSignature: TimeSignature;
   public readonly duration: number;
@@ -66,7 +71,8 @@ export class CloudSong {
     this.id = props.id;
     this.title = props.title;
     this.artist = props.artist;
-    this.originalKey = props.originalKey;
+    this.keyInfo = props.keyInfo ?? keyFromStored(props.originalKey);
+    this.originalKey = this.keyInfo.value;
     this.bpm = props.bpm;
     this.timeSignature = props.timeSignature;
     this.duration = props.duration;
@@ -88,3 +94,4 @@ export class CloudSong {
     this.kind = props.kind ?? 'song';
   }
 }
+

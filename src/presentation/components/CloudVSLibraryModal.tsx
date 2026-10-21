@@ -165,6 +165,7 @@ export const CloudVSLibraryModal: React.FC<CloudVSLibraryModalProps> = ({
           title: draft.title,
           artist: draft.artist || 'Lagoinha Worship',
           originalKey: draft.originalKey,
+          keyInfo: draft.keyInfo,
           bpm: draft.bpm,
           duration: draft.duration,
           rightsClass: 'unknown'

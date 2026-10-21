@@ -1,6 +1,8 @@
 import { GoogleDriveStoragePort } from '../../application/ports/GoogleDriveStoragePort';
 import { GoogleDriveConfig } from '../../domain/entities/GoogleDriveConfig';
 import { CloudSong } from '../../domain/entities/CloudSong';
+import { parseKeyFromName } from '../../domain/services/SongKeyDetector';
+import { keyFromName } from '../../domain/value-objects/SongKey';
 
 const GDRIVE_CONFIG_KEY = 'lagoinha_vs_gdrive_config';
 
@@ -105,11 +107,13 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
               .filter((f) => f.mimeType === 'application/zip' || f.mimeType === 'application/x-zip-compressed' || f.name.endsWith('.zip'))
               .map((f, idx) => {
                 const title = f.name.replace(/\.[^/.]+$/, '');
+                const nameKey = keyFromName(parseKeyFromName(f.name));
                 return new CloudSong({
                   id: `gdrive-${f.id}`,
                   title,
                   artist: 'Google Drive Lagoinha',
-                  originalKey: 'G',
+                  originalKey: nameKey.value,
+                  keyInfo: nameKey,
                   bpm: 120,
                   timeSignature: { beats: 4, value: 4 },
                   duration: 180,
@@ -149,7 +153,7 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         id: 'gdrive-o-nosso-general',
         title: 'O Nosso General',
         artist: 'Versão Mateus Brito (Google Drive Oficial)',
-        originalKey: 'B',
+        originalKey: null,
         bpm: 140,
         timeSignature: { beats: 4, value: 4 },
         duration: 247,
@@ -182,7 +186,7 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         id: 'gdrive-a-casa-e-sua',
         title: 'A Casa É Sua',
         artist: 'Casa Worship (Google Drive Oficial)',
-        originalKey: 'G',
+        originalKey: null,
         bpm: 130,
         timeSignature: { beats: 4, value: 4 },
         duration: 120,
@@ -211,7 +215,7 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         id: 'gdrive-bondade-de-deus',
         title: 'Bondade de Deus',
         artist: 'Isaías Saad (Google Drive Oficial)',
-        originalKey: 'Ab',
+        originalKey: null,
         bpm: 70,
         timeSignature: { beats: 4, value: 4 },
         duration: 120,
@@ -240,7 +244,7 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         id: 'gdrive-santo-pra-sempre',
         title: 'Santo Pra Sempre',
         artist: 'Gabriel Guedes (Google Drive Oficial)',
-        originalKey: 'C',
+        originalKey: null,
         bpm: 72,
         timeSignature: { beats: 4, value: 4 },
         duration: 120,
@@ -269,7 +273,7 @@ export class GoogleDriveStorageService implements GoogleDriveStoragePort {
         id: 'gdrive-worship-ambient-pads',
         title: 'Pacote de PADs Atmosféricos e Contínuos',
         artist: 'Lagoinha Ambient Worship (Google Drive Oficial)',
-        originalKey: 'C',
+        originalKey: null,
         bpm: 70,
         timeSignature: { beats: 4, value: 4 },
         duration: 360,

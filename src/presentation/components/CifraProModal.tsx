@@ -210,7 +210,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
 
   const baseCharts = CHARTS_BY_SONG_ID[song.id] ?? CHARTS_BY_SONG_ID['song-casa-sua'] ?? [];
   const totalSemitones = song.pitchShiftSemitones - capoFret;
-  const capoKey = ChordTransposer.transposeKey(song.currentKey, -capoFret);
+  const capoKey = song.currentKey ? ChordTransposer.transposeKey(song.currentKey, -capoFret) : null;
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
@@ -222,7 +222,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
         const rawChords = chartItem?.chords ?? 'G   D   Em7   C9';
         const displayedChords =
           notationMode === 'NASHVILLE'
-            ? ChordTransposer.toNashvilleLine(rawChords, song.originalKey)
+            ? (song.originalKey ? ChordTransposer.toNashvilleLine(rawChords, song.originalKey) : rawChords)
             : ChordTransposer.transposeChordLine(rawChords, totalSemitones);
 
         return `
@@ -257,7 +257,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
           <h1>${escapeHtml(song.title)}</h1>
           <div class="meta">
             <strong>Artista:</strong> ${escapeHtml(song.artist)} |
-            <strong>Tom no Áudio:</strong> ${escapeHtml(song.currentKey)} ${capoFret > 0 ? `(Capo ${escapeHtml(capoFret)})` : ''} |
+            <strong>Tom no Áudio:</strong> ${escapeHtml(song.currentKey ?? 'não identificado')} ${capoFret > 0 ? `(Capo ${escapeHtml(capoFret)})` : ''} |
             <strong>BPM:</strong> ${escapeHtml(song.bpm)} |
             <strong>Notação:</strong> ${notationMode === 'NASHVILLE' ? 'Graus Nashville' : 'Acordes'}
           </div>
@@ -290,8 +290,8 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-stage-muted">
-                {song.artist} • Tom Original: {song.originalKey} • Tom no Áudio:{' '}
-                <strong className="text-amber-300">{song.currentKey}</strong> ({song.bpm} BPM)
+                {song.artist} • Tom Original: {song.originalKey ?? 'não identificado'} • Tom no Áudio:{' '}
+                <strong className="text-amber-300">{song.currentKey ?? '?'}</strong> ({song.bpm} BPM)
               </p>
             </div>
           </div>
@@ -359,7 +359,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
               }`}
             >
               <Music className="w-3 h-3" />
-              <span>Acordes ({capoKey})</span>
+              <span>Acordes ({capoKey ?? '?'})</span>
             </button>
             <button
               type="button"
@@ -387,7 +387,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
               <option value={0}>Sem Capo</option>
               {[1, 2, 3, 4, 5].map((fret) => (
                 <option key={fret} value={fret}>
-                  Casa {fret} ({ChordTransposer.transposeKey(song.currentKey, -fret)})
+                  Casa {fret} ({song.currentKey ? ChordTransposer.transposeKey(song.currentKey, -fret) : '?'})
                 </option>
               ))}
             </select>
@@ -464,7 +464,7 @@ export const CifraProModal: React.FC<CifraProModalProps> = ({
             const rawChords = chartItem?.chords ?? 'G   D   Em7   C9';
             const displayedChords =
               notationMode === 'NASHVILLE'
-                ? ChordTransposer.toNashvilleLine(rawChords, song.originalKey)
+                ? (song.originalKey ? ChordTransposer.toNashvilleLine(rawChords, song.originalKey) : rawChords)
                 : ChordTransposer.transposeChordLine(rawChords, totalSemitones);
             const isActive = activeSectionId === section.id;
 

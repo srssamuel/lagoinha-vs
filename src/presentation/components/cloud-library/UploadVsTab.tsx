@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { HardDrive } from 'lucide-react';
 import { ZipMultitrackExtractor } from '../../../infrastructure/audio/ZipMultitrackExtractor';
-import { detectKeyFromStems } from '../../../infrastructure/audio/AudioKeyAnalyzer';
+import { analyzeKeyFromStems } from '../../../infrastructure/audio/AudioKeyAnalyzer';
+import { applyAnalysisIfCurrent, KeyAnalysisSlot } from '../../../infrastructure/audio/KeyAnalysisSlot';
+import {
+  isValidKey,
+  keyFromName,
+  manualKey,
+  UNKNOWN_KEY,
+  type SongKeyInfo
+} from '../../../domain/value-objects/SongKey';
+import { KeyIdentity } from '../mixer/KeyIdentity';
 import { TrackStem } from '../../../domain/entities/TrackStem';
 
 export interface VsUploadDraft {
   title: string;
   artist: string;
-  originalKey: string;
+  /** null = tom não identificado (nunca um valor padrão). */
+  originalKey: string | null;
+  keyInfo: SongKeyInfo;
   bpm: number;
   duration: number;
   files: File[];
@@ -23,20 +34,46 @@ const isZipFile = (f: File) =>
 export function useVsUploadForm() {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
-  const [originalKey, setOriginalKey] = useState('B');
+  const [keyInfo, setKeyInfo] = useState<SongKeyInfo>(UNKNOWN_KEY);
+  const [keyText, setKeyText] = useState('');
+  const slotRef = useRef<KeyAnalysisSlot>(new KeyAnalysisSlot());
+  useEffect(() => {
+    const slot = slotRef.current;
+    return () => slot.cancelAll();
+  }, []);
   const [bpm, setBpm] = useState(140);
   const [duration, setDuration] = useState(247);
   const [files, setFiles] = useState<File[]>([]);
   const [isExtractingZip, setIsExtractingZip] = useState(false);
   const [zipProgress, setZipProgress] = useState('');
 
+  const applyKey = (next: SongKeyInfo) => {
+    setKeyInfo(next);
+    setKeyText(next.value ?? '');
+  };
+
+  /** Digitado à mão: válido vira tom confirmado; vazio ou inválido, sem tom. */
+  const setOriginalKey = (text: string) => {
+    setKeyText(text);
+    const typed = text.trim();
+    setKeyInfo(isValidKey(typed) ? manualKey(typed) : UNKNOWN_KEY);
+  };
+
+  const confirmKey = (key: string) => applyKey(manualKey(key));
+
+  const cancelKeyAnalysis = () => slotRef.current.abortAnalyses();
+
   /** .ZIP: lê BPM/Tom do nome, extrai os stems e detecta a duração; áudio solto entra direto. */
   const selectFiles = async (rawFiles: File[]) => {
     if (rawFiles.length === 0) return;
+    // Nova seleção aborta a análise anterior e torna obsoleto o que ela ainda produzir
+    const run = slotRef.current.begin();
 
     const zipFile = rawFiles.find(isZipFile);
     if (!zipFile) {
       setFiles(rawFiles);
+      setIsExtractingZip(false);
+      setZipProgress('');
       return;
     }
 
@@ -47,11 +84,12 @@ export function useVsUploadForm() {
       if (!title) setTitle(meta.title);
       if (!artist) setArtist(meta.artist);
       setBpm(meta.bpm);
-      if (meta.keyFromName) setOriginalKey(meta.originalKey);
+      applyKey(keyFromName(meta.originalKey));
 
       const extracted = await ZipMultitrackExtractor.extractFromZipBlob(zipFile, (current, total, filename) => {
-        setZipProgress(`Descompactando ${current}/${total}: ${filename}`);
+        if (run.isCurrent()) setZipProgress(`Descompactando ${current}/${total}: ${filename}`);
       });
+      if (!run.isCurrent()) return;
 
       let maxDur = 0;
       const asFiles = extracted.map((entry) => {
@@ -59,30 +97,48 @@ export function useVsUploadForm() {
         return new File([entry.blob], entry.filename, { type: ZipMultitrackExtractor.getAudioMimeType(entry.filename) });
       });
       if (!meta.keyFromName) {
-        // Nome sem tom: identifica pelo áudio dos stems tonais (Click/Guia/Bateria/Loop fora)
-        setZipProgress('Identificando o tom pelo áudio...');
-        const estimate = await detectKeyFromStems(
-          asFiles.map((f) => ({ type: TrackStem.classifyStemFromFilename(f.name).type, blob: f }))
+        // Nome sem tom: analisa o áudio dos stems tonais em segundo plano (Worker), com progresso e cancelamento.
+        // Resultado fraco ou ambíguo não vira tom; resultado de análise obsoleta nunca é aplicado.
+        await applyAnalysisIfCurrent(
+          run,
+          (signal) =>
+            analyzeKeyFromStems(
+              asFiles.map((f) => ({ type: TrackStem.classifyStemFromFilename(f.name).type, blob: f })),
+              {
+                signal,
+                onProgress: (p) => {
+                  if (run.isCurrent()) setZipProgress(`Identificando o tom pelo áudio... ${Math.round(p.fraction * 100)}%`);
+                }
+              }
+            ),
+          applyKey
         );
-        if (estimate) setOriginalKey(estimate.key);
       }
+      if (!run.isCurrent()) return;
       if (maxDur > 10) setDuration(maxDur);
       setFiles(asFiles.length > 0 ? asFiles : rawFiles);
     } catch {
-      setFiles(rawFiles);
+      if (run.isCurrent()) setFiles(rawFiles);
     } finally {
-      setIsExtractingZip(false);
-      setZipProgress('');
+      run.release();
+      // Só a importação atual libera o estado de extração
+      if (run.isCurrent()) {
+        setIsExtractingZip(false);
+        setZipProgress('');
+      }
     }
   };
-
   const reset = () => {
+    slotRef.current.cancelAll();
+    setIsExtractingZip(false);
+    setZipProgress('');
     setTitle('');
     setArtist('');
     setFiles([]);
+    applyKey(UNKNOWN_KEY);
   };
 
-  const draft: VsUploadDraft = { title, artist, originalKey, bpm, duration, files };
+  const draft: VsUploadDraft = { title, artist, originalKey: keyInfo.value, keyInfo, bpm, duration, files };
 
   return {
     draft,
@@ -90,7 +146,10 @@ export function useVsUploadForm() {
     zipProgress,
     setTitle,
     setArtist,
+    keyText,
     setOriginalKey,
+    confirmKey,
+    cancelKeyAnalysis,
     setBpm,
     selectFiles,
     reset
@@ -150,10 +209,14 @@ export const UploadVsTab: React.FC<UploadVsTabProps> = ({ form, isSubmitting, on
           <label className={labelClass}>Tom Original</label>
           <input
             type="text"
-            value={draft.originalKey}
+            value={form.keyText}
+            placeholder="vazio = não identificado"
             onChange={(e) => form.setOriginalKey(e.target.value)}
             className={`${inputClass} font-mono`}
           />
+          <div className="mt-2">
+            <KeyIdentity keyInfo={draft.keyInfo} onConfirm={form.confirmKey} />
+          </div>
         </div>
 
         <div>
@@ -191,6 +254,11 @@ export const UploadVsTab: React.FC<UploadVsTabProps> = ({ form, isSubmitting, on
         {isExtractingZip && (
           <div className="mt-2 text-xs text-amber-300 font-mono">
             {zipProgress || 'Descompactando pacote .ZIP de Multitracks...'}
+            {zipProgress.startsWith('Identificando') && (
+              <button type="button" onClick={form.cancelKeyAnalysis} className="ml-3 min-h-[44px] px-3 rounded-lg border border-slate-600 text-slate-200">
+                Cancelar análise
+              </button>
+            )}
           </div>
         )}
 

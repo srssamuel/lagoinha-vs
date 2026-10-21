@@ -46,7 +46,7 @@ export const CloudSongRow: React.FC<CloudSongRowProps> = ({ song, variant, isAdd
           <div className="flex items-center gap-2">
             <h4 className="font-bold text-sm text-white truncate">{song.title}</h4>
             <span className={`text-[10px] font-mono font-bold border px-1.5 py-0.2 rounded shrink-0 ${theme.key}`}>
-              Tom {song.originalKey}
+              {song.originalKey ? `Tom ${song.originalKey}` : 'Tom não identificado'}
             </span>
             <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.2 rounded shrink-0">
               {song.bpm} BPM

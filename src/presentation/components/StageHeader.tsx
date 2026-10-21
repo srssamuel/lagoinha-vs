@@ -112,7 +112,7 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
                   {song.title}
                 </div>
                 <div className="text-[9px] font-mono text-stage-amber">
-                  Tom {song.currentKey} • {song.bpm} BPM
+                  Tom {song.currentKey ?? 'não identificado'} • {song.bpm} BPM
                 </div>
               </div>
             </button>
@@ -145,9 +145,9 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
               <span
                 onClick={() => onPitchShiftChange(0)}
                 className="text-lg font-black text-stage-amber font-mono min-w-[34px] cursor-pointer flex items-center justify-center gap-1"
-                title={`Tom Original: ${currentSong.originalKey} (Clique para restaurar 0 st)`}
+                title={`Tom Original: ${currentSong.originalKey ?? 'não identificado'} (Clique para restaurar 0 st)`}
               >
-                <span>{currentSong.currentKey}</span>
+                <span>{currentSong.currentKey ?? 'Tom ?'}</span>
                 {currentSong.pitchShiftSemitones !== 0 && (
                   <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
                     {currentSong.pitchShiftSemitones > 0

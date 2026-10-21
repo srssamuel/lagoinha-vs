@@ -144,6 +144,14 @@ export const App: React.FC = () => {
     touch();
   };
 
+  // Tom confirmado à mão: vale daqui em diante e fica gravado neste aparelho (prevalece sobre nova análise)
+  const handleConfirmKey = (key: string) => {
+    withCurrentSong((song) => {
+      song.confirmKey(key);
+      void backend.deviceCache.saveCustomSong(song);
+    })();
+  };
+
   const handleTogglePitchLock = (stemId: string) =>
     withCurrentSong((song) => {
       const target = song.stems.find((s) => s.id === stemId);
@@ -236,6 +244,8 @@ export const App: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-screen lg:h-screen w-full max-w-full bg-[#0c0c0e] text-slate-100 overflow-x-hidden lg:overflow-hidden font-sans">
+      <PwaStatus live={engineState.isPlaying || pad.isActive} songs={songs} />
+
       {/* Alerta de Segurança de Rota de Áudio de Palco (ENG-02) */}
       <RouteHealthBanner
         routeHealth={engineState.routeHealth}
@@ -243,8 +253,6 @@ export const App: React.FC = () => {
         onOpenRouting={() => setIsRoutingModalOpen(true)}
         onConfirmRecovery={() => void audioEngine.confirmRouteRecovery()}
       />
-
-      <PwaStatus live={engineState.isPlaying || pad.isActive} songs={songs} />
 
       {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro, Plugins VST e Banco de VS */}
       <StageHeader
@@ -344,6 +352,8 @@ export const App: React.FC = () => {
               meterSource={audioEngine}
               originalKey={currentSong.originalKey}
               currentKey={currentSong.currentKey}
+              keyInfo={currentSong.keyInfo}
+              onConfirmKey={handleConfirmKey}
               pitchShiftSemitones={currentSong.pitchShiftSemitones}
               masterVolume={engineState.masterVolume}
               onVolumeChange={handleVolumeChange}

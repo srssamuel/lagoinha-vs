@@ -21,8 +21,9 @@ export interface ParsedMultitrackMetadata {
   title: string;
   artist: string;
   bpm: number;
-  originalKey: string;
-  /** true = tom escrito no nome; false = nome sem tom (detectar pelo áudio antes de confiar em originalKey). */
+  /** null = o nome não traz tom (nunca um valor padrão: analisar o áudio ou deixar sem tom). */
+  originalKey: string | null;
+  /** true = tom escrito no nome; false = nome sem tom (analisar o áudio). */
   keyFromName: boolean;
 }
 
@@ -86,10 +87,9 @@ export class ZipMultitrackExtractor {
     const bpmMatch = normalized.match(/(\d{2,3})\s*bpm/i);
     const bpm = bpmMatch ? Math.max(40, Math.min(240, parseInt(bpmMatch[1]!, 10))) : 120;
 
-    // Tom pelo nome (mesmas regras do migrador do acervo). Sem tom no nome, o chamador analisa o áudio
-    // (keyFromName = false); 'G' é só o valor provisório, nunca mais um "tom detectado".
+    // Tom pelo nome. Sem tom no nome, o chamador analisa o áudio (keyFromName = false); nunca se assume um tom.
     const keyInName = parseKeyFromName(zipFilename);
-    const originalKey = keyInName ?? 'G';
+    const originalKey = keyInName;
 
     // Extrai Artista entre parênteses se houver (ex: "(Versão Mateus Brito)")
     const parenMatch = normalized.match(/\(([^)]+)\)/);
@@ -431,3 +431,4 @@ export class ZipMultitrackExtractor {
     return 'audio/wav';
   }
 }
+
