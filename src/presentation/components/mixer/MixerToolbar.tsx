@@ -1,9 +1,9 @@
 import React from 'react';
 import { Sliders, Sparkles, VolumeX, Guitar, RotateCcw, Cpu, Lock, Music2 } from 'lucide-react';
 import { TrackStem, StemType } from '../../../domain/entities/TrackStem';
-import { ChordTransposer } from '../../../domain/services/ChordTransposer';
 import { EnsaioMixMode } from '../../../domain/services/EnsaioMixService';
 import { formatSemitones } from './meterMath';
+import { isMinorKey, pitchClass } from './keyMath';
 
 export type MixerFilterGroup = 'ALL' | 'STRINGS' | 'RHYTHM_KEYS' | 'CUES_VOCALS';
 
@@ -87,15 +87,20 @@ export const MixerToolbar: React.FC<MixerToolbarProps> = ({
     });
   };
 
+  // Tom menor ("Em") lista as opções em menor; o valor do select é casado por classe de altura
+  // (Gb = F#), senão o navegador mostrava a primeira opção ("Tom C") para músicas em menor.
+  const minorSuffix = isMinorKey(originalKey) ? 'm' : '';
+  const keyOptions = ALL_KEYS.map((k) => `${k}${minorSuffix}`);
+  const selectedOption = keyOptions.find((k) => pitchClass(k) === pitchClass(currentKey)) ?? keyOptions[0];
+
   const handleSelectTargetKey = (targetKey: string) => {
     if (!onPitchShiftChange) return;
-    // Distância em semitons entre o tom original e o tom alvo, no intervalo [-6, +6]
-    for (let st = -6; st <= 6; st++) {
-      if (ChordTransposer.transposeChordLine(originalKey, st).trim() === targetKey) {
-        onPitchShiftChange(st);
-        return;
-      }
-    }
+    const from = pitchClass(originalKey);
+    const to = pitchClass(targetKey);
+    if (from === null || to === null) return;
+    // Distância em semitons entre o tom original e o tom alvo, no intervalo [-6, +5]
+    const st = ((to - from + 18) % 12) - 6;
+    onPitchShiftChange(st);
   };
 
   return (
@@ -154,14 +159,14 @@ export const MixerToolbar: React.FC<MixerToolbarProps> = ({
                 -1
               </button>
               <select
-                value={currentKey}
+                value={selectedOption}
                 onChange={(e) => handleSelectTargetKey(e.target.value)}
                 aria-label="Selecionar Tom da Música"
                 className="bg-slate-950 text-amber-300 text-xs font-mono font-black rounded px-2 py-1.5 min-h-[44px] sm:min-h-0 border border-amber-500/40 cursor-pointer"
               >
-                {ALL_KEYS.map((k) => (
+                {keyOptions.map((k) => (
                   <option key={k} value={k}>
-                    Tom {k} {k === originalKey ? '(Orig)' : ''}
+                    Tom {k} {pitchClass(k) === pitchClass(originalKey) ? '(Orig)' : ''}
                   </option>
                 ))}
               </select>
