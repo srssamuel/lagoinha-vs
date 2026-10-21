@@ -2,7 +2,6 @@ import {
   AudioEnginePort,
   AudioEngineState,
   AudioOutputDeviceInfo,
-  AudioRouteHealth,
   MasterRtaData,
   MeterFrame
 } from '../../application/ports/AudioEnginePort';
@@ -13,27 +12,16 @@ import { Song } from '../../domain/entities/Song';
 import { RoutingMode } from '../../domain/value-objects/AudioRouting';
 import { MixerBusService } from '../../application/services/MixerBusService';
 import { QuantizedSectionService } from '../../application/services/QuantizedSectionService';
-import { ProceduralClickGenerator } from './ProceduralClickGenerator';
+import {
+  applyStemRoutingGains,
+  buildMasterRouting,
+  connectTestTone,
+  createStemChannelStrip,
+  StemAudioNodes
+} from './AudioRoutingGraph';
+import { MetronomeScheduler } from './MetronomeScheduler';
 import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
-import { PitchShifterDspNode } from './PitchShifterDspNode';
-
-interface StemAudioNodes {
-  source: AudioBufferSourceNode | null;
-  pitchShifter: PitchShifterDspNode;
-  highPassFilter: BiquadFilterNode;
-  eqLow: BiquadFilterNode;
-  eqMid: BiquadFilterNode;
-  eqHigh: BiquadFilterNode;
-  tubeSaturator: WaveShaperNode;
-  compressor: DynamicsCompressorNode;
-  gainNode: GainNode;
-  leftGain: GainNode;   // Ch 1 (VS Left / FOH L)
-  rightGain: GainNode;  // Ch 2 (VS Right / FOH R)
-  ch3Gain: GainNode;    // Ch 3 (Click Dedicated IEM)
-  ch4Gain: GainNode;    // Ch 4 (Guide Dedicated IEM)
-  analyser: AnalyserNode;
-  timeDomainData: Uint8Array<ArrayBuffer>;
-}
+import { RouteHealthMonitor } from './RouteHealthMonitor';
 
 export class WebAudioEngine implements AudioEnginePort {
   private ctx: AudioContext | null = null;
@@ -43,7 +31,6 @@ export class WebAudioEngine implements AudioEnginePort {
   private masterAnalyser: AnalyserNode | null = null;
   private masterFreqData: Uint8Array<ArrayBuffer> | null = null;
   private vsMerger: ChannelMergerNode | null = null;
-  private vsSplitter: ChannelSplitterNode | null = null;
   private finalMerger: ChannelMergerNode | null = null;
   private channelMerger: ChannelMergerNode | null = null; // backward compatibility
 
@@ -61,18 +48,20 @@ export class WebAudioEngine implements AudioEnginePort {
   private isLoopClickActive: boolean = false;
   private masterVolume: number = 1.0;
 
-  // Pre-Roll Count-In (Contagem Prévia de 1 ou 2 compassos)
-  private countInBars: number = 0; // 0 = Off, 1 = 1 Bar, 2 = 2 Bars
-  private isCountingIn: boolean = false;
-  private countInBeat: number = 1;
-  private countInTimerId: number | null = null;
-
-  // Metronome click scheduler (used only when no real click stem file is present or during Loop Click)
-  private clickTimerId: number | null = null;
-  private nextClickTime: number = 0;
-  private currentBeatInBar: number = 1;
-  private clickBufferAccent: AudioBuffer | null = null;
-  private clickBufferRegular: AudioBuffer | null = null;
+  // Metrônomo procedural (só sem stem de click real ou no Loop Click) e contagem prévia (1 ou 2 compassos)
+  private readonly metronome = new MetronomeScheduler({
+    getCtx: () => this.ctx,
+    getSong: () => this.currentSong,
+    getRoutingMode: () => this.routingMode,
+    getBuses: () => ({
+      vsMerger: this.vsMerger,
+      finalMerger: this.finalMerger,
+      channelMerger: this.channelMerger
+    }),
+    isPlaying: () => this.isPlaying,
+    getPlaybackTime: () => this.getCurrentPlaybackTime(),
+    notifyState: () => this.notifyState()
+  });
 
   // State update listeners
   private listeners: Set<(state: AudioEngineState) => void> = new Set();
@@ -80,14 +69,18 @@ export class WebAudioEngine implements AudioEnginePort {
   private lastStateSignature: string = '';
   private animationFrameId: number | null = null;
 
-  // Detecção de Hardware e Canais Físicos/Virtuais
-  private availableAudioDevices: AudioOutputDeviceInfo[] = [];
+  // Dispositivo de saída selecionado (a saúde da rota e a lista de dispositivos vivem no monitor)
   private selectedAudioDeviceId: string = 'default';
 
   // Integridade de Rota de Áudio de Palco (ENG-02)
-  private routeHealth: AudioRouteHealth = 'healthy';
-  private routeLossReason: string | null = null;
-  private deviceChangeDebounceTimer: number | null = null;
+  private readonly routeMonitor = new RouteHealthMonitor({
+    getMaxChannelCount: () => this.ctx?.destination?.maxChannelCount || 2,
+    getSelectedDeviceId: () => this.selectedAudioDeviceId,
+    isPlaying: () => this.isPlaying,
+    pause: () => this.pause(),
+    setAudioOutputDevice: (deviceId) => this.setAudioOutputDevice(deviceId),
+    notifyState: () => this.notifyState()
+  });
 
   constructor() {
     // Lazy AudioContext initialization on first user gesture
@@ -107,7 +100,7 @@ export class WebAudioEngine implements AudioEnginePort {
     this.ctx = new AudioContextClass();
 
     void this.detectAudioDevices();
-    this.setupDeviceChangeListener();
+    this.routeMonitor.listen();
 
     // Detecção e configuração de saídas físicas multicanal (ex: XR18, UMC404HD, Focusrite Scarlett 4i4/18i20)
     const maxChannels = this.ctx.destination.maxChannelCount;
@@ -127,46 +120,16 @@ export class WebAudioEngine implements AudioEnginePort {
       }
     }
 
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.setValueAtTime(this.masterVolume, this.ctx.currentTime);
-
-    // Master Brickwall Limiter (inspirado no Limiter №6 / LoudMax da Plugin Boutique)
-    // Impede clipping/distorção digital quando canais são reforçados até +6.0 dB
-    this.masterLimiter = this.ctx.createDynamicsCompressor();
-    this.masterLimiter.threshold.setValueAtTime(-1.0, this.ctx.currentTime);
-    this.masterLimiter.knee.setValueAtTime(0.0, this.ctx.currentTime);
-    this.masterLimiter.ratio.setValueAtTime(20.0, this.ctx.currentTime);
-    this.masterLimiter.attack.setValueAtTime(0.001, this.ctx.currentTime);
-    this.masterLimiter.release.setValueAtTime(0.08, this.ctx.currentTime);
-
-    // Master FFT Analyser (RTA Spectrum Analyzer 64 bins)
-    this.masterAnalyser = this.ctx.createAnalyser();
-    this.masterAnalyser.fftSize = 128;
-    this.masterAnalyser.smoothingTimeConstant = 0.72;
-    this.masterFreqData = new Uint8Array(this.masterAnalyser.frequencyBinCount);
-
-    // VS Master Bus (Canais 1 e 2 -> Master Gain -> Limiter -> Analyser -> Splitter)
-    this.vsMerger = this.ctx.createChannelMerger(2);
-    this.vsSplitter = this.ctx.createChannelSplitter(2);
-    this.vsMerger.connect(this.masterGain);
-    this.masterGain.connect(this.masterLimiter);
-    this.masterLimiter.connect(this.masterAnalyser);
-    this.masterAnalyser.connect(this.vsSplitter);
-
-    // Final Discrete 4-Channel Merger (Padrão Leandro Machado Lagoinha):
-    // Ch 0 (Out 1): VS Left (Mesa FOH)
-    // Ch 1 (Out 2): VS Right (Mesa FOH)
-    // Ch 2 (Out 3): Click Track (somente monitoração/IEM)
-    // Ch 3 (Out 4): Guide Track (somente monitoração/IEM)
-    this.finalMerger = this.ctx.createChannelMerger(4);
+    const master = buildMasterRouting(this.ctx, this.masterVolume);
+    this.masterGain = master.masterGain;
+    this.masterLimiter = master.masterLimiter;
+    this.masterAnalyser = master.masterAnalyser;
+    this.masterFreqData = master.masterFreqData;
+    this.vsMerger = master.vsMerger;
+    this.finalMerger = master.finalMerger;
     this.channelMerger = this.finalMerger; // backward compatibility
-    this.vsSplitter.connect(this.finalMerger, 0, 0); // Out 1 (FOH L)
-    this.vsSplitter.connect(this.finalMerger, 1, 1); // Out 2 (FOH R)
-    this.finalMerger.connect(this.ctx.destination);
-
     // Pré-cria buffers de click de reserva para Loop Click
-    this.clickBufferAccent = ProceduralClickGenerator.createClickBuffer(this.ctx, true);
-    this.clickBufferRegular = ProceduralClickGenerator.createClickBuffer(this.ctx, false);
+    this.metronome.prepare(this.ctx);
   }
 
   public async loadSong(song: Song): Promise<void> {
@@ -188,87 +151,13 @@ export class WebAudioEngine implements AudioEnginePort {
     song.stems.forEach((stem) => {
       if (!this.ctx || !this.channelMerger) return;
 
-      const pitchShifter = new PitchShifterDspNode(this.ctx, stem.isPitchShiftable);
-      pitchShifter.setSemitones(song.pitchShiftSemitones);
-
-      const highPassFilter = this.ctx.createBiquadFilter();
-      highPassFilter.type = 'highpass';
-
-      const eqLow = this.ctx.createBiquadFilter();
-      eqLow.type = 'lowshelf';
-      eqLow.frequency.value = 100;
-
-      const eqMid = this.ctx.createBiquadFilter();
-      eqMid.type = 'peaking';
-      eqMid.frequency.value = 1400;
-      eqMid.Q.value = 1.1;
-
-      const eqHigh = this.ctx.createBiquadFilter();
-      eqHigh.type = 'highshelf';
-      eqHigh.frequency.value = 8500;
-
-      const tubeSaturator = this.ctx.createWaveShaper();
-      tubeSaturator.oversample = '2x';
-
-      const compressor = this.ctx.createDynamicsCompressor();
-
-      const gainNode = this.ctx.createGain();
-      const leftGain = this.ctx.createGain();   // Ch 1 (VS L)
-      const rightGain = this.ctx.createGain();  // Ch 2 (VS R)
-      const ch3Gain = this.ctx.createGain();    // Ch 3 (Click Dedicated IEM)
-      const ch4Gain = this.ctx.createGain();    // Ch 4 (Guide Dedicated IEM)
-      const analyser = this.ctx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.65;
-      const timeDomainData = new Uint8Array(analyser.frequencyBinCount);
-
-      // Cadeia VST Channel Strip:
-      // PitchShifter (Constant-Tempo, Bypass em Bateria/Loops/Click/Guia) -> HighPass (De-Bleed) -> EQ 3 Bandas -> Tube Saturator -> Compressor -> Gain -> Analyser & 4-Channel Distribution
-      pitchShifter.output.connect(highPassFilter);
-      highPassFilter.connect(eqLow);
-      eqLow.connect(eqMid);
-      eqMid.connect(eqHigh);
-      eqHigh.connect(tubeSaturator);
-      tubeSaturator.connect(compressor);
-      compressor.connect(gainNode);
-
-      gainNode.connect(analyser);
-      gainNode.connect(leftGain);
-      gainNode.connect(rightGain);
-      gainNode.connect(ch3Gain);
-      gainNode.connect(ch4Gain);
-
-      // Conexões de Barramento:
-      // Canais 1 e 2 passam pelo VS Master Bus (Master Gain + Limiter №6 + Analyser)
-      if (this.vsMerger) {
-        leftGain.connect(this.vsMerger, 0, 0);
-        rightGain.connect(this.vsMerger, 0, 1);
-      }
-
-      // Canais 3 e 4 vão DIRETOS para as saídas físicas discretas (Line-Level puro sem limiter de FOH)
-      if (this.finalMerger) {
-        ch3Gain.connect(this.finalMerger, 0, 2); // Out 3: Click Track
-        ch4Gain.connect(this.finalMerger, 0, 3); // Out 4: Guide Track
-      }
-
-      this.stemNodes.set(stem.id, {
-        source: null,
-        pitchShifter,
-        highPassFilter,
-        eqLow,
-        eqMid,
-        eqHigh,
-        tubeSaturator,
-        compressor,
-        gainNode,
-        leftGain,
-        rightGain,
-        ch3Gain,
-        ch4Gain,
-        analyser,
-        timeDomainData
-      });
-
+      this.stemNodes.set(
+        stem.id,
+        createStemChannelStrip(this.ctx, stem, song.pitchShiftSemitones, {
+          vsMerger: this.vsMerger,
+          finalMerger: this.finalMerger
+        })
+      );
       if (stem.audioUrl && !stem.audioBuffer) {
         void fetch(stem.audioUrl)
           .then((res) => {
@@ -306,9 +195,9 @@ export class WebAudioEngine implements AudioEnginePort {
     if (!this.ctx || !this.currentSong || this.isPlaying) return;
 
     // Proteção de segurança de palco (ENG-02): se a rota foi perdida ou desconectada, bloqueia play
-    if (this.routeHealth === 'lost' || this.routeHealth === 'reconnected') {
+    if (this.routeMonitor.blocksPlayback) {
       console.warn(
-        `[WebAudioEngine] Reprodução bloqueada: Rota de áudio em estado '${this.routeHealth}'. ` +
+        `[WebAudioEngine] Reprodução bloqueada: Rota de áudio em estado '${this.routeMonitor.health}'. ` +
         `Revalide a rota na interface de palco antes de iniciar o playback.`
       );
       return;
@@ -319,7 +208,7 @@ export class WebAudioEngine implements AudioEnginePort {
     }
 
     // Se houver contagem prévia configurada (1 ou 2 compassos) e a música estiver no início (tempo 0)
-    if (this.countInBars > 0 && this.pausedAtTime === 0 && !this.isCountingIn) {
+    if (this.metronome.countInBars > 0 && this.pausedAtTime === 0 && !this.metronome.isCountingIn) {
       this.startPreRollCountIn();
       return;
     }
@@ -330,7 +219,7 @@ export class WebAudioEngine implements AudioEnginePort {
     // Só usa metrônomo procedural se a música não tiver um arquivo real de click
     const clickStem = this.currentSong.stems.find((s) => s.type === 'click');
     if (!clickStem?.audioUrl) {
-      this.setupMetronomeSchedule();
+      this.metronome.start();
     }
 
     this.applyMixerSettings();
@@ -347,65 +236,33 @@ export class WebAudioEngine implements AudioEnginePort {
     if (!this.ctx || !this.currentSong) return;
 
     this.isPlaying = true;
-    this.isCountingIn = true;
-    this.countInBeat = 1;
 
-    const bpm = this.currentSong.bpm;
-    const secondsPerBeat = 60 / bpm;
-    const beatsPerBar = this.currentSong.timeSignature.beats;
-    const totalBeats = this.countInBars * beatsPerBar;
-    let beatsRemaining = totalBeats;
+    this.metronome.startCountIn(() => {
+      if (!this.ctx) return;
+      this.playbackStartTime = this.ctx.currentTime;
+      this.pausedAtTime = 0;
 
-    const tick = () => {
-      if (!this.isPlaying || !this.isCountingIn || !this.ctx) return;
-
-      const currentCount = totalBeats - beatsRemaining + 1;
-      const beatInCurrentBar = ((currentCount - 1) % beatsPerBar) + 1;
-      this.countInBeat = currentCount;
-      this.scheduleClick(this.ctx.currentTime, beatInCurrentBar === 1);
-      this.notifyState();
-
-      beatsRemaining--;
-
-      if (beatsRemaining > 0) {
-        this.countInTimerId = window.setTimeout(tick, secondsPerBeat * 1000);
-      } else {
-        this.countInTimerId = window.setTimeout(() => {
-          if (!this.isPlaying || !this.ctx) return;
-          this.isCountingIn = false;
-          this.playbackStartTime = this.ctx.currentTime;
-          this.pausedAtTime = 0;
-
-          const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
-          if (!clickStem?.audioUrl) {
-            this.setupMetronomeSchedule();
-          }
-
-          this.applyMixerSettings();
-          this.startAudioSources(0);
-          this.startStateLoop();
-          this.notifyState();
-        }, secondsPerBeat * 1000);
+      const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
+      if (!clickStem?.audioUrl) {
+        this.metronome.start();
       }
-    };
 
-    tick();
+      this.applyMixerSettings();
+      this.startAudioSources(0);
+      this.startStateLoop();
+      this.notifyState();
+    });
   }
-
   public pause(): void {
     if (!this.isPlaying || !this.ctx) return;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-    if (this.countInTimerId !== null) {
-      clearTimeout(this.countInTimerId);
-      this.countInTimerId = null;
-    }
-    this.isCountingIn = false;
+    this.metronome.cancelCountIn();
     this.pausedAtTime = this.getCurrentPlaybackTime();
     this.stopAudioSources();
-    this.stopMetronome();
+    this.metronome.stop();
     this.isPlaying = false;
     this.notifyState();
   }
@@ -415,13 +272,9 @@ export class WebAudioEngine implements AudioEnginePort {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-    if (this.countInTimerId !== null) {
-      clearTimeout(this.countInTimerId);
-      this.countInTimerId = null;
-    }
-    this.isCountingIn = false;
+    this.metronome.cancelCountIn();
     this.stopAudioSources();
-    this.stopMetronome();
+    this.metronome.stop();
     this.isPlaying = false;
     this.pausedAtTime = 0;
     this.queuedSectionId = null;
@@ -429,17 +282,13 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   public seek(timeInSeconds: number): void {
-    if (this.countInTimerId !== null) {
-      clearTimeout(this.countInTimerId);
-      this.countInTimerId = null;
-    }
-    this.isCountingIn = false;
+    this.metronome.cancelCountIn();
     const target = Math.max(0, Math.min(this.currentSong?.duration || 0, timeInSeconds));
     const wasPlaying = this.isPlaying;
 
     if (wasPlaying) {
       this.stopAudioSources();
-      this.stopMetronome();
+      this.metronome.stop();
     }
 
     this.pausedAtTime = target;
@@ -448,7 +297,7 @@ export class WebAudioEngine implements AudioEnginePort {
       this.playbackStartTime = this.ctx.currentTime - this.pausedAtTime;
       const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
       if (!clickStem?.audioUrl) {
-        this.setupMetronomeSchedule();
+        this.metronome.start();
       }
       this.applyMixerSettings();
       this.startAudioSources(this.pausedAtTime);
@@ -617,7 +466,7 @@ export class WebAudioEngine implements AudioEnginePort {
   }
 
   public setCountInBars(bars: number): void {
-    this.countInBars = Math.max(0, Math.min(2, Math.round(bars)));
+    this.metronome.setCountInBars(bars);
     this.notifyState();
   }
 
@@ -664,14 +513,14 @@ export class WebAudioEngine implements AudioEnginePort {
       isSoloClickActive: this.isSoloClickActive,
       isLoopClickActive: this.isLoopClickActive,
       masterVolume: this.masterVolume,
-      countInBars: this.countInBars,
-      isCountingIn: this.isCountingIn,
-      countInBeat: this.countInBeat,
+      countInBars: this.metronome.countInBars,
+      isCountingIn: this.metronome.isCountingIn,
+      countInBeat: this.metronome.countInBeat,
       audioHardwareChannels,
-      availableAudioDevices: this.availableAudioDevices,
+      availableAudioDevices: this.routeMonitor.availableDevices,
       selectedAudioDeviceId: this.selectedAudioDeviceId,
-      routeHealth: this.routeHealth,
-      routeLossReason: this.routeLossReason
+      routeHealth: this.routeMonitor.health,
+      routeLossReason: this.routeMonitor.lossReason
     };
   }
 
@@ -827,103 +676,8 @@ export class WebAudioEngine implements AudioEnginePort {
       const nodes = this.stemNodes.get(stemId);
       if (!nodes) return;
 
-      // Canal 1: VS Left (Mesa FOH / Split L)
-      nodes.leftGain.gain.cancelScheduledValues(now);
-      nodes.leftGain.gain.setValueAtTime(gains.ch1_vsL, now);
-      nodes.leftGain.gain.linearRampToValueAtTime(gains.ch1_vsL, now + 0.015);
-
-      // Canal 2: VS Right (Mesa FOH / Split R)
-      nodes.rightGain.gain.cancelScheduledValues(now);
-      nodes.rightGain.gain.setValueAtTime(gains.ch2_vsR, now);
-      nodes.rightGain.gain.linearRampToValueAtTime(gains.ch2_vsR, now + 0.015);
-
-      // Canal 3: Click Track dedicado (somente monitoração/IEM)
-      nodes.ch3Gain.gain.cancelScheduledValues(now);
-      nodes.ch3Gain.gain.setValueAtTime(gains.ch3_click, now);
-      nodes.ch3Gain.gain.linearRampToValueAtTime(gains.ch3_click, now + 0.015);
-
-      // Canal 4: Guide Track dedicado (somente monitoração/IEM)
-      nodes.ch4Gain.gain.cancelScheduledValues(now);
-      nodes.ch4Gain.gain.setValueAtTime(gains.ch4_guide, now);
-      nodes.ch4Gain.gain.linearRampToValueAtTime(gains.ch4_guide, now + 0.015);
+      applyStemRoutingGains(nodes, gains, now);
     });
-  }
-
-  private setupMetronomeSchedule(): void {
-    if (!this.ctx || !this.currentSong) return;
-
-    const bpm = this.currentSong.bpm;
-    const secondsPerBeat = 60 / bpm;
-    const beatsPerBar = this.currentSong.timeSignature.beats;
-
-    const currentTime = this.getCurrentPlaybackTime();
-    const totalBeatsElapsed = Math.floor(currentTime / secondsPerBeat);
-
-    this.currentBeatInBar = (totalBeatsElapsed % beatsPerBar) + 1;
-    this.nextClickTime = this.ctx.currentTime + (secondsPerBeat - (currentTime % secondsPerBeat));
-
-    const scheduleWindow = () => {
-      if (!this.isPlaying || !this.ctx) return;
-
-      while (this.nextClickTime < this.ctx.currentTime + 0.15) {
-        this.scheduleClick(this.nextClickTime, this.currentBeatInBar === 1);
-        this.nextClickTime += secondsPerBeat;
-        this.currentBeatInBar = (this.currentBeatInBar % beatsPerBar) + 1;
-      }
-
-      this.clickTimerId = window.setTimeout(scheduleWindow, 30);
-    };
-
-    scheduleWindow();
-  }
-
-  private scheduleClick(time: number, isAccent: boolean): void {
-    if (!this.ctx || (!this.finalMerger && !this.channelMerger)) return;
-
-    const buffer = isAccent ? this.clickBufferAccent : this.clickBufferRegular;
-    if (!buffer) return;
-
-    const clickSource = this.ctx.createBufferSource();
-    clickSource.buffer = buffer;
-
-    const clickGain = this.ctx.createGain();
-    const clickStem = this.currentSong?.stems.find((s) => s.type === 'click');
-    const vol = clickStem?.isAudible(this.currentSong?.hasSoloTrack || false) ? clickStem.volume : 0;
-
-    clickGain.gain.setValueAtTime(vol, time);
-    clickSource.connect(clickGain);
-
-    if (this.routingMode === 'MULTI_4CH_DISCRETE') {
-      // Output 3 exclusivo: Click dedicado para monitoração dos músicos (IEM), zero PA FOH
-      if (this.finalMerger) {
-        clickGain.connect(this.finalMerger, 0, 2);
-      }
-    } else if (this.routingMode === 'SPLIT_IEM_PA') {
-      // Canal 1 (Left IEM fones dos músicos)
-      if (this.vsMerger) {
-        clickGain.connect(this.vsMerger, 0, 0);
-      } else if (this.channelMerger) {
-        clickGain.connect(this.channelMerger, 0, 0);
-      }
-    } else {
-      // Stereo Full: L e R
-      if (this.vsMerger) {
-        clickGain.connect(this.vsMerger, 0, 0);
-        clickGain.connect(this.vsMerger, 0, 1);
-      } else if (this.channelMerger) {
-        clickGain.connect(this.channelMerger, 0, 0);
-        clickGain.connect(this.channelMerger, 0, 1);
-      }
-    }
-
-    clickSource.start(time);
-  }
-
-  private stopMetronome(): void {
-    if (this.clickTimerId !== null) {
-      clearTimeout(this.clickTimerId);
-      this.clickTimerId = null;
-    }
   }
 
   private startAudioSources(offset: number): void {
@@ -1002,8 +756,8 @@ export class WebAudioEngine implements AudioEnginePort {
       if (this.currentSong && currentTime >= this.currentSong.duration) {
         if (this.isLoopClickActive) {
           this.stopAudioSources();
-          if (this.clickTimerId === null) {
-            this.setupMetronomeSchedule();
+          if (!this.metronome.isRunning) {
+            this.metronome.start();
           }
         } else {
           this.stop();
@@ -1041,60 +795,9 @@ export class WebAudioEngine implements AudioEnginePort {
     this.animationFrameId = requestAnimationFrame(loop);
   }
 
-  public async detectAudioDevices(): Promise<AudioOutputDeviceInfo[]> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-      this.availableAudioDevices = [
-        {
-          deviceId: 'default',
-          label: 'Dispositivo Padrão do Sistema (WASAPI)',
-          groupId: 'default-group',
-          isVirtual: false,
-          isUsb: false,
-          channelCountEstimate: this.ctx?.destination?.maxChannelCount || 2
-        }
-      ];
-      return this.availableAudioDevices;
-    }
-
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const outputs = devices.filter((d) => d.kind === 'audiooutput');
-
-      if (outputs.length === 0) {
-        this.availableAudioDevices = [
-          {
-            deviceId: 'default',
-            label: 'Dispositivo Padrão do Sistema (WASAPI)',
-            groupId: 'default-group',
-            isVirtual: false,
-            isUsb: false,
-            channelCountEstimate: this.ctx?.destination?.maxChannelCount || 2
-          }
-        ];
-        return this.availableAudioDevices;
-      }
-
-      this.availableAudioDevices = outputs.map((d, idx) => {
-        const rawLabel = d.label || `Saída de Áudio ${idx + 1}`;
-        const isVirtual = /(cable|voicemeeter|virtual|vac|loopback|blackhole|dante)/i.test(rawLabel);
-        const isUsb = /(usb|umc|xr18|x32|scarlett|focusrite|behringer|presonus|motu|quad|audiobox|line-level)/i.test(rawLabel);
-
-        return {
-          deviceId: d.deviceId,
-          label: rawLabel,
-          groupId: d.groupId,
-          isVirtual,
-          isUsb,
-          channelCountEstimate: isUsb ? 4 : isVirtual ? 4 : (this.ctx?.destination?.maxChannelCount || 2)
-        };
-      });
-
-      return this.availableAudioDevices;
-    } catch {
-      return this.availableAudioDevices;
-    }
+  public detectAudioDevices(): Promise<AudioOutputDeviceInfo[]> {
+    return this.routeMonitor.detectAudioDevices();
   }
-
   public async requestDevicePermissions(): Promise<AudioOutputDeviceInfo[]> {
     if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
       try {
@@ -1153,128 +856,29 @@ export class WebAudioEngine implements AudioEnginePort {
     osc.connect(gain);
 
     if (this.finalMerger) {
-      if (this.routingMode === 'MULTI_4CH_DISCRETE') {
-        gain.connect(this.finalMerger, 0, channelIndex);
-      } else if (this.routingMode === 'SPLIT_IEM_PA') {
-        if (channelIndex === 2 || channelIndex === 3) {
-          gain.connect(this.finalMerger, 0, 0); // Fones (L)
-        } else {
-          gain.connect(this.finalMerger, 0, 1); // PA (R)
-        }
-      } else {
-        if (channelIndex === 0 || channelIndex === 2) {
-          gain.connect(this.finalMerger, 0, 0);
-        } else {
-          gain.connect(this.finalMerger, 0, 1);
-        }
-      }
+      connectTestTone(gain, this.routingMode, channelIndex, this.finalMerger);
     } else {
       gain.connect(this.ctx.destination);
     }
-
     osc.start(now);
     osc.stop(now + (durationMs / 1000));
   }
 
-  private setupDeviceChangeListener(): void {
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', () => {
-        this.handleDeviceChangeEvent();
-      });
-    }
-  }
-
   public handleDeviceChangeEvent(): void {
-    // 1. Resposta imediata (0 ms) para conter vazamento do metrônomo no palco em desconexão
-    void this.checkImmediateLossAndInterrupt();
-
-    // 2. Debounce de 150 ms para aguardar estabilização de enumeração do SO e detectar reconexão
-    if (this.deviceChangeDebounceTimer !== null) {
-      clearTimeout(this.deviceChangeDebounceTimer);
-    }
-    this.deviceChangeDebounceTimer = window.setTimeout(() => {
-      void this.evaluateDeviceChange();
-    }, 150);
+    this.routeMonitor.handleDeviceChangeEvent();
   }
 
-  public async checkImmediateLossAndInterrupt(): Promise<void> {
-    if (this.selectedAudioDeviceId && this.selectedAudioDeviceId !== 'default') {
-      try {
-        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const audioOutputs = devices.filter((d) => d.kind === 'audiooutput');
-          const isStillAvailable = audioOutputs.some((d) => d.deviceId === this.selectedAudioDeviceId);
-          if (!isStillAvailable) {
-            if (this.isPlaying) {
-              this.pause();
-            }
-            this.routeHealth = 'lost';
-            this.routeLossReason =
-              'A interface de áudio selecionada foi desconectada fisicamente ou desativada no sistema operacional. ' +
-              'A reprodução foi interrompida imediatamente (0 ms) para evitar vazamento do metrônomo para os alto-falantes padrão.';
-            this.notifyState();
-          }
-        }
-      } catch (err) {
-        console.warn('Erro na verificação imediata de devicechange:', err);
-      }
-    }
+  public checkImmediateLossAndInterrupt(): Promise<void> {
+    return this.routeMonitor.checkImmediateLossAndInterrupt();
   }
 
-  public async evaluateDeviceChange(): Promise<void> {
-    const previousSelectedId = this.selectedAudioDeviceId;
-    const previousHealth = this.routeHealth;
-    await this.detectAudioDevices();
-
-    // Se uma interface específica estava ativa (diferente de 'default' ou vazia)
-    if (previousSelectedId && previousSelectedId !== 'default') {
-      const isStillAvailable = this.availableAudioDevices.some((d) => d.deviceId === previousSelectedId);
-
-      if (!isStillAvailable) {
-        // Dispositivo perdido!
-        if (this.isPlaying) {
-          this.pause();
-        }
-        this.routeHealth = 'lost';
-        this.routeLossReason =
-          'A interface de áudio selecionada foi desconectada fisicamente ou desativada no sistema operacional. ' +
-          'A reprodução foi pausada por segurança para evitar direcionamento do metrônomo para os alto-falantes padrão.';
-        this.notifyState();
-        return;
-      }
-
-      // Se estava perdido e agora retornou na enumeração
-      if (previousHealth === 'lost' && isStillAvailable) {
-        this.routeHealth = 'reconnected';
-        this.routeLossReason =
-          'Interface de áudio detectada novamente. Por segurança litúrgica, clique em "Revalidar Rota de Palco" antes de retomar.';
-        this.notifyState();
-        return;
-      }
-    }
-
-    // Mudança irrelevante (ex: webcam ou microfone plugado/desplugado enquanto a saída selecionada permanece intacta)
-    if (this.routeHealth === 'lost' || this.routeHealth === 'reconnected') {
-      // Mantém o estado de alerta até confirmação explícita do operador
-    } else {
-      this.routeHealth = 'healthy';
-      this.routeLossReason = null;
-    }
-    this.notifyState();
+  public evaluateDeviceChange(): Promise<void> {
+    return this.routeMonitor.evaluateDeviceChange();
   }
 
-  public async confirmRouteRecovery(): Promise<boolean> {
-    if (!this.selectedAudioDeviceId) return false;
-    const ok = await this.setAudioOutputDevice(this.selectedAudioDeviceId);
-    if (ok || this.selectedAudioDeviceId === 'default') {
-      this.routeHealth = 'healthy';
-      this.routeLossReason = null;
-      this.notifyState();
-      return true;
-    }
-    return false;
+  public confirmRouteRecovery(): Promise<boolean> {
+    return this.routeMonitor.confirmRouteRecovery();
   }
-
   /** Emissão forçada: comandos do operador e eventos de rota sempre chegam à UI. */
   private notifyState(): void {
     const state = this.getState();
