@@ -25,6 +25,7 @@ import {
 } from './lazyModals';
 import { PendingApprovalModal } from './components/PendingApprovalModal';
 import { RouteHealthBanner } from './components/RouteHealthBanner';
+import { PwaStatus } from './components/PwaStatus';
 import { EnsaioMixService, EnsaioMixMode } from '../domain/services/EnsaioMixService';
 import { VstPluginRackService } from '../domain/services/VstPluginRackService';
 import { StemType, StemDspConfig } from '../domain/entities/TrackStem';
@@ -242,6 +243,8 @@ export const App: React.FC = () => {
         onOpenRouting={() => setIsRoutingModalOpen(true)}
         onConfirmRecovery={() => void audioEngine.confirmRouteRecovery()}
       />
+
+      <PwaStatus live={engineState.isPlaying || pad.isActive} songs={songs} />
 
       {/* Topo / Header da Estação com Álbuns, BPM, Tom / Pitch Shift, Cifra Pro, Plugins VST e Banco de VS */}
       <StageHeader

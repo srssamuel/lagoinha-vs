@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:rules": "node scripts/test-rules.mjs",
     "demo:e2e": "node --no-warnings scripts/demo-e2e.mjs",
+    "e2e:offline": "node --no-warnings scripts/e2e-offline.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
@@ -37,6 +38,9 @@
     "typescript": "^5.7.3",
     "typescript-eslint": "8.18.1",
     "vite": "^6.1.0",
-    "vitest": "^3.0.5"
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^3.0.5",
+    "workbox-build": "^7.4.1",
+    "workbox-window": "^7.4.1"
   }
 }

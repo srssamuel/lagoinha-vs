@@ -3,7 +3,11 @@ import ReactDOM from 'react-dom/client';
 import { App } from './presentation/App';
 import { BackendProvider } from './presentation/BackendContext';
 import { createBackend } from './presentation/composition';
+import { initServiceWorker } from './infrastructure/pwa/registerServiceWorker';
 import './index.css';
+
+// App disponível offline (precache). Atualização nunca é aplicada sozinha: ver PwaStatus.
+initServiceWorker();
 
 const rootElement = document.getElementById('root');
 
