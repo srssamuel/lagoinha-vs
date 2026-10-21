@@ -10,6 +10,7 @@ import { GoogleDriveStorageService } from '../infrastructure/storage/GoogleDrive
 import { IndexedDbDeviceCache } from '../infrastructure/storage/IndexedDbDeviceCache';
 import { LocalSetlistRepository } from '../infrastructure/storage/LocalSetlistRepository';
 import { LocalStemStore } from '../infrastructure/storage/LocalStemStore';
+import type { FirebaseBackendEnv } from './firebaseBackend';
 
 export type BackendKind = 'local' | 'firebase';
 
@@ -22,7 +23,7 @@ export interface BackendEnv {
 
 export interface Backend {
   kind: BackendKind;
-  /** Login e membros: na F0 o mesmo LocalAuthAdapter atende as duas portas. */
+  /** Login e membros: um único serviço atende as duas portas (local ou Firebase). */
   accounts: AccountService;
   library: SongLibraryPort;
   stems: StemBlobPort;
@@ -45,15 +46,19 @@ export function isDemoModeEnabled(env: BackendEnv): boolean {
 }
 
 /** Único lugar do app que escolhe adaptadores (spec-banco-online, seção 8). */
-export function createBackend(env: BackendEnv = import.meta.env): Backend {
+export async function createBackend(env: BackendEnv & FirebaseBackendEnv = import.meta.env): Promise<Backend> {
   const kind = resolveBackendKind(env);
   if (kind === 'firebase') {
-    throw new Error(
-      'VITE_BACKEND=firebase ainda não existe: os adaptadores Firebase chegam na fase F2. Use VITE_BACKEND=local.'
-    );
+    // Firebase só entra no bundle de quem usa: o modo local continua leve.
+    const { createFirebaseBackend } = await import('./firebaseBackend');
+    return createFirebaseBackend(env);
   }
+  return createLocalBackend(env);
+}
+
+export function createLocalBackend(env: BackendEnv = {}): Backend {
   return {
-    kind,
+    kind: 'local',
     accounts: new LocalAuthAdapter({ demoMode: isDemoModeEnabled(env) }),
     library: new LocalSongLibraryAdapter(),
     stems: new LocalStemStore(),

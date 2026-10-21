@@ -37,15 +37,18 @@ describe('composition root', () => {
     expect(() => resolveBackendKind({ VITE_BACKEND: 'supabase' })).toThrow(/VITE_BACKEND inválido/);
   });
 
-  it('firebase ainda não monta (F2) em vez de cair em silêncio no local', () => {
-    expect(() => createBackend({ VITE_BACKEND: 'firebase' })).toThrow(/F2/);
+  it('firebase sem config falha alto em vez de cair em silêncio no local', async () => {
+    await expect(createBackend({ VITE_BACKEND: 'firebase' })).rejects.toThrow(/VITE_STEMS_WORKER_URL/);
+    await expect(
+      createBackend({ VITE_BACKEND: 'firebase', VITE_STEMS_WORKER_URL: 'https://stems.example' })
+    ).rejects.toThrow(/VITE_FIREBASE_API_KEY/);
   });
 
   it('I6: build de produção não traz admin automático nem usuários de exemplo', async () => {
     const productionEnv = { DEV: false };
     expect(isDemoModeEnabled(productionEnv)).toBe(false);
 
-    const backend = createBackend(productionEnv);
+    const backend = await createBackend(productionEnv);
     expect(backend.accounts.isDemoMode()).toBe(false);
     expect(backend.accounts.getCurrentUser()).toBeNull();
     expect(await backend.accounts.listAllUsers()).toEqual([]);

@@ -19,3 +19,7 @@ public/stems/
 
 # Logs dos emuladores do Firebase (npm run test:rules)
 *-debug.log
+
+# Worker de stems
+workers/stems/node_modules/
+workers/stems/.wrangler/

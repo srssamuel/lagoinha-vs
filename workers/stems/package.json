@@ -1,0 +1,21 @@
+{
+  "name": "lagoinha-vs-stems",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Worker de stems do Lagoinha VS (R2 + D1, autorizacao pelas regras do Firestore)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:emu": "node scripts/test-emu.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.6",
+    "@cloudflare/workers-types": "5.20261021.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.3"
+  }
+}

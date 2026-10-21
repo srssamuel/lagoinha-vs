@@ -30,6 +30,11 @@ export interface CloudSongProps {
   /** Direito de distribuição; padrão `unknown` (só biblioteca da igreja, nunca catálogo global). */
   rightsClass?: RightsClass;
   licenseRef?: LicenseRef;
+  /** Biblioteca online: pacote pronto para tocar ou pendente com motivo explícito. */
+  status?: 'ready' | 'pending';
+  pendingReason?: string;
+  currentVersionId?: string;
+  kind?: 'song' | 'pad';
 }
 
 export class CloudSong {
@@ -52,6 +57,10 @@ export class CloudSong {
   public readonly driveDownloadUrl?: string;
   public readonly rightsClass: RightsClass;
   public readonly licenseRef?: LicenseRef;
+  public readonly status: 'ready' | 'pending';
+  public readonly pendingReason?: string;
+  public readonly currentVersionId?: string;
+  public readonly kind: 'song' | 'pad';
 
   constructor(props: CloudSongProps) {
     this.id = props.id;
@@ -73,5 +82,9 @@ export class CloudSong {
     this.driveDownloadUrl = props.driveDownloadUrl;
     this.rightsClass = props.rightsClass ?? 'unknown';
     this.licenseRef = props.licenseRef;
+    this.status = props.status ?? 'ready';
+    this.pendingReason = props.pendingReason;
+    this.currentVersionId = props.currentVersionId;
+    this.kind = props.kind ?? 'song';
   }
 }

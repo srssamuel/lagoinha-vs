@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'dist-review', 'node_modules', 'public', 'Louvor_Lagoinha_GoogleDrive'] },
+  { ignores: ['dist', 'dist-review', 'node_modules', 'public', 'Louvor_Lagoinha_GoogleDrive', '**/.wrangler'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
@@ -23,5 +23,10 @@ export default tseslint.config(
   {
     files: ['tests/**/*.{ts,tsx}'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' }
+  },
+  {
+    // Os tipos do Workers se estendem por `declare global { namespace Cloudflare { interface Env ... } }`
+    files: ['workers/**/*.ts'],
+    rules: { '@typescript-eslint/no-namespace': 'off', '@typescript-eslint/no-empty-object-type': 'off' }
   }
 );

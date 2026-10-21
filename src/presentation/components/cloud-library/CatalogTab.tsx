@@ -12,6 +12,7 @@ interface CatalogTabProps {
   selectedKey: string;
   onSelectedKeyChange: (value: string) => void;
   addedSongIds: Set<string>;
+  busySongId?: string | null;
   onAddSong: (song: CloudSong) => void;
 }
 
@@ -23,6 +24,7 @@ export const CatalogTab: React.FC<CatalogTabProps> = ({
   selectedKey,
   onSelectedKeyChange,
   addedSongIds,
+  busySongId = null,
   onAddSong
 }) => (
   <div className="flex-1 flex flex-col overflow-hidden">
@@ -56,7 +58,7 @@ export const CatalogTab: React.FC<CatalogTabProps> = ({
     {/* Lista de Músicas no Banco de VS */}
     <div className="flex-1 overflow-y-auto space-y-2 pr-1">
       {songs.map((song) => (
-        <CloudSongRow key={song.id} song={song} variant="catalog" isAdded={addedSongIds.has(song.id)} onAdd={onAddSong} />
+        <CloudSongRow key={song.id} song={song} variant="catalog" isAdded={addedSongIds.has(song.id)} isBusy={busySongId === song.id} onAdd={onAddSong} />
       ))}
     </div>
   </div>

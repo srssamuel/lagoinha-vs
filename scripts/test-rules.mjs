@@ -1,4 +1,4 @@
-// Sobe os emuladores do Firestore e do Storage, roda tests/rules e derruba tudo no fim.
+// Sobe os emuladores de Auth, Firestore e Storage, roda tests/rules e tests/firebase e derruba tudo no fim.
 // O emulador exige Java 21+: usa o do PATH, o de JAVA_HOME ou o JDK portatil em %LOCALAPPDATA%\Programs\jdk21.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -33,7 +33,7 @@ const result = spawnSync(
     'firebase',
     'emulators:exec',
     '--only',
-    'firestore,storage',
+    'auth,firestore,storage',
     '--project',
     'demo-lagoinha-vs',
     '"npx vitest run -c vitest.rules.config.ts"'

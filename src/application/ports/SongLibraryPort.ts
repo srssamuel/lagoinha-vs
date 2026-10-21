@@ -18,7 +18,8 @@ export interface SongLibraryPort {
   list(scope: LibraryScope): Promise<CloudSong[]>;
   search(scope: LibraryScope, query: string, filterKey?: string): Promise<CloudSong[]>;
   getById(scope: LibraryScope, id: string): Promise<CloudSong | null>;
-  toPlaybackSong(scope: LibraryScope, song: CloudSong): Promise<Song>;
+  /** Sem `versionId`, toca a versão atual; o setlist passa a versão ensaiada para não mudar no culto. */
+  toPlaybackSong(scope: LibraryScope, song: CloudSong, versionId?: string): Promise<Song>;
   /** No catálogo global só entra material com direito de redistribuição documentado (I4). */
   upload(scope: LibraryScope, draft: Partial<CloudSong>, files: File[]): Promise<CloudSong>;
 }

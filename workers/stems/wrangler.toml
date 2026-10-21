@@ -1,0 +1,24 @@
+# Worker de stems do Lagoinha VS (contrato: docs/architecture/contrato-stems-worker.md)
+name = "lagoinha-vs-stems"
+main = "src/index.ts"
+compatibility_date = "2026-08-15"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "lagoinha-joao-pessoa"
+FIRESTORE_BASE = "https://firestore.googleapis.com"
+JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+ALLOWED_ORIGINS = "https://lagoinha-vs-jp.web.app,https://lagoinha-joao-pessoa.web.app,http://localhost:5173"
+# Sobrescrito no deploy: wrangler deploy --var VERSION:$(git rev-parse --short HEAD)
+VERSION = "dev"
+
+[[r2_buckets]]
+binding = "STEMS"
+bucket_name = "lagoinha-vs-stems"
+
+[[d1_databases]]
+binding = "REGISTRY"
+database_name = "lagoinha-vs-stems-registry"
+# Preencher com o id devolvido por `wrangler d1 create lagoinha-vs-stems-registry`
+database_id = "699ce1c3-c93e-4a2a-ac0d-1a12af814e60"
+migrations_dir = "migrations"
