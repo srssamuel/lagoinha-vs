@@ -11,6 +11,7 @@ import { IndexedDbDeviceCache } from '../infrastructure/storage/IndexedDbDeviceC
 import { LocalSetlistRepository } from '../infrastructure/storage/LocalSetlistRepository';
 import { LocalStemStore } from '../infrastructure/storage/LocalStemStore';
 import type { FirebaseBackendEnv } from './firebaseBackend';
+import { PrepareServiceUseCase } from '../application/service/PrepareServiceUseCase';
 
 export type BackendKind = 'local' | 'firebase';
 
@@ -31,6 +32,8 @@ export interface Backend {
   deviceCache: DeviceCachePort;
   /** Só importação a partir da F5 (spec, seção 8). */
   drive: GoogleDriveStoragePort;
+  /** Preparar o culto offline (F4): versão exata de cada música baixada para o aparelho. */
+  prepareService: PrepareServiceUseCase;
 }
 
 export function resolveBackendKind(env: BackendEnv): BackendKind {
@@ -57,13 +60,16 @@ export async function createBackend(env: BackendEnv & FirebaseBackendEnv = impor
 }
 
 export function createLocalBackend(env: BackendEnv = {}): Backend {
+  const library = new LocalSongLibraryAdapter();
+  const deviceCache = new IndexedDbDeviceCache();
   return {
     kind: 'local',
     accounts: new LocalAuthAdapter({ demoMode: isDemoModeEnabled(env) }),
-    library: new LocalSongLibraryAdapter(),
+    library,
     stems: new LocalStemStore(),
     setlists: new LocalSetlistRepository(),
-    deviceCache: new IndexedDbDeviceCache(),
-    drive: new GoogleDriveStorageService()
+    deviceCache,
+    drive: new GoogleDriveStorageService(),
+    prepareService: new PrepareServiceUseCase(library, deviceCache)
   };
 }

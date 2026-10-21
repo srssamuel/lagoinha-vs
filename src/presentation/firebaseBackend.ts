@@ -7,6 +7,7 @@ import { GoogleDriveStorageService } from '../infrastructure/storage/GoogleDrive
 import { IndexedDbDeviceCache } from '../infrastructure/storage/IndexedDbDeviceCache';
 import { R2WorkerStemStore } from '../infrastructure/storage/R2WorkerStemStore';
 import type { Backend } from './composition';
+import { PrepareServiceUseCase } from '../application/service/PrepareServiceUseCase';
 
 export interface FirebaseBackendEnv extends FirebaseEnv {
   /** URL do Worker de stems (contrato-stems-worker); sem ela o app não baixa nem envia áudio. */
@@ -33,14 +34,17 @@ export function createFirebaseBackend(env: FirebaseBackendEnv): Backend {
     return user && user.isActive ? { kind: 'church', churchId: user.churchId } : null;
   };
   const stems = new R2WorkerStemStore(workerUrl, async () => (auth.currentUser ? auth.currentUser.getIdToken() : null), churchScope);
+  const library = new FirestoreSongLibraryAdapter(db, stems, uid);
+  const deviceCache = new IndexedDbDeviceCache();
   return {
     kind: 'firebase',
     accounts,
-    library: new FirestoreSongLibraryAdapter(db, stems, uid),
+    library,
     stems,
     setlists: new FirestoreSetlistRepository(db, uid),
-    deviceCache: new IndexedDbDeviceCache(),
+    deviceCache,
     // Sem Drive na operação normal: só o migrador administrativo lê o Drive.
-    drive: new GoogleDriveStorageService()
+    drive: new GoogleDriveStorageService(),
+    prepareService: new PrepareServiceUseCase(library, deviceCache)
   };
 }

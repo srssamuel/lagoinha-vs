@@ -412,6 +412,10 @@ export const App: React.FC = () => {
             churchId={currentUser.churchId}
             onClose={() => setIsCloudLibraryOpen(false)}
             onAddSongToSetlist={setlist.add}
+            uid={currentUser.uid}
+            canEditSetlist={currentUser.canEditSetlist}
+            currentSongs={songs}
+            onReplaceSetlist={handleImportFullSetlist}
           />
         )}
 

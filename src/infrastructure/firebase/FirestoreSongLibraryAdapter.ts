@@ -17,6 +17,7 @@ import { Song, TimeSignature } from '../../domain/entities/Song';
 import { StemType, TrackStem } from '../../domain/entities/TrackStem';
 import { isCatalogEligible } from '../../domain/services/AccessPolicy';
 import { inferSectionType, inferStemType } from '../../domain/services/StemNameClassifier';
+import { formatCloudSongKey } from '../../domain/services/CloudSongKey';
 import { SongSection } from '../../domain/value-objects/SongSection';
 
 /** Item de `versions/{id}.stems` (contrato-stems-worker, seção 7). */
@@ -183,7 +184,8 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
     );
 
     return new Song({
-      id: song.id,
+      // A versão entra no id: o setlist e o cache do aparelho ficam presos à versão ensaiada.
+      id: formatCloudSongKey({ source: scope.kind === 'global' ? 'global' : 'church', songId: song.id, versionId: chosen }),
       title: String(data.title ?? song.title),
       artist: String(data.artist ?? ''),
       originalKey: String(data.originalKey ?? ''),

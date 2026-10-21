@@ -19,7 +19,7 @@ export function firebaseOptionsFrom(env: FirebaseEnv): FirebaseOptions {
   const projectId = env.VITE_FIREBASE_PROJECT_ID?.trim() || DEFAULT_PROJECT_ID;
   const apiKey = env.VITE_FIREBASE_API_KEY?.trim();
   if (!apiKey) {
-    throw new Error('VITE_FIREBASE_API_KEY ausente: copie .env.firebase.example para .env.local e preencha a config pública do app Web.');
+    throw new Error('VITE_FIREBASE_API_KEY ausente: copie firebase.env.example para .env.local e preencha a config pública do app Web.');
   }
   return {
     apiKey,
