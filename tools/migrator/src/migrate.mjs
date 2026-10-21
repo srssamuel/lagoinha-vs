@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { sourcePath } from './config.mjs';
 import { finishRun, nowIso, startRun, tx } from './db.mjs';
 import { hashStream, wavDurationSec } from './hash.mjs';
 import { detectFormat } from './magic.mjs';
@@ -31,7 +32,7 @@ function upd(db, key, fields) {
 export function makeContentOpener(cfg) {
   const listings = new Map();
   return function openContent(row) {
-    const full = path.join(cfg.sourceRoot, ...row.local_rel.split('/'));
+    const full = sourcePath(cfg, row.local_rel);
     if (row.kind === 'file') return fs.createReadStream(full, { highWaterMark: 1 << 20 });
     let map = listings.get(full);
     if (!map) {

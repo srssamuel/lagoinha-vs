@@ -1,6 +1,7 @@
 // inventory: arvore real (SQLite do Drive) x disco (G:) x bytes iniciais -> manifesto.
 import fs from 'node:fs';
 import path from 'node:path';
+import { sourcePath } from './config.mjs';
 import { copyMetadataDb, removeTemp, readDriveTree } from './drivefs.mjs';
 import { detectFormat, describeMismatch } from './magic.mjs';
 import { finishRun, nowIso, startRun, tx } from './db.mjs';
@@ -114,7 +115,7 @@ export async function runInventory({ cfg, db, log = () => {}, readHeaders = true
         if (free < cfg.minFreeBytes) throw new Error(`espaco livre abaixo do minimo (${free} bytes) - leitura interrompida; reexecute apos liberar disco`);
         if (idx > 0) log(`  ${idx}/${todo.length}`);
       }
-      const full = path.join(cfg.sourceRoot, ...row.local_rel.split('/'));
+      const full = sourcePath(cfg, row.local_rel);
       let head;
       try {
         head = await readHead(full, 64);

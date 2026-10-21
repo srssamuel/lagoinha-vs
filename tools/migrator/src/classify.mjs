@@ -1,6 +1,6 @@
 // classify: categoria por item, musicas candidatas, inspecao de ZIPs. Nada e descartado: todo item fica com estado e motivo.
 import crypto from 'node:crypto';
-import path from 'node:path';
+import { sourcePath } from './config.mjs';
 import { finishRun, nowIso, startRun, tx } from './db.mjs';
 import { classifyStemName, isGenericDir, parseSongName } from './naming.mjs';
 import { crcHex, listZipEntries } from './zip.mjs';
@@ -163,7 +163,7 @@ export async function runClassify({ cfg, db, log = () => {}, assumeTimeSignature
   const setContainer = db.prepare(`UPDATE files SET state = ?, reason = ?, updated_at = ? WHERE key = ?`);
   const failedZips = [];
   for (const z of zips) {
-    const full = path.join(cfg.sourceRoot, ...z.local_rel.split('/'));
+    const full = sourcePath(cfg, z.local_rel);
     let listing;
     try {
       listing = listZipEntries(full);

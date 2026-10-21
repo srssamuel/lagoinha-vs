@@ -45,6 +45,9 @@ export function loadConfig(env = process.env, overrides = {}) {
     reportsDir: overrides.reportsDir ?? path.join(home, 'relatorios'),
     rootId: pick('rootId', 'MIGRATOR_DRIVE_ROOT_ID', null),
     sourceRoot: pick('sourceRoot', 'MIGRATOR_SOURCE_ROOT', null),
+    // Pasta de primeiro nivel movida no Drive depois do inventario: { "<pasta>": "<novo caminho absoluto>" }.
+    // So leitura no novo local; o md5 do Drive continua conferido antes de cada upload.
+    relocations: overrides.relocations ?? file.relocations ?? {},
     driveFsDb: pick('driveFsDb', 'MIGRATOR_DRIVEFS_DB', null),
     prior: file.prior ?? null,
     churchId: pick('churchId', 'MIGRATOR_CHURCH_ID', CHURCH_ID_DEFAULT),
@@ -58,6 +61,13 @@ export function loadConfig(env = process.env, overrides = {}) {
     minFreeBytes: overrides.minFreeBytes ?? 8 * 1024 ** 3,
     ...(overrides.extra ?? {}),
   };
+}
+
+/** Caminho local de um item do manifesto, respeitando pastas de primeiro nivel realocadas. */
+export function sourcePath(cfg, localRel) {
+  const [top, ...rest] = localRel.split('/');
+  const moved = cfg.relocations?.[top];
+  return moved ? path.join(moved, ...rest) : path.join(cfg.sourceRoot, top, ...rest);
 }
 
 export function requireSource(cfg) {

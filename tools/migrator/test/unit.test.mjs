@@ -16,6 +16,20 @@ import { r2Key, routeScope } from '../src/targets/keys.mjs';
 import { listZipEntries, openZipEntryStream } from '../src/zip.mjs';
 import { buildZip, makeMp3, makeWav, sha256 } from './helpers.mjs';
 import { withReadRetry } from '../src/migrate.mjs';
+import { loadConfig, sourcePath } from '../src/config.mjs';
+
+test('pasta de primeiro nivel movida no Drive: le do novo local; o resto segue na raiz', () => {
+  const root = path.join('X:', 'raiz');
+  const moved = path.join('X:', 'outro', 'Pasta_A');
+  const cfg = loadConfig({}, { home: os.tmpdir(), sourceRoot: root, relocations: { Pasta_A: moved } });
+  assert.equal(sourcePath(cfg, 'Pasta_A/sub/x.wav'), path.join(moved, 'sub', 'x.wav'));
+  assert.equal(sourcePath(cfg, 'Pasta_B/y.wav'), path.join(root, 'Pasta_B', 'y.wav'));
+  // prefixo parecido nao e a mesma pasta
+  assert.equal(sourcePath(cfg, 'Pasta_AB/z.wav'), path.join(root, 'Pasta_AB', 'z.wav'));
+  // sem realocacao configurada, igual ao comportamento anterior
+  const plain = loadConfig({}, { home: os.tmpdir(), sourceRoot: root });
+  assert.equal(sourcePath(plain, 'Pasta_A/sub/x.wav'), path.join(root, 'Pasta_A', 'sub', 'x.wav'));
+});
 
 test('leitura passageira do Drive (EISDIR/ETIMEDOUT) tenta de novo; erro de verdade falha na hora', async () => {
   const waits = [];
