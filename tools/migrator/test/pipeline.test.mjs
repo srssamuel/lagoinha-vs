@@ -210,6 +210,44 @@ test('interrupcao e retomada: segunda execucao continua sem refazer nem duplicar
   }
 });
 
+test('envio paralelo: mesmo resultado do sequencial; interrupcao com itens em voo continua retomavel', async () => {
+  const seq = await prepare(standardFiles(), 'seq');
+  const par = await prepare(standardFiles(), 'par');
+  try {
+    await run(seq, { assumeTimeSignature: '4/4' });
+    const r1 = await run(par, { assumeTimeSignature: '4/4', concurrency: 4, abortAfter: 3 });
+    assert.equal(r1.aborted, true);
+    assert.ok(r1.processed >= 3 && r1.processed < 3 + 4, `processados ${r1.processed}`);
+    const r2 = await run(par, { assumeTimeSignature: '4/4', concurrency: 4 });
+    assert.equal(r2.failed, 0);
+    const states = (ctx) => q(ctx.fx.db, `SELECT name, state, sha256 FROM files ORDER BY key`);
+    assert.deepEqual(states(par), states(seq));
+    const songs = (ctx) => q(ctx.fx.db, `SELECT title, status, current_version_id FROM songs ORDER BY title`);
+    assert.deepEqual(songs(par), songs(seq));
+  } finally {
+    seq.fx.cleanup();
+    par.fx.cleanup();
+  }
+});
+
+test('envio paralelo: erro fatal (token) para todos os trabalhadores e propaga', async () => {
+  const ctx = await prepare();
+  try {
+    const { storage, registry } = ctx.targets();
+    let calls = 0;
+    const put = storage.put.bind(storage);
+    storage.put = async (...a) => {
+      calls++;
+      if (calls === 2) throw Object.assign(new Error('401 nao autenticado'), { fatal: true });
+      return put(...a);
+    };
+    await assert.rejects(runMigrate({ cfg: ctx.fx.cfg, db: ctx.fx.db, storage, registry, concurrency: 3 }), /401/);
+    assert.equal(one(ctx.fx.db, `SELECT COUNT(*) c FROM files WHERE state = 'failed'`).c, 0, 'fatal nao marca item como falho');
+  } finally {
+    ctx.fx.cleanup();
+  }
+});
+
 test('queda no meio do upload (depois do PUT, antes do estado): retomada nao reenvia nem marca como ja existente', async () => {
   const ctx = await prepare();
   const { fx } = ctx;

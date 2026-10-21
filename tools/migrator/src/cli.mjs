@@ -54,7 +54,7 @@ export async function main(argv = process.argv.slice(2)) {
   const cmd = args._[0];
   const cfg = loadConfig(process.env);
   if (!cmd || args.help) {
-    console.log('comandos: inventory | classify | migrate [--pilot] [--target local|worker] [--registry local|firestore] [--abort-after N] | reconcile');
+    console.log('comandos: inventory | classify | migrate [--pilot] [--target local|worker] [--registry local|firestore] [--abort-after N] [--concurrency N] [--retry-failed] [--assume-time-signature 4/4] | reconcile');
     return 0;
   }
   const db = openManifest(cfg.manifestPath);
@@ -91,6 +91,8 @@ export async function main(argv = process.argv.slice(2)) {
         cfg, db, log, ...targets, pilot: !!args.pilot, signal: ac.signal,
         abortAfter: args['abort-after'] ? Number(args['abort-after']) : undefined,
         assumeTimeSignature: args['assume-time-signature'] ? String(args['assume-time-signature']) : undefined,
+        concurrency: args.concurrency ? Number(args.concurrency) : 1,
+        retryFailed: !!args['retry-failed'],
       });
       console.log(JSON.stringify(res, null, 2));
       return res.failed ? 2 : 0;

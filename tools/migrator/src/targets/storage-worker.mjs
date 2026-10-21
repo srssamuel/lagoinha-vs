@@ -33,7 +33,8 @@ export class WorkerStorage {
       try {
         const res = await this.fetch(url, { method, headers: { authorization: `Bearer ${this.token()}`, ...headers }, body });
         if (res.status === 401) throw Object.assign(new Error('401 nao autenticado (token ausente, expirado ou invalido)'), { fatal: true });
-        if (res.status >= 500 || res.status === 429) {
+        // 409 in_progress: outro envio do mesmo hash segura a reserva (envio em paralelo); espera e tenta de novo.
+        if (res.status >= 500 || res.status === 429 || res.status === 409) {
           last = new Error(`HTTP ${res.status}`);
           await res.arrayBuffer().catch(() => {});
         } else return res;

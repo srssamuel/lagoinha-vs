@@ -120,7 +120,7 @@ export function pickPilot(db, { maxSongBytes = 1.5e9, maxZipBytes = 2e9 } = {}) 
 
 export async function runMigrate({
   cfg, db, storage, registry, log = () => {}, pilot = false, signal, abortAfter, assumeTimeSignature = null,
-  categories = DEFAULT_CATEGORIES, hooks = {}, openContent = makeContentOpener(cfg), retryFailed = false,
+  categories = DEFAULT_CATEGORIES, hooks = {}, openContent = makeContentOpener(cfg), retryFailed = false, concurrency = 1,
 }) {
   const runId = startRun(db, pilot ? 'migrate-pilot' : 'migrate');
   const summary = {
@@ -154,21 +154,42 @@ export async function runMigrate({
   log(`${work.length} itens na fila${pilot ? ' (piloto)' : ''}`);
 
   try {
-    for (const key of work) {
-      checkAbort(signal, summary, abortAfter);
-      await guardDisk(ctx);
-      try {
-        await processUnit(ctx, key);
-      } catch (e) {
-        if (e instanceof MigrationAborted || e.fatal) throw e;
-        summary.failed++;
-        const msg = `failed: ${String(e.message ?? e).slice(0, 300)}`;
-        log(`falha no item ${key}: ${msg}`);
-        upd(db, key, { state: 'failed', reason: msg });
-        continue;
+    // Fila compartilhada por N trabalhadores: baixar do Drive e enviar ao R2 se sobrepoem entre itens.
+    // Erro fatal ou interrupcao para todos; os itens em andamento terminam e o manifesto continua retomavel.
+    const queue = [...work];
+    let stop = null;
+    const runner = async () => {
+      while (!stop && queue.length) {
+        const key = queue.shift();
+        try {
+          checkAbort(signal, summary, abortAfter == null ? undefined : abortAfter - inFlight.size);
+          await guardDisk(ctx);
+        } catch (e) {
+          stop ??= e;
+          return;
+        }
+        inFlight.add(key);
+        try {
+          await processUnit(ctx, key);
+          summary.processed++;
+          if (summary.processed % 25 === 0) log(`${summary.processed} de ${work.length} itens processados`);
+        } catch (e) {
+          if (e instanceof MigrationAborted || e.fatal) {
+            stop ??= e;
+            return;
+          }
+          summary.failed++;
+          const msg = `failed: ${String(e.message ?? e).slice(0, 300)}`;
+          log(`falha no item ${key}: ${msg}`);
+          upd(db, key, { state: 'failed', reason: msg });
+        } finally {
+          inFlight.delete(key);
+        }
       }
-      summary.processed++;
-    }
+    };
+    const inFlight = new Set();
+    await Promise.all(Array.from({ length: Math.max(1, Math.floor(concurrency)) }, runner));
+    if (stop) throw stop;
     await associateSongs(ctx, pilotKeys);
     containerStates(db);
   } catch (e) {
