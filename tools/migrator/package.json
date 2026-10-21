@@ -1,0 +1,17 @@
+{
+  "name": "lagoinha-vs-migrator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Migrador administrativo do acervo do Google Drive para o banco online do Lagoinha VS (sem dependencias de runtime).",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "inventory": "node src/cli.mjs inventory",
+    "classify": "node src/cli.mjs classify",
+    "pilot": "node src/cli.mjs migrate --pilot",
+    "reconcile": "node src/cli.mjs reconcile"
+  }
+}
