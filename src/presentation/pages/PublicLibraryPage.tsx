@@ -42,12 +42,12 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen w-full bg-[#0c0c0e] text-slate-100 font-sans select-text">
       <header className="border-b border-stage-border bg-stage-surface/80">
-        <div className="mx-auto max-w-4xl px-4 py-3 flex items-center gap-3">
-          <a href="/biblioteca" className="flex items-center gap-2 font-black tracking-tight text-white">
+        <div className="mx-auto max-w-4xl px-4 py-1 flex items-center gap-3">
+          <a href="/biblioteca" className="flex min-h-11 items-center gap-2 font-black tracking-tight text-white">
             <Library className="w-5 h-5 text-amber-400" aria-hidden />
             <span>Biblioteca Lagoinha VS</span>
           </a>
-          <a href="/" className="ml-auto text-xs font-bold text-slate-300 hover:text-white underline-offset-4 hover:underline">
+          <a href="/" className="ml-auto flex min-h-11 items-center px-2 text-xs font-bold text-slate-300 hover:text-white underline-offset-4 hover:underline">
             Abrir o player
           </a>
         </div>
@@ -97,14 +97,14 @@ function SongList() {
         separados; ela fica guardada neste aparelho e funciona sem internet.
       </p>
 
-      <label className="mt-5 flex items-center gap-2 rounded-xl border border-stage-border bg-stage-card px-3 py-2 focus-within:border-blue-500">
+      <label className="mt-5 flex items-center gap-2 rounded-xl border border-stage-border bg-stage-card px-3 py-0 focus-within:border-blue-500">
         <Search className="w-4 h-4 text-stage-muted" aria-hidden />
         <span className="sr-only">Buscar música</span>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar por título ou artista"
-          className="flex-1 bg-transparent text-sm text-white placeholder:text-stage-muted outline-none"
+          className="flex-1 min-h-11 bg-transparent text-sm text-white placeholder:text-stage-muted outline-none"
         />
       </label>
 
