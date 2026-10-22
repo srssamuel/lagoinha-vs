@@ -35,6 +35,50 @@ export type DocResult =
   | { status: 'denied' }
   | { status: 'missing' };
 
+/** Valor gravado pelo Worker: texto, numero ou instante (timestampValue). */
+export type FsWrite = string | number | { timestamp: string };
+
+function toFirestoreValue(value: FsWrite): FsValue {
+  if (typeof value === 'string') return { stringValue: value };
+  if (typeof value === 'number') return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  return { timestampValue: value.timestamp };
+}
+
+/**
+ * Atualiza so os campos indicados (updateMask), com o token DO USUARIO: as regras continuam decidindo.
+ * Exige que o documento exista (currentDocument.exists=true): o Worker nunca cria musica.
+ */
+export async function patchDocument(
+  env: Env,
+  userToken: string,
+  path: string,
+  fields: Record<string, FsWrite>
+): Promise<'ok' | 'denied' | 'missing'> {
+  const params = new URLSearchParams({ 'currentDocument.exists': 'true' });
+  for (const key of Object.keys(fields)) params.append('updateMask.fieldPaths', key);
+  const url = `${env.FIRESTORE_BASE}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}?${params}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${userToken}`, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, toFirestoreValue(v)]))
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch {
+    throw new HttpError(502, 'upstream_error');
+  }
+  await response.body?.cancel().catch(() => undefined);
+  if (response.ok) return 'ok';
+  if (response.status === 403) return 'denied';
+  // currentDocument.exists=true sem documento: 404 (producao) ou 400 FAILED_PRECONDITION (emulador)
+  if (response.status === 404 || response.status === 400) return 'missing';
+  if (response.status === 401) throw unauthenticated();
+  throw new HttpError(502, 'upstream_error');
+}
+
 /**
  * Le um documento com o token DO USUARIO: quem decide e firestore.rules. O Worker nao tem
  * credencial propria do Firestore. `path` so recebe segmentos ja validados pelo roteador.

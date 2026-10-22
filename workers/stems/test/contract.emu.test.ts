@@ -128,11 +128,12 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
       expect(new Uint8Array(await suffix.arrayBuffer())).toEqual(blobA.bytes.slice(-5));
     });
 
-    it('catalogo: curador sobe e membro ativo de alguma igreja baixa', async () => {
+    it('catalogo: curador sobe e baixa o rascunho; membro de igreja nao le rascunho do catalogo', async () => {
       expect((await upload(tokens.cura!, CATALOG, blobC)).status).toBe(201);
-      const response = await download(tokens.eve!, CATALOG, blobC.sha);
+      const response = await download(tokens.cura!, CATALOG, blobC.sha);
       expect(response.status).toBe(200);
       expect(await sha256Hex(await response.arrayBuffer())).toBe(blobC.sha);
+      expect((await download(tokens.eve!, CATALOG, blobC.sha)).status).toBe(403);
     });
 
     it('sha256 que nao consta na versao lida e 403; versao inexistente e 404; ids invalidos sao 400', async () => {
@@ -915,4 +916,163 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
       expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.zed! })).status).toBe(403); // so admin exclui
       expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(204);
     });
-  });});
+  });
+
+  describe('8. biblioteca publica: conferencia, publicacao e download sem login', () => {
+    const LICENSE = { holder: 'Lagoinha VS (audio gerado para teste)', documentId: 'teste-gerado' };
+    const fsDoc = async (path: string) => {
+      const res = await fetch(`${env.FIRESTORE_BASE}/v1/projects/demo-lagoinha-vs/databases/(default)/documents/${path}`, {
+        headers: { authorization: 'Bearer owner' }
+      });
+      return (await res.json()) as { fields?: Record<string, { stringValue?: string }> };
+    };
+    const rows = async (sql: string, ...args: unknown[]) =>
+      (await env.REGISTRY.prepare(sql).bind(...args).all()).results;
+    const stem = (b: Blob, name: string, type: string) => ({ sha256: b.sha, name, type, size: b.bytes.length, contentType: 'audio/wav' });
+
+    async function multipartUpload(token: string, b: Blob, bytes = b.bytes) {
+      const create = await call(blobPath(CATALOG, b.sha, '/multipart'), {
+        method: 'POST',
+        token,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ size: bytes.length, contentType: 'audio/wav' })
+      });
+      expect(create.status).toBe(201);
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const part = await call(blobPath(CATALOG, b.sha, `/multipart/${encodeURIComponent(uploadId)}/1`), { method: 'PUT', token, body: bytes });
+      expect(part.status).toBe(200);
+      const { etag } = (await part.json()) as { etag: string };
+      // Retomada: as partes recebidas (com etag) vem do servidor; outra pessoa nao ve o upload
+      const status = await call(blobPath(CATALOG, b.sha, `/multipart/${encodeURIComponent(uploadId)}`), { token });
+      expect(status.status).toBe(200);
+      expect(((await status.json()) as { parts: unknown[] }).parts).toEqual([{ partNumber: 1, size: bytes.length, etag }]);
+      expect((await call(blobPath(CATALOG, b.sha, `/multipart/${encodeURIComponent(uploadId)}`), { token: tokens.alice! })).status).toBe(403);
+      return call(blobPath(CATALOG, b.sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
+        method: 'POST',
+        token,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ parts: [{ partNumber: 1, etag }] })
+      });
+    }
+
+    const publishPath = (song: string, action: string, version?: string) =>
+      `/v1/catalog/songs/${song}${action ? `/${action}` : ''}${version ? `?version=${version}` : ''}`;
+
+    it('multipart fica client-declared, publicar recusa ate o R2 conferir; depois publica, serve sem login e retira', async () => {
+      const big = await makeBlob(3000);
+      const click = await makeBlob(1500);
+      expect((await multipartUpload(tokens.cura!, big)).status).toBe(201);
+      expect((await upload(tokens.cura!, CATALOG, click)).status).toBe(201);
+      await seed('catalog/pub1', { title: 'Teste', rightsClass: 'own', licenseRef: LICENSE, bpm: 120, status: 'pending' });
+      await seed('catalog/pub1/versions/v1', { stems: [stem(big, 'Bateria.wav', 'drums'), stem(click, 'Click.wav', 'click')] });
+
+      const early = await call(publishPath('pub1', 'publish', 'v1'), { method: 'POST', token: tokens.cura! });
+      expect(early.status).toBe(409);
+      expect(await early.json()).toMatchObject({ error: 'not_verified', sha256: big.sha });
+
+      const verified = await call(blobPath(CATALOG, big.sha, '/verify'), { method: 'POST', token: tokens.cura! });
+      expect(verified.status).toBe(200);
+      expect(await verified.json()).toMatchObject({ ok: true, integrity: 'r2-sha256' });
+      expect(await rows("SELECT integrity FROM blobs WHERE scope = 'catalog' AND sha256 = ?1", big.sha)).toEqual([{ integrity: 'r2-sha256' }]);
+      // a chave temporaria da conferencia nao fica no bucket
+      expect(await env.STEMS.head(`catalog/verify/${big.sha}`)).toBeNull();
+
+      // antes de publicar, visitante nao baixa nada
+      expect((await download(null, CATALOG, big.sha, 'pub1', 'v1')).status).toBe(404);
+
+      const done = await call(publishPath('pub1', 'publish', 'v1'), { method: 'POST', token: tokens.cura! });
+      expect(done.status).toBe(200);
+      const first = (await done.json()) as { manifestSha256: string };
+      expect(first.manifestSha256).toMatch(/^[0-9a-f]{64}$/);
+      const song = await fsDoc('catalog/pub1');
+      expect(song.fields?.status?.stringValue).toBe('published');
+      expect(song.fields?.currentVersionId?.stringValue).toBe('v1');
+      expect(song.fields?.publishedManifestSha256?.stringValue).toBe(first.manifestSha256);
+
+      // repetir nao duplica: mesmo manifesto, um unico evento de publicacao
+      const again = await call(publishPath('pub1', 'publish', 'v1'), { method: 'POST', token: tokens.cura! });
+      expect(((await again.json()) as { manifestSha256: string }).manifestSha256).toBe(first.manifestSha256);
+      expect(await rows("SELECT action FROM publication_events WHERE song_id = 'pub1'")).toEqual([{ action: 'publish' }]);
+
+      // visitante (sem Authorization) baixa a versao publicada e o hash confere
+      const pub = await download(null, CATALOG, big.sha, 'pub1', 'v1');
+      expect(pub.status).toBe(200);
+      expect(await sha256Hex(await pub.arrayBuffer())).toBe(big.sha);
+      expect(pub.headers.get('content-disposition')).toBe('attachment');
+      // ... mas nao por outra versao, outra musica, outro escopo, nem arquivo fora do manifesto
+      expect((await download(null, CATALOG, big.sha, 'pub1', 'v2')).status).toBe(404);
+      expect((await download(null, CATALOG, big.sha, 'song1', 'v1')).status).toBe(404);
+      expect((await download(null, CATALOG, blobC.sha, 'pub1', 'v1')).status).toBe(404);
+      expect((await download(null, A, blobA.sha, 'song1', 'v1')).status).toBe(401);
+
+      // visitante nao envia, nao confere, nao publica, nao retira, nao apaga
+      expect((await call(blobPath(CATALOG, big.sha), { method: 'PUT', body: big.bytes })).status).toBe(401);
+      expect((await call(blobPath(CATALOG, big.sha), { method: 'HEAD' })).status).toBe(401);
+      expect((await call(blobPath(CATALOG, big.sha), { method: 'DELETE' })).status).toBe(401);
+      expect((await call(blobPath(CATALOG, big.sha, '/verify'), { method: 'POST' })).status).toBe(401);
+      expect((await call(publishPath('pub1', 'publish', 'v1'), { method: 'POST' })).status).toBe(401);
+      expect((await call(publishPath('pub1', 'withdraw'), { method: 'POST' })).status).toBe(401);
+      // membro de igreja tambem nao
+      expect((await call(publishPath('pub1', 'publish', 'v1'), { method: 'POST', token: tokens.alice! })).status).toBe(403);
+      expect((await call(publishPath('pub1', 'withdraw'), { method: 'POST', token: tokens.adm! })).status).toBe(403);
+
+      // arquivo publicado nao e apagado fisicamente
+      expect((await call(blobPath(CATALOG, big.sha), { method: 'DELETE', token: tokens.cura! })).status).toBe(409);
+
+      // retirar: o Worker para de servir na hora, nada e apagado; republicar recupera
+      const out = await call(publishPath('pub1', 'withdraw'), { method: 'POST', token: tokens.cura! });
+      expect(out.status).toBe(200);
+      expect((await fsDoc('catalog/pub1')).fields?.status?.stringValue).toBe('withdrawn');
+      expect((await download(null, CATALOG, big.sha, 'pub1', 'v1')).status).toBe(404);
+      expect(await env.STEMS.head(`catalog/blobs/${big.sha}`)).not.toBeNull();
+      const status = await call(publishPath('pub1', ''), { token: tokens.cura! });
+      expect(await status.json()).toMatchObject({ status: 'withdrawn', versionId: 'v1' });
+      expect((await call(publishPath('pub1', 'publish', 'v1'), { method: 'POST', token: tokens.cura! })).status).toBe(200);
+      expect((await download(null, CATALOG, click.sha, 'pub1', 'v1')).status).toBe(200);
+      expect((await rows("SELECT action FROM publication_events WHERE song_id = 'pub1' ORDER BY id")).map((r) => r.action)).toEqual([
+        'publish',
+        'withdraw',
+        'publish'
+      ]);
+    });
+
+    it('conferencia pega multipart com conteudo diferente do hash: 422 e nada fica registrado', async () => {
+      const real = await makeBlob(2000);
+      const garbage = randomBytes(2000);
+      expect((await multipartUpload(tokens.cura!, real, garbage)).status).toBe(201);
+      const res = await call(blobPath(CATALOG, real.sha, '/verify'), { method: 'POST', token: tokens.cura! });
+      expect(res.status).toBe(422);
+      expect(await rows("SELECT 1 FROM blobs WHERE scope = 'catalog' AND sha256 = ?1", real.sha)).toHaveLength(0);
+      expect(await env.STEMS.head(`catalog/blobs/${real.sha}`)).toBeNull();
+      // o envio de novo, agora correto, funciona
+      expect((await upload(tokens.cura!, CATALOG, real)).status).toBe(201);
+    });
+
+    it('publicar recusa BPM pendente, arquivo ausente, tamanho diferente e direitos ausentes', async () => {
+      const ok = await makeBlob(1000);
+      expect((await upload(tokens.cura!, CATALOG, ok)).status).toBe(201);
+      const missing = await makeBlob(1000);
+      await seed('catalog/semBpm', { title: 'X', rightsClass: 'own', licenseRef: LICENSE, status: 'pending' });
+      await seed('catalog/semBpm/versions/v1', { stems: [stem(ok, 'Baixo.wav', 'bass')] });
+      await seed('catalog/falta', { title: 'X', rightsClass: 'own', licenseRef: LICENSE, bpm: 90, status: 'pending' });
+      await seed('catalog/falta/versions/v1', { stems: [stem(ok, 'Baixo.wav', 'bass'), stem(missing, 'Teclado.wav', 'keys')] });
+      await seed('catalog/tamanho', { title: 'X', rightsClass: 'own', licenseRef: LICENSE, bpm: 90, status: 'pending' });
+      await seed('catalog/tamanho/versions/v1', { stems: [{ ...stem(ok, 'Baixo.wav', 'bass'), size: 999 }] });
+      await seed('catalog/direitos', { title: 'X', rightsClass: 'unknown', bpm: 90, status: 'pending' });
+      await seed('catalog/direitos/versions/v1', { stems: [stem(ok, 'Baixo.wav', 'bass')] });
+      await seed('catalog/soClick', { title: 'X', rightsClass: 'own', licenseRef: LICENSE, bpm: 90, status: 'pending' });
+      await seed('catalog/soClick/versions/v1', { stems: [stem(ok, 'Click.wav', 'click')] });
+      const tryPublish = async (song: string) => {
+        const res = await call(publishPath(song, 'publish', 'v1'), { method: 'POST', token: tokens.cura! });
+        return { status: res.status, body: (await res.json()) as { error?: string } };
+      };
+      expect(await tryPublish('semBpm')).toMatchObject({ status: 409, body: { error: 'bpm_pending' } });
+      expect(await tryPublish('falta')).toMatchObject({ status: 409, body: { error: 'blob_missing' } });
+      expect(await tryPublish('tamanho')).toMatchObject({ status: 409, body: { error: 'size_mismatch' } });
+      expect(await tryPublish('direitos')).toMatchObject({ status: 409, body: { error: 'rights_missing' } });
+      expect(await tryPublish('soClick')).toMatchObject({ status: 409, body: { error: 'no_band_stem' } });
+      expect(await tryPublish('naoExiste')).toMatchObject({ status: 404 });
+      expect(await rows("SELECT 1 FROM publications WHERE song_id IN ('semBpm','falta','tamanho','direitos','soClick')")).toHaveLength(0);
+    });
+  });
+});

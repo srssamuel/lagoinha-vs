@@ -9,8 +9,10 @@ export type Route =
   | { type: 'multipart-create'; scope: Scope; sha256: string }
   | { type: 'multipart-part'; scope: Scope; sha256: string; uploadId: string; partNumber: number }
   | { type: 'multipart-complete'; scope: Scope; sha256: string; uploadId: string }
-  | { type: 'multipart-abort'; scope: Scope; sha256: string; uploadId: string }
-  | { type: 'sources'; scope: Scope; sha256: string };
+  | { type: 'multipart-upload'; scope: Scope; sha256: string; uploadId: string }
+  | { type: 'sources'; scope: Scope; sha256: string }
+  | { type: 'verify'; scope: Scope; sha256: string }
+  | { type: 'publication'; scope: Scope; songId: string; action: 'status' | 'publish' | 'withdraw' };
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const CHURCH_ID = /^[a-z0-9-]{1,64}$/;
@@ -47,6 +49,17 @@ export function parseRoute(pathname: string, method: string): Route {
     throw notFound();
   }
 
+  // Publicacao so existe no catalogo: /v1/catalog/songs/{songId}[/publish|/withdraw]
+  if (scope.kind === 'catalog' && rest[0] === 'songs' && rest[1] !== undefined) {
+    const songId = decode(rest[1]);
+    if (!validIdSegment(songId)) throw badRequest('invalid_song_id');
+    if (rest.length === 2) return { type: 'publication', scope, songId, action: 'status' };
+    if (rest.length === 3 && (rest[2] === 'publish' || rest[2] === 'withdraw')) {
+      return { type: 'publication', scope, songId, action: rest[2] };
+    }
+    throw notFound();
+  }
+
   if (rest[0] !== 'blobs' || rest[1] === undefined) throw notFound();
   const sha256 = decode(rest[1]);
   if (!SHA256.test(sha256)) throw badRequest('invalid_sha256');
@@ -54,11 +67,12 @@ export function parseRoute(pathname: string, method: string): Route {
 
   if (tail.length === 0) return { type: 'blob', scope, sha256 };
   if (tail.length === 1 && tail[0] === 'sources') return { type: 'sources', scope, sha256 };
+  if (tail.length === 1 && tail[0] === 'verify') return { type: 'verify', scope, sha256 };
   if (tail[0] === 'multipart') {
     if (tail.length === 1) return { type: 'multipart-create', scope, sha256 };
     const uploadId = tail[1] as string;
     if (uploadId === '' || uploadId.length > 1024) throw badRequest('invalid_upload_id');
-    if (tail.length === 2) return { type: 'multipart-abort', scope, sha256, uploadId };
+    if (tail.length === 2) return { type: 'multipart-upload', scope, sha256, uploadId };
     if (tail.length === 3) {
       if (tail[2] === 'complete') return { type: 'multipart-complete', scope, sha256, uploadId };
       if (/^\d{1,5}$/.test(tail[2] as string)) {

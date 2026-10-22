@@ -4,7 +4,9 @@ import {
   createMultipart,
   deleteBlob,
   getBlobBytes,
+  getPublicBlobBytes,
   headBlob,
+  multipartStatus,
   putBlob,
   putPart,
   recordSource
@@ -12,6 +14,7 @@ import {
 import type { Env } from './env';
 import { HttpError, errorResponse, json, preflight, unauthenticated, withCors } from './http';
 import { verifyIdToken } from './jwt';
+import { publicationStatus, publishSong, verifyBlob, withdrawSong } from './publication';
 import { parseRoute } from './route';
 
 function bearer(request: Request): string {
@@ -31,7 +34,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   const route = parseRoute(url.pathname, method);
-  // Nenhuma rota alem de /health responde sem token valido.
+  // Sem login so existe o download de arquivo de versao PUBLICADA do catalogo (conferido no D1).
+  // Qualquer outra rota alem de /health exige token valido.
+  if (route.type === 'blob' && method === 'GET' && !request.headers.has('authorization')) {
+    return getPublicBlobBytes(request, env, route);
+  }
   const auth = await verifyIdToken(bearer(request), env);
 
   switch (route.type) {
@@ -50,11 +57,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
     case 'multipart-complete':
       if (method === 'POST') return completeMultipart(request, env, auth, route);
       break;
-    case 'multipart-abort':
+    case 'multipart-upload':
+      if (method === 'GET') return multipartStatus(request, env, auth, route);
       if (method === 'DELETE') return abortMultipart(request, env, auth, route);
       break;
     case 'sources':
       if (method === 'POST') return recordSource(request, env, auth, route);
+      break;
+    case 'verify':
+      if (method === 'POST') return verifyBlob(request, env, auth, route);
+      break;
+    case 'publication':
+      if (route.action === 'status' && method === 'GET') return publicationStatus(env, auth, route);
+      if (route.action === 'publish' && method === 'POST') return publishSong(request, env, auth, route);
+      if (route.action === 'withdraw' && method === 'POST') return withdrawSong(request, env, auth, route);
       break;
   }
   throw new HttpError(405, 'method_not_allowed');

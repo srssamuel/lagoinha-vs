@@ -9,6 +9,8 @@ export interface BlobRow {
   integrity: 'r2-sha256' | 'client-declared';
   uploaded_by: string;
   uploaded_at: string;
+  /** Preenchido quando o proprio R2 conferiu o sha256 (PUT unico ou verificacao do multipart). */
+  verified_at?: string | null;
 }
 
 export interface UploadRow {
@@ -116,13 +118,23 @@ export async function releaseReservation(db: D1Database, scope: string, sha256: 
 export function upsertBlobStatement(db: D1Database, row: BlobRow): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO blobs (scope, sha256, size, content_type, original_name, integrity, uploaded_by, uploaded_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      `INSERT INTO blobs (scope, sha256, size, content_type, original_name, integrity, uploaded_by, uploaded_at, verified_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
        ON CONFLICT (scope, sha256) DO UPDATE SET size = excluded.size, content_type = excluded.content_type,
          original_name = excluded.original_name, integrity = excluded.integrity,
-         uploaded_by = excluded.uploaded_by, uploaded_at = excluded.uploaded_at`
+         uploaded_by = excluded.uploaded_by, uploaded_at = excluded.uploaded_at, verified_at = excluded.verified_at`
     )
-    .bind(row.scope, row.sha256, row.size, row.content_type, row.original_name, row.integrity, row.uploaded_by, row.uploaded_at);
+    .bind(
+      row.scope,
+      row.sha256,
+      row.size,
+      row.content_type,
+      row.original_name,
+      row.integrity,
+      row.uploaded_by,
+      row.uploaded_at,
+      row.verified_at ?? null
+    );
 }
 
 export function deleteBlobStatements(db: D1Database, scope: string, sha256: string): D1PreparedStatement[] {
@@ -163,11 +175,124 @@ export async function sumPartsExcept(db: D1Database, uploadId: string, partNumbe
   return row?.total ?? 0;
 }
 
-export async function recordPart(db: D1Database, uploadId: string, partNumber: number, size: number): Promise<void> {
+export async function recordPart(
+  db: D1Database,
+  uploadId: string,
+  partNumber: number,
+  size: number,
+  etag: string
+): Promise<void> {
   await db
-    .prepare('INSERT OR REPLACE INTO upload_parts (upload_id, part_number, size) VALUES (?1, ?2, ?3)')
-    .bind(uploadId, partNumber, size)
+    .prepare('INSERT OR REPLACE INTO upload_parts (upload_id, part_number, size, etag) VALUES (?1, ?2, ?3, ?4)')
+    .bind(uploadId, partNumber, size, etag)
     .run();
+}
+
+export interface PartRow {
+  part_number: number;
+  size: number;
+  etag: string | null;
+}
+
+/** Partes ja recebidas de um upload (retomada depois de recarregar a pagina). */
+export async function listParts(db: D1Database, uploadId: string): Promise<PartRow[]> {
+  const result = await db
+    .prepare('SELECT part_number, size, etag FROM upload_parts WHERE upload_id = ?1 ORDER BY part_number')
+    .bind(uploadId)
+    .all<PartRow>();
+  return result.results;
+}
+
+/** Conferencia do multipart pelo R2: o registro passa a r2-sha256 so depois do checksum do proprio R2. */
+export function markVerifiedStatement(db: D1Database, scope: string, sha256: string, now: string): D1PreparedStatement {
+  return db
+    .prepare("UPDATE blobs SET integrity = 'r2-sha256', verified_at = ?3 WHERE scope = ?1 AND sha256 = ?2")
+    .bind(scope, sha256, now);
+}
+
+// ---------- publicacao do catalogo ----------
+
+export interface PublicationRow {
+  song_id: string;
+  version_id: string;
+  status: 'published' | 'withdrawn';
+  manifest: string;
+  manifest_sha256: string;
+  published_by: string;
+  published_at: string;
+  withdrawn_by: string | null;
+  withdrawn_at: string | null;
+}
+
+export function getPublication(db: D1Database, songId: string): Promise<PublicationRow | null> {
+  return db.prepare('SELECT * FROM publications WHERE song_id = ?1').bind(songId).first<PublicationRow>();
+}
+
+/** Grava a publicacao, troca os hashes servidos e registra o evento, numa unica transacao do D1. */
+export async function publish(
+  db: D1Database,
+  row: Pick<PublicationRow, 'song_id' | 'version_id' | 'manifest' | 'manifest_sha256' | 'published_by' | 'published_at'>,
+  shas: string[]
+): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO publications (song_id, version_id, status, manifest, manifest_sha256, published_by, published_at)
+         VALUES (?1, ?2, 'published', ?3, ?4, ?5, ?6)
+         ON CONFLICT (song_id) DO UPDATE SET version_id = excluded.version_id, status = 'published',
+           manifest = excluded.manifest, manifest_sha256 = excluded.manifest_sha256,
+           published_by = excluded.published_by, published_at = excluded.published_at,
+           withdrawn_by = NULL, withdrawn_at = NULL`
+      )
+      .bind(row.song_id, row.version_id, row.manifest, row.manifest_sha256, row.published_by, row.published_at),
+    db.prepare('DELETE FROM publication_blobs WHERE song_id = ?1').bind(row.song_id),
+    ...shas.map((sha) =>
+      db.prepare('INSERT OR IGNORE INTO publication_blobs (song_id, sha256) VALUES (?1, ?2)').bind(row.song_id, sha)
+    ),
+    db
+      .prepare(
+        `INSERT INTO publication_events (song_id, version_id, action, manifest_sha256, by_uid, at)
+         VALUES (?1, ?2, 'publish', ?3, ?4, ?5)`
+      )
+      .bind(row.song_id, row.version_id, row.manifest_sha256, row.published_by, row.published_at)
+  ]);
+}
+
+/** Retirada: o Worker para de servir sem login; manifesto e arquivos ficam para republicar. */
+export async function withdraw(db: D1Database, current: PublicationRow, uid: string, now: string): Promise<void> {
+  await db.batch([
+    db
+      .prepare("UPDATE publications SET status = 'withdrawn', withdrawn_by = ?2, withdrawn_at = ?3 WHERE song_id = ?1")
+      .bind(current.song_id, uid, now),
+    db.prepare('DELETE FROM publication_blobs WHERE song_id = ?1').bind(current.song_id),
+    db
+      .prepare(
+        `INSERT INTO publication_events (song_id, version_id, action, manifest_sha256, by_uid, at)
+         VALUES (?1, ?2, 'withdraw', ?3, ?4, ?5)`
+      )
+      .bind(current.song_id, current.version_id, current.manifest_sha256, uid, now)
+  ]);
+}
+
+/** O download publico so sai se o hash estiver na versao publicada desta musica. */
+export async function isPubliclyServed(db: D1Database, songId: string, versionId: string, sha256: string): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS ok FROM publications p JOIN publication_blobs b ON b.song_id = p.song_id
+       WHERE p.song_id = ?1 AND p.version_id = ?2 AND p.status = 'published' AND b.sha256 = ?3`
+    )
+    .bind(songId, versionId, sha256)
+    .first<{ ok: number }>();
+  return row !== null;
+}
+
+/** Exclusao fisica de um arquivo publicado e recusada: primeiro retirar a publicacao. */
+export async function isInPublishedVersion(db: D1Database, sha256: string): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT 1 AS ok FROM publication_blobs WHERE sha256 = ?1 LIMIT 1')
+    .bind(sha256)
+    .first<{ ok: number }>();
+  return row !== null;
 }
 
 export function deleteUploadWithPartsStatements(db: D1Database, uploadId: string): D1PreparedStatement[] {

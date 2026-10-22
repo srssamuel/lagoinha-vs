@@ -6,7 +6,6 @@ import {
   type BlobRow,
   MAX_OPEN_UPLOADS_PER_UID,
   type SourceInput,
-  acquireReservation,
   countOpenUploads,
   deleteBlobStatements,
   deleteUploadWithPartsStatements,
@@ -14,13 +13,16 @@ import {
   getUpload,
   insertBlobStatement,
   insertUpload,
+  isPubliclyServed,
+  listParts,
   purgeStaleUploads,
   recordPart,
-  releaseReservation,
   sumPartsExcept,
   upsertBlobStatement,
   upsertSource
 } from './registry';
+import { assertDeletable } from './publication';
+import { withReservation } from './reservation';
 import { type Route, type Scope, r2Key, validIdSegment } from './route';
 
 /** O plano Workers Free aceita corpo de ate 100 MB; fica folga para o envelope. */
@@ -121,20 +123,6 @@ async function requireOwnUpload(env: Env, auth: VerifiedToken, route: { scope: S
   return row;
 }
 
-/**
- * Um escritor por (escopo, hash) de cada vez: PUT, complete do multipart e exclusao disputam a mesma
- * reserva (INSERT condicional no D1). Quem perde recebe 409; ninguem apaga ou sobrescreve o objeto
- * que outro acabou de conferir.
- */
-async function withReservation<T>(env: Env, scope: Scope, sha256: string, fn: () => Promise<T>): Promise<T> {
-  const holder = crypto.randomUUID();
-  if (!(await acquireReservation(env.REGISTRY, scope.key, sha256, holder))) throw new HttpError(409, 'in_progress');
-  try {
-    return await fn();
-  } finally {
-    await releaseReservation(env.REGISTRY, scope.key, sha256, holder).catch(() => undefined);
-  }
-}
 
 function blobHeaders(row: Pick<BlobRow, 'integrity'>, sha256: string): Headers {
   return new Headers({
@@ -201,7 +189,8 @@ export const putBlob: Handler<'blob'> = async (request, env, auth, route) => {
       original_name: name,
       integrity: 'r2-sha256',
       uploaded_by: auth.uid,
-      uploaded_at: nowIso()
+      uploaded_at: nowIso(),
+      verified_at: nowIso()
     }).run();
     return json({ ok: true, existed: false, promoted: current !== null, size: stored.size, integrity: 'r2-sha256' }, 201);
   });
@@ -210,6 +199,7 @@ export const putBlob: Handler<'blob'> = async (request, env, auth, route) => {
 /** Exclusao: so admin da igreja (ou curador, no catalogo). Remove o objeto, o registro e as origens. */
 export const deleteBlob: Handler<'blob'> = async (_request, env, auth, route) => {
   await authorizeAdmin(env, auth.raw, auth.uid, route.scope);
+  await assertDeletable(env, route.scope, route.sha256);
   return withReservation(env, route.scope, route.sha256, async () => {
     if (!(await getBlob(env.REGISTRY, route.scope.key, route.sha256))) throw notFound('blob_not_found');
     await env.STEMS.delete(r2Key(route.scope, route.sha256));
@@ -239,14 +229,42 @@ export function parseRange(header: string, size: number): { start: number; end: 
   return { start, end: Math.min(end, size - 1) };
 }
 
-export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) => {
+function readRef(request: Request): { songId: string; versionId: string } {
   const url = new URL(request.url);
   const songId = url.searchParams.get('song');
   const versionId = url.searchParams.get('version');
   if (!validIdSegment(songId) || !validIdSegment(versionId)) throw badRequest('song_and_version_required');
+  return { songId, versionId };
+}
 
+export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) => {
+  const { songId, versionId } = readRef(request);
   const row = await authorizeRead(env, auth.raw, route.scope, route.sha256, songId, versionId);
+  return serveBlob(request, env, route, row, 'private, no-cache');
+};
 
+/**
+ * Download sem login (biblioteca publica): so no catalogo e so se o hash estiver na versao que o Worker
+ * publicou para esta musica (tabela publications, conferida na publicacao). Qualquer outro caso = 404,
+ * sem dizer se o arquivo existe.
+ */
+export async function getPublicBlobBytes(request: Request, env: Env, route: Extract<Route, { type: 'blob' }>): Promise<Response> {
+  if (route.scope.kind !== 'catalog') throw new HttpError(401, 'unauthenticated');
+  const { songId, versionId } = readRef(request);
+  if (!(await isPubliclyServed(env.REGISTRY, songId, versionId, route.sha256))) throw notFound('blob_not_found');
+  const row = await getBlob(env.REGISTRY, route.scope.key, route.sha256);
+  if (!row || row.integrity !== 'r2-sha256') throw notFound('blob_not_found');
+  // no-cache: retirada da publicacao vale na hora, sem copia velha em cache intermediario.
+  return serveBlob(request, env, route, row, 'public, no-cache');
+}
+
+async function serveBlob(
+  request: Request,
+  env: Env,
+  route: Extract<Route, { type: 'blob' }>,
+  row: BlobRow,
+  cacheControl: string
+): Promise<Response> {
   const rangeHeader = request.headers.get('range');
   let range: { start: number; end: number } | null = null;
   if (rangeHeader !== null) {
@@ -272,7 +290,7 @@ export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) =
   // Conteudo enviado por usuarios nunca e interpretado pelo navegador.
   headers.set('content-disposition', 'attachment');
   headers.set('content-security-policy', "default-src 'none'; sandbox");
-  headers.set('cache-control', 'private, no-cache');
+  headers.set('cache-control', cacheControl);
 
   if (range) {
     headers.set('content-range', `bytes ${range.start}-${range.end}/${object.size}`);
@@ -281,7 +299,7 @@ export const getBlobBytes: Handler<'blob'> = async (request, env, auth, route) =
   }
   headers.set('content-length', String(object.size));
   return new Response(object.body, { status: 200, headers });
-};
+}
 
 // ---------- multipart ----------
 
@@ -330,7 +348,7 @@ export const putPart: Handler<'multipart-part'> = async (request, env, auth, rou
   }
   const upload = env.STEMS.resumeMultipartUpload(r2Key(route.scope, route.sha256), route.uploadId);
   const part = await upload.uploadPart(route.partNumber, request.body as ReadableStream);
-  await recordPart(env.REGISTRY, route.uploadId, route.partNumber, length);
+  await recordPart(env.REGISTRY, route.uploadId, route.partNumber, length, part.etag);
   return json({ etag: part.etag, partNumber: part.partNumber }, 200);
 };
 
@@ -419,7 +437,19 @@ export const completeMultipart: Handler<'multipart-complete'> = async (request, 
   });
 };
 
-export const abortMultipart: Handler<'multipart-abort'> = async (_request, env, auth, route) => {
+/** Partes ja recebidas (retomada em outra carga da pagina): numero, tamanho e etag de cada uma. */
+export const multipartStatus: Handler<'multipart-upload'> = async (_request, env, auth, route) => {
+  await requireWrite(env, auth, route.scope);
+  const row = await requireOwnUpload(env, auth, route);
+  const parts = await listParts(env.REGISTRY, route.uploadId);
+  return json({
+    uploadId: row.upload_id,
+    size: row.size,
+    parts: parts.map((p) => ({ partNumber: p.part_number, size: p.size, etag: p.etag }))
+  });
+};
+
+export const abortMultipart: Handler<'multipart-upload'> = async (_request, env, auth, route) => {
   await requireWrite(env, auth, route.scope);
   await requireOwnUpload(env, auth, route);
   const upload = env.STEMS.resumeMultipartUpload(r2Key(route.scope, route.sha256), route.uploadId);
