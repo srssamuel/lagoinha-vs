@@ -82,7 +82,12 @@ export class R2WorkerStemStore implements StemBlobPort {
     if (!SHA256_HEX.test(sha256)) return null;
     if (!ref) throw new Error('Download do acervo exige a música e a versão que listam o arquivo.');
     const query = `?song=${encodeURIComponent(ref.songId)}&version=${encodeURIComponent(ref.versionId)}`;
-    const res = await this.fetchImpl(this.url(ref.scope, sha256, query), { headers: await this.headers() });
+    // Biblioteca pública: sem login, o catálogo publicado baixa sem token (o Worker confere a publicação).
+    const token = await this.idToken();
+    if (!token && ref.scope.kind !== 'global') throw new StemAccessError(401, 'Entre com sua conta para acessar os arquivos.');
+    const res = await this.fetchImpl(this.url(ref.scope, sha256, query), {
+      headers: token ? { authorization: `Bearer ${token}` } : {}
+    });
     if (res.status === 404) return null;
     if (!res.ok) await this.fail(res);
     const blob = await res.blob();

@@ -14,6 +14,8 @@ import {
   Cpu,
   BookOpen,
   Layers,
+  Library,
+  LogIn,
   Users
 } from 'lucide-react';
 import { Song } from '../../domain/entities/Song';
@@ -35,7 +37,8 @@ interface StageHeaderProps {
   onPitchShiftChange: (semitones: number) => void;
   onMasterVolumeChange: (vol: number) => void;
   onOpenRoutingModal: () => void;
-  onOpenCloudLibrary: () => void;
+  /** Ausente para o visitante da biblioteca pública (sem banco da igreja). */
+  onOpenCloudLibrary?: () => void;
   onOpenCifraModal: () => void;
   onOpenVstRack?: () => void;
   onOpenHelpGuide?: () => void;
@@ -253,15 +256,27 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
         )}
 
         {/* Botão Banco de VS (Google Cloud) */}
-        <button
-          type="button"
-          onClick={onOpenCloudLibrary}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-[11px] font-bold transition active:scale-95 shadow-md shadow-blue-600/10"
-          title="Abrir Banco de Multitracks na Nuvem e Repositórios"
+        {onOpenCloudLibrary && (
+          <button
+            type="button"
+            onClick={onOpenCloudLibrary}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-blue-500/40 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-[11px] font-bold transition active:scale-95 shadow-md shadow-blue-600/10"
+            title="Abrir Banco de Multitracks na Nuvem e Repositórios"
+          >
+            <Cloud className="w-3.5 h-3.5 text-blue-400" />
+            <span>BANCO DE VS</span>
+          </button>
+        )}
+
+        {/* Biblioteca pública: músicas publicadas, abertas por qualquer pessoa */}
+        <a
+          href="/biblioteca"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-stage-border bg-stage-card hover:bg-stage-surface text-slate-200 text-[11px] font-bold transition active:scale-95"
+          title="Biblioteca pública: músicas publicadas, sem login"
         >
-          <Cloud className="w-3.5 h-3.5 text-blue-400" />
-          <span>BANCO DE VS</span>
-        </button>
+          <Library className="w-3.5 h-3.5 text-amber-400" />
+          <span>BIBLIOTECA</span>
+        </a>
 
         {/* Botão Guia de Palco / Como Operar no Culto */}
         {onOpenHelpGuide && (
@@ -362,9 +377,10 @@ export const StageHeader: React.FC<StageHeaderProps> = ({
             <button
               onClick={onSignOut}
               className="p-1.5 rounded-xl bg-stage-card border border-stage-border text-slate-400 hover:text-rose-400 transition"
-              title="Sair da Conta (Logout)"
+              title={currentUser.isVisitor ? 'Entrar com uma conta' : 'Sair da Conta (Logout)'}
+              aria-label={currentUser.isVisitor ? 'Entrar com uma conta' : 'Sair da conta'}
             >
-              <LogOut className="w-3.5 h-3.5" />
+              {currentUser.isVisitor ? <LogIn className="w-3.5 h-3.5" /> : <LogOut className="w-3.5 h-3.5" />}
             </button>
           </div>
         )}

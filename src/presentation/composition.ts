@@ -12,6 +12,7 @@ import { LocalSetlistRepository } from '../infrastructure/storage/LocalSetlistRe
 import { LocalStemStore } from '../infrastructure/storage/LocalStemStore';
 import type { FirebaseBackendEnv } from './firebaseBackend';
 import { PrepareServiceUseCase } from '../application/service/PrepareServiceUseCase';
+import { CatalogAdminServices } from '../application/acervo/CatalogAdminPort';
 
 export type BackendKind = 'local' | 'firebase';
 
@@ -34,6 +35,8 @@ export interface Backend {
   drive: GoogleDriveStoragePort;
   /** Preparar o culto offline (F4): versão exata de cada música baixada para o aparelho. */
   prepareService: PrepareServiceUseCase;
+  /** Painel do acervo público (/admin/acervo): só com Firebase + Worker de stems. */
+  catalogAdmin?: CatalogAdminServices;
 }
 
 export function resolveBackendKind(env: BackendEnv): BackendKind {

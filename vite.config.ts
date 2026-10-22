@@ -3,7 +3,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: './',
+  // Absoluto: /biblioteca/{id} e /admin/acervo carregam os mesmos assets a partir de qualquer profundidade.
+  base: '/',
   define: {
     // Identifica o build no aviso de atualização; o e2e offline gera dois builds diferentes com isto.
     __BUILD_TAG__: JSON.stringify(process.env.LAGOINHA_BUILD_TAG ?? 'dev')
@@ -20,8 +21,8 @@ export default defineConfig({
         short_name: 'Lagoinha VS',
         description: 'Multitracks, click e guia para o louvor da Lagoinha João Pessoa.',
         lang: 'pt-BR',
-        start_url: './',
-        scope: './',
+        start_url: '/',
+        scope: '/',
         display: 'standalone',
         orientation: 'landscape',
         background_color: '#0a0d14',
@@ -39,7 +40,7 @@ export default defineConfig({
         globIgnores: ['stems/**'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         // Navegação offline cai no index.html; a página de retorno do login do Firebase não é do app.
-        navigateFallback: 'index.html',
+        navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/__\//, /\/stems\//],
         cleanupOutdatedCaches: true,
         skipWaiting: false,

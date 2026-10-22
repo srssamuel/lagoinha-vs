@@ -404,6 +404,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({ authService, onAuthenticated
             </button>
           </form>
         )}
+
+        <a
+          href="/biblioteca"
+          className="mt-5 block text-center text-xs font-bold text-slate-400 hover:text-white underline-offset-4 hover:underline"
+        >
+          Ver a biblioteca pública sem login
+        </a>
       </div>
     </div>
   );

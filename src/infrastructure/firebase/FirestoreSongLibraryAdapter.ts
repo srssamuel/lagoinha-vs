@@ -6,10 +6,12 @@ import {
   Firestore,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
   Timestamp,
-  updateDoc
+  updateDoc,
+  where
 } from 'firebase/firestore';
 import { LibraryScope, SongLibraryPort } from '../../application/ports/SongLibraryPort';
 import { StemBlobPort } from '../../application/ports/StemBlobPort';
@@ -102,7 +104,9 @@ export class FirestoreSongLibraryAdapter implements SongLibraryPort {
   }
 
   public async list(scope: LibraryScope): Promise<CloudSong[]> {
-    const snap = await getDocs(collection(this.db, songsPath(scope).join('/')));
+    const songs = collection(this.db, songsPath(scope).join('/'));
+    // Catálogo: quem não é curador só enxerga o que foi publicado (regra I7); rascunho fica no painel do acervo.
+    const snap = await getDocs(scope.kind === 'global' ? query(songs, where('status', '==', 'published')) : songs);
     return snap.docs
       .map((d) => this.toCloudSong(d.id, d.data()))
       .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));

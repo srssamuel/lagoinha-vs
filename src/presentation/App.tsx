@@ -34,6 +34,10 @@ import { useAudioEngineState } from './hooks/useAudioEngineState';
 import { useSetlist } from './hooks/useSetlist';
 import { useAmbientPad } from './hooks/useAmbientPad';
 import { useStageControls } from './hooks/useStageControls';
+import { isVisitorMode, leaveVisitorMode, requestedSongId } from './visitorMode';
+
+/** Sem conta: visitante da biblioteca pública (se escolheu abrir o player por ela) ou tela de login. */
+const withVisitor = (user: User | null): User | null => user ?? (isVisitorMode() ? User.visitor() : null);
 
 export const App: React.FC = () => {
   // Serviços de Autenticação e Áudio
@@ -44,7 +48,7 @@ export const App: React.FC = () => {
   const midiService = useMemo(() => WebMidiHardwareService.getInstance(), []);
 
   // Estado de Usuário Autenticado
-  const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<User | null>(() => withVisitor(authService.getCurrentUser()));
 
   // Estado de transporte do motor (medidores vão direto ao DOM via meterSource)
   const engineState = useAudioEngineState(audioEngine);
@@ -88,7 +92,18 @@ export const App: React.FC = () => {
   }, [refreshPendingCount]);
 
   // Inscrição no estado de autenticação
-  useEffect(() => authService.onAuthStateChanged(setCurrentUser), [authService]);
+  useEffect(() => authService.onAuthStateChanged((user) => setCurrentUser(withVisitor(user))), [authService]);
+
+  // Biblioteca pública → player: seleciona a música preparada assim que o repertório do aparelho carrega
+  const [pendingSongId, setPendingSongId] = useState<string | null>(() => requestedSongId());
+  useEffect(() => {
+    if (!pendingSongId) return;
+    const index = setlist.state.songs.findIndex((s) => s.id === pendingSongId);
+    if (index < 0) return;
+    setlist.select(index);
+    setPendingSongId(null);
+    window.history.replaceState(null, '', window.location.pathname);
+  }, [pendingSongId, setlist]);
 
   // Carrega a música selecionada no motor
   useEffect(() => {
@@ -270,13 +285,20 @@ export const App: React.FC = () => {
         onPitchShiftChange={handlePitchShiftChange}
         onMasterVolumeChange={(vol) => audioEngine.setMasterVolume(vol)}
         onOpenRoutingModal={() => setIsRoutingModalOpen(true)}
-        onOpenCloudLibrary={() => setIsCloudLibraryOpen(true)}
+        onOpenCloudLibrary={currentUser.isVisitor ? undefined : () => setIsCloudLibraryOpen(true)}
         onOpenCifraModal={() => setIsCifraModalOpen(true)}
         onOpenVstRack={() => handleOpenVstRack()}
         onOpenHelpGuide={() => setIsHelpGuideOpen(true)}
         onOpenAdminModal={() => setIsAdminUsersModalOpen(true)}
         pendingUsersCount={pendingUsersCount}
-        onSignOut={() => void authService.signOut()}
+        onSignOut={() => {
+          if (currentUser.isVisitor) {
+            leaveVisitorMode();
+            setCurrentUser(null);
+          } else {
+            void authService.signOut();
+          }
+        }}
       />
 
       {/* Barra de Transporte com Métricas de Andamento, Pré-Roll e Pedaleira */}

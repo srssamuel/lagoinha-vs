@@ -16,6 +16,9 @@ export interface UserProps {
   createdAt?: string;
 }
 
+/** Quem abre a biblioteca pública sem login: toca e prepara offline o que foi publicado, sem nenhum papel. */
+export const VISITOR_UID = 'visitante';
+
 export class User {
   public readonly uid: string;
   public readonly email: string;
@@ -43,6 +46,23 @@ export class User {
     this.approvedBy = props.approvedBy;
     this.approvedAt = props.approvedAt;
     this.createdAt = props.createdAt || new Date().toISOString();
+  }
+
+  /** Visitante da biblioteca pública: sem igreja, sem permissão de envio, setlist só no aparelho. */
+  public static visitor(): User {
+    return new User({
+      uid: VISITOR_UID,
+      email: '',
+      displayName: 'Visitante',
+      role: 'musician',
+      churchBranch: 'Biblioteca pública',
+      churchId: VISITOR_UID,
+      status: 'active'
+    });
+  }
+
+  public get isVisitor(): boolean {
+    return this.uid === VISITOR_UID;
   }
 
   public belongsToChurch(targetChurchId: string): boolean {

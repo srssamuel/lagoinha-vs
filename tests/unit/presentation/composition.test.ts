@@ -42,7 +42,8 @@ describe('composition root', () => {
     await expect(
       createBackend({ VITE_BACKEND: 'firebase', VITE_STEMS_WORKER_URL: 'https://stems.example' })
     ).rejects.toThrow(/VITE_FIREBASE_API_KEY/);
-  });
+    // Import frio do SDK do Firebase: 1-2 s sozinho, mais que 5 s com a suíte inteira em paralelo.
+  }, 30_000);
 
   it('I6: build de produção não traz admin automático nem usuários de exemplo', async () => {
     const productionEnv = { DEV: false };
