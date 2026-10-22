@@ -411,6 +411,8 @@ export class WebAudioEngine implements AudioEnginePort {
       nodes.eqHigh.gain.value = dsp.eqHighDb;
       nodes.eqHigh.gain.setValueAtTime(dsp.eqHighDb, now);
 
+      // Nao trocar por curve=null no drive 0: no Chromium a curva nula pula o oversample 2x e tira 128 amostras
+      // de latencia so desse stem, desalinhando-o dos stems com drive (medido em 2026-10-21).
       nodes.tubeSaturator.curve = VstPluginRackService.createTubeSaturationCurve(
         dsp.driveAmount,
         512
