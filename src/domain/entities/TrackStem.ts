@@ -1,3 +1,5 @@
+import { classifyStemName } from './StemNameClassifier';
+
 export type StemType =
   | 'click'
   | 'guide'
@@ -59,29 +61,31 @@ export class TrackStem {
   }
 
   public set isPitchShiftable(val: boolean) {
-    if (this.pitchPolicy === 'locked') return; // Click e Guia nunca podem ser desbloqueados
+    if (this.pitchPolicy === 'locked' || this.type === 'click' || this.type === 'guide') return; // Click e Guia nunca podem ser desbloqueados
     this.pitchPolicy = val ? 'harmonic' : 'percussive';
   }
 
   constructor(props: TrackStemProps) {
     this.id = props.id;
     this.name = props.name;
-    this.type = props.type;
+    // Nome de click/guia manda no tipo: o roteamento lê só `type`, e um "Click" gravado como 'fx' (migrador,
+    // Firestore) iria para o PA.
+    const byName = classifyStemName(props.name);
+    this.type = byName.family === 'click' || byName.family === 'guide' ? byName.type : props.type;
     this.volume = Math.max(0, Math.min(2, props.volume));
     this.pan = Math.max(-1, Math.min(1, props.pan));
     this.isMuted = props.isMuted;
     this.isSolo = props.isSolo;
 
-    if (props.pitchPolicy) {
+    if (this.type === 'click' || this.type === 'guide') {
+      // Vale também para política restaurada do IndexedDB: click e guia nunca transpõem.
+      this.pitchPolicy = 'locked';
+    } else if (props.pitchPolicy) {
       this.pitchPolicy = props.pitchPolicy;
     } else if (props.isPitchShiftable !== undefined) {
-      if (props.type === 'click' || props.type === 'guide') {
-        this.pitchPolicy = 'locked';
-      } else {
-        this.pitchPolicy = props.isPitchShiftable ? 'harmonic' : 'percussive';
-      }
+      this.pitchPolicy = props.isPitchShiftable ? 'harmonic' : 'percussive';
     } else {
-      this.pitchPolicy = TrackStem.inferPitchPolicy(props.type, props.name);
+      this.pitchPolicy = TrackStem.inferPitchPolicy(this.type, props.name);
     }
 
     this.audioBuffer = props.audioBuffer ?? null;
@@ -111,53 +115,10 @@ export class TrackStem {
     if (type === 'drums') {
       return 'percussive';
     }
-    const lowerName = name.toLowerCase();
-
-    // Palavras-chave estritamente percussivas
-    const isPercussive =
-      lowerName.includes('shaker') ||
-      lowerName.includes('tambourine') ||
-      lowerName.includes('tamb') ||
-      lowerName.includes('conga') ||
-      lowerName.includes('bongo') ||
-      lowerName.includes('hihat') ||
-      lowerName.includes('hi-hat') ||
-      lowerName.includes('snare') ||
-      lowerName.includes('kick') ||
-      lowerName.includes('clap') ||
-      lowerName.includes('beat') ||
-      lowerName.includes('bateria') ||
-      lowerName.includes('drum');
-
-    // Palavras-chave estritamente harmônicas/melódicas
-    const isHarmonic =
-      lowerName.includes('key') ||
-      lowerName.includes('piano') ||
-      lowerName.includes('synth') ||
-      lowerName.includes('pad') ||
-      lowerName.includes('guitar') ||
-      lowerName.includes('gtr') ||
-      lowerName.includes('violao') ||
-      lowerName.includes('violão') ||
-      lowerName.includes('organ') ||
-      lowerName.includes('orgao') ||
-      lowerName.includes('órgão') ||
-      lowerName.includes('rhodes') ||
-      lowerName.includes('arp') ||
-      lowerName.includes('lead') ||
-      lowerName.includes('brass') ||
-      lowerName.includes('sax') ||
-      lowerName.includes('string') ||
-      lowerName.includes('bass') ||
-      lowerName.includes('baixo') ||
-      lowerName.includes('voc') ||
-      lowerName.includes('voz');
-
-    if (isHarmonic && !isPercussive) {
-      return 'harmonic';
-    }
-    if (isPercussive) {
-      return 'percussive';
+    // O nome (tokenizado, ver StemNameClassifier) decide quando reconhece algo; o tipo é o fallback.
+    const byName = classifyStemName(name);
+    if (byName.matched) {
+      return byName.policy;
     }
 
     // Por tipo padrão
@@ -165,7 +126,7 @@ export class TrackStem {
       return 'harmonic';
     }
     if (type === 'loop') {
-      // Loop genérico sem identificação tonal clara: assume percussivo por segurança, permitindo override
+      // Loop ambíguo: travado por segurança (ver StemNameClassifier); o músico pode sobrescrever por stem
       return 'percussive';
     }
 
@@ -192,78 +153,48 @@ export class TrackStem {
       .replace(/\.(wav|mp3|ogg|flac|m4a)$/i, '')
       .replace(/_1$/i, '')
       .trim();
+    const c = classifyStemName(clean);
     const lower = clean.toLowerCase();
+    const base = { pitchPolicy: c.policy, isPitchShiftable: c.policy === 'harmonic' };
 
-    // 1. Click / Metrônomo
-    if (lower.includes('click') || lower.includes('metronomo') || lower.includes('metrônomo')) {
-      return { type: 'click', displayName: 'Click (Metrônomo)', pitchPolicy: 'locked', isPitchShiftable: false, defaultPan: 0 };
+    switch (c.family) {
+      case 'click':
+        return { ...base, type: 'click', displayName: 'Click (Metrônomo)', defaultPan: 0 };
+      case 'guide':
+        return { ...base, type: 'guide', displayName: 'Guia de Palco', defaultPan: 0 };
+      case 'harmonic-loop': {
+        const pan = c.type === 'guitars' || c.type === 'violao' ? -0.2 : c.type === 'keys' ? 0.1 : 0;
+        const label = c.type === 'guitars' || c.type === 'violao' ? 'Guitarra/Loop' : c.type === 'keys' ? 'Teclas/Loop' : 'Loop Harmônico';
+        return { ...base, type: c.type, displayName: `${label} (${clean})`, defaultPan: pan };
+      }
+      case 'percussive-loop':
+      case 'ambiguous-loop':
+        return { ...base, type: 'loop', displayName: `Loop Percussivo (${clean})`, defaultPan: 0 };
+      case 'drums':
+        return { ...base, type: 'drums', displayName: 'Bateria (Drums)', defaultPan: 0 };
+      case 'bass':
+        return { ...base, type: 'bass', displayName: 'Contrabaixo (Bass)', defaultPan: 0 };
+      case 'acoustic-guitar':
+        return { ...base, type: 'violao', displayName: `Violão (${clean})`, defaultPan: -0.2 };
+      case 'electric-guitar': {
+        const pan = lower.includes('1') ? -0.25 : lower.includes('2') ? 0.25 : 0.1;
+        return { ...base, type: 'guitars', displayName: `Guitarra (${clean})`, defaultPan: pan };
+      }
+      case 'pad':
+        return { ...base, type: 'pad', displayName: `Synth / Pad (${clean})`, defaultPan: 0 };
+      case 'keys':
+        return { ...base, type: 'keys', displayName: `Teclas (${clean})`, defaultPan: 0.1 };
+      case 'vocals':
+        return { ...base, type: 'vocals', displayName: 'Backing Vocals', defaultPan: 0 };
+      case 'strings':
+        return { ...base, type: 'strings', displayName: `Cordas (${clean})`, defaultPan: 0 };
+      case 'mixed':
+        // Mix completo (bateria + harmonia): transpõe; a bateria embutida sofre artefato do shifter.
+        return { ...base, type: 'fx', displayName: `Mix / Banda (${clean})`, defaultPan: 0 };
+      default:
+        return { ...base, type: 'fx', displayName: clean, defaultPan: 0 };
     }
-
-    // 2. Guia de Palco / Voice Cues
-    if (lower.includes('guia') || lower.includes('guide') || lower.includes('cue') || lower.includes('contagem')) {
-      return { type: 'guide', displayName: 'Guia de Palco', pitchPolicy: 'locked', isPitchShiftable: false, defaultPan: 0 };
-    }
-
-    // 3. Loops com Conteúdo Harmônico Explícito (Keys, Guitars, Pad, Synth)
-    if (
-      (lower.includes('key') || lower.includes('piano') || lower.includes('synth') || lower.includes('pad') || lower.includes('rhodes') || lower.includes('arp')) &&
-      lower.includes('loop')
-    ) {
-      return { type: 'keys', displayName: `Teclas/Loop (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: 0.1 };
-    }
-    if ((lower.includes('guitar') || lower.includes('gtr') || lower.includes('violao') || lower.includes('violão')) && lower.includes('loop')) {
-      return { type: 'guitars', displayName: `Guitarra/Loop (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: -0.2 };
-    }
-
-    // 4. Loops e Percussão Rítmicos
-    if (lower.includes('loop') || lower.includes('perc') || lower.includes('shaker') || lower.includes('tamb') || lower.includes('conga') || lower.includes('bongo')) {
-      return { type: 'loop', displayName: `Loop Percussivo (${clean})`, pitchPolicy: 'percussive', isPitchShiftable: false, defaultPan: 0 };
-    }
-
-    // 5. Bateria Completa
-    if (lower.includes('drum') || lower.includes('bateria') || lower.includes('kit') || lower.includes('snare') || lower.includes('kick')) {
-      return { type: 'drums', displayName: 'Bateria (Drums)', pitchPolicy: 'percussive', isPitchShiftable: false, defaultPan: 0 };
-    }
-
-    // 6. Contrabaixo
-    if (lower.includes('bass') || lower.includes('baixo') || lower.includes('sub')) {
-      return { type: 'bass', displayName: 'Contrabaixo (Bass)', pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: 0 };
-    }
-
-    // 7. Violão Acústico
-    if (lower.includes('violao') || lower.includes('violão') || lower.includes('ag') || lower.includes('acoustic')) {
-      return { type: 'violao', displayName: `Violão (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: -0.2 };
-    }
-
-    // 8. Guitarras Elétricas
-    if (lower.includes('eg') || lower.includes('guitar') || lower.includes('gtr') || lower.includes('electric')) {
-      const pan = lower.includes('1') ? -0.25 : lower.includes('2') ? 0.25 : 0.1;
-      return { type: 'guitars', displayName: `Guitarra (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: pan };
-    }
-
-    // 9. Synths e Pads
-    if (lower.includes('pad') || lower.includes('synth') || lower.includes('ambi') || lower.includes('atmos')) {
-      return { type: 'pad', displayName: `Synth / Pad (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: 0 };
-    }
-
-    // 10. Teclas, Pianos e Órgãos
-    if (lower.includes('key') || lower.includes('piano') || lower.includes('ep') || lower.includes('orgao') || lower.includes('órgão') || lower.includes('organ') || lower.includes('rhodes')) {
-      return { type: 'keys', displayName: `Teclas (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: 0.1 };
-    }
-
-    // 11. Vozes / Backing Vocals / Coro
-    if (lower.includes('voc') || lower.includes('choir') || lower.includes('coro') || lower.includes('bgv') || lower.includes('voz') || lower.includes('lead voc')) {
-      return { type: 'vocals', displayName: 'Backing Vocals', pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: 0 };
-    }
-
-    // 12. Cordas / Strings
-    if (lower.includes('string') || lower.includes('corda') || lower.includes('cello') || lower.includes('violin') || lower.includes('viola')) {
-      return { type: 'strings', displayName: `Cordas (${clean})`, pitchPolicy: 'harmonic', isPitchShiftable: true, defaultPan: 0 };
-    }
-
-    return { type: 'fx', displayName: clean, pitchPolicy: 'percussive', isPitchShiftable: false, defaultPan: 0 };
   }
-
   public setPitchPolicy(policy: PitchPolicy): void {
     if (this.type === 'click' || this.type === 'guide') {
       this.pitchPolicy = 'locked';
@@ -273,7 +204,7 @@ export class TrackStem {
   }
 
   public togglePitchLock(): void {
-    if (this.pitchPolicy === 'locked') return;
+    if (this.pitchPolicy === 'locked' || this.type === 'click' || this.type === 'guide') return;
     this.pitchPolicy = this.pitchPolicy === 'harmonic' ? 'percussive' : 'harmonic';
   }
 
