@@ -1,6 +1,6 @@
 import { authorizeAdmin, authorizeRead, authorizeWrite } from './authz';
 import type { Env } from './env';
-import { HttpError, badRequest, forbidden, json, notFound } from './http';
+import { HttpError, badRequest, json, notFound } from './http';
 import type { VerifiedToken } from './jwt';
 import {
   type BlobRow,
@@ -113,9 +113,11 @@ async function requireWrite(env: Env, auth: VerifiedToken, scope: Scope): Promis
 
 async function requireOwnUpload(env: Env, auth: VerifiedToken, route: { scope: Scope; sha256: string; uploadId: string }) {
   const row = await getUpload(env.REGISTRY, route.uploadId);
-  if (!row) throw notFound('upload_not_found');
-  // Mesmo uid, mesmo escopo, mesmo hash que abriram o upload.
-  if (row.uid !== auth.uid || row.scope !== route.scope.key || row.sha256 !== route.sha256) throw forbidden();
+  // Mesmo uid, mesmo escopo, mesmo hash que abriram o upload. Upload alheio e upload inexistente dao a
+  // mesma resposta (404): o upload_id nao serve de sonda para saber o que outra pessoa/igreja tem aberto.
+  if (!row || row.uid !== auth.uid || row.scope !== route.scope.key || row.sha256 !== route.sha256) {
+    throw notFound('upload_not_found');
+  }
   return row;
 }
 

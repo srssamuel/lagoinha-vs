@@ -317,7 +317,7 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
         token: tokens.alice!,
         body: JSON.stringify({ parts: etags })
       });
-      expect(wrongHash.status).toBe(403);
+      expect(wrongHash.status).toBe(404);
 
       const done = await call(blobPath(A, blob.sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), {
         method: 'POST',
@@ -786,5 +786,133 @@ describe.skipIf(!EMULATOR)('contrato do Worker de stems (Firestore Emulator + re
         body: blob.bytes
       });
       expect(on.status).toBe(201);
+    });
+  });
+
+  // ---------- conhecer sha256 / chave R2 / upload_id nao concede autorizacao ----------
+  describe('isolamento entre escopos: conhecimento do hash ou do upload_id nao autoriza', () => {
+    const srcBody = JSON.stringify({ kind: 'drive', sourceId: 'iso-x' });
+    beforeAll(async () => {
+      tokens.zed = await mintToken(keys, { uid: 'zed' });
+      await seed('churches/igreja-a/members/zed', { role: 'sound_tech', status: 'active', displayName: 'z' });
+      await seed('churches/igreja-b/members/zed', { role: 'sound_tech', status: 'active', displayName: 'z' });
+    });
+
+    const dbRows = async (sql: string, ...args: unknown[]) =>
+      (await env.REGISTRY.prepare(sql).bind(...args).all()).results;
+
+    it('igreja B (tecb) sabendo o sha de um blob da A: HEAD, GET, PUT, origem, multipart e DELETE negados; nada muda', async () => {
+      const blob = await makeBlob(1500);
+      await seed('churches/igreja-a/library/song-iso', { title: 'iso' });
+      await seed('churches/igreja-a/library/song-iso/versions/v1', { stems: [{ sha256: blob.sha }] });
+      expect((await upload(tokens.zed!, A, blob)).status).toBe(201);
+
+      const tb = tokens.tecb!;
+      expect((await call(blobPath(A, blob.sha), { method: 'HEAD', token: tb })).status).toBe(403);
+      expect((await download(tb, A, blob.sha, 'song-iso')).status).toBe(403);
+      expect((await upload(tb, A, blob)).status).toBe(403);
+      expect((await call(blobPath(A, blob.sha, '/sources'), { method: 'POST', token: tb, body: srcBody })).status).toBe(403);
+      expect(
+        (await call(blobPath(A, blob.sha, '/multipart'), { method: 'POST', token: tb, body: JSON.stringify({ size: 10 }) })).status
+      ).toBe(403);
+      expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tb })).status).toBe(403);
+
+      expect(await dbRows('SELECT 1 FROM blobs WHERE sha256 = ?1', blob.sha)).toHaveLength(1);
+      expect(await dbRows('SELECT 1 FROM sources WHERE source_id = ?1', 'iso-x')).toHaveLength(0);
+      expect(await env.STEMS.head(`churches/igreja-a/blobs/${blob.sha}`)).not.toBeNull();
+    });
+
+    it('registrar/reaproveitar na B um sha que so existe na A exige bytes reais: sem vinculo por hash (sources 404, PUT errado 400, multipart cria upload proprio)', async () => {
+      const blob = await makeBlob(1800);
+      expect((await upload(tokens.zed!, A, blob)).status).toBe(201);
+
+      // alice escreve em A e em B: conhecer o hash nao cria vinculo na B
+      expect((await call(blobPath(B, blob.sha, '/sources'), { method: 'POST', token: tokens.zed!, body: srcBody })).status).toBe(404);
+      expect((await call(blobPath(B, blob.sha), { method: 'HEAD', token: tokens.zed! })).status).toBe(404);
+      await seed('churches/igreja-b/library/song-iso', { title: 'iso' });
+      await seed('churches/igreja-b/library/song-iso/versions/v1', { stems: [{ sha256: blob.sha }] });
+      expect((await download(tokens.zed!, B, blob.sha, 'song-iso')).status).toBe(403);
+      // PUT na B com bytes que nao sao os do hash: nao deduplica, nao registra
+      const wrong = await call(blobPath(B, blob.sha), { method: 'PUT', token: tokens.zed!, body: randomBytes(1800) });
+      expect(wrong.status).toBe(400);
+      expect(await dbRows('SELECT 1 FROM blobs WHERE scope = ?1 AND sha256 = ?2', 'church:igreja-b', blob.sha)).toHaveLength(0);
+      expect(await env.STEMS.head(`churches/igreja-b/blobs/${blob.sha}`)).toBeNull();
+      // multipart na B para o mesmo hash NAO responde already_exists (nao vaza existencia na A)
+      const create = await call(blobPath(B, blob.sha, '/multipart'), {
+        method: 'POST',
+        token: tokens.zed!,
+        body: JSON.stringify({ size: 1800 })
+      });
+      expect(create.status).toBe(201);
+      const { uploadId: opened } = (await create.json()) as { uploadId: string };
+      await call(blobPath(B, blob.sha, `/multipart/${encodeURIComponent(opened)}`), { method: 'DELETE', token: tokens.zed! });
+      // so o upload real (bytes corretos) cria o vinculo na B, e vem com sha conferido pelo R2
+      const real = await call(blobPath(B, blob.sha), { method: 'PUT', token: tokens.zed!, body: blob.bytes });
+      expect(real.status).toBe(201);
+      expect(await real.json()).toMatchObject({ existed: false, integrity: 'r2-sha256' });
+    });
+
+    it('upload_id aberto na A: outro uid, musico, tecnico da B e o proprio uid apontando a rota B nao completam, enviam parte nem abortam', async () => {
+      const bytes = randomBytes(4096);
+      const sha = await sha256Hex(bytes);
+      const create = await call(blobPath(A, sha, '/multipart'), { method: 'POST', token: tokens.zed!, body: JSON.stringify({ size: bytes.length }) });
+      expect(create.status).toBe(201);
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const id = encodeURIComponent(uploadId);
+      const part = await call(blobPath(A, sha, `/multipart/${id}/1`), { method: 'PUT', token: tokens.zed!, body: bytes });
+      const etag = ((await part.json()) as { etag: string }).etag;
+      const completeBody = JSON.stringify({ parts: [{ partNumber: 1, etag }] });
+
+      const attempts: Array<[string, string, string]> = [
+        ['tecb', A, 'tecnico da B na rota A'],
+        ['bob', A, 'musico da A'],
+        ['adm', A, 'admin da A mas outro uid'],
+        ['zed', B, 'dono do upload, mas rota B (sem upload la)'],
+        ['tecb', B, 'tecnico da B na rota B']
+      ];
+      for (const [who, scope, label] of attempts) {
+        const t = tokens[who]!;
+        const done = await call(blobPath(scope, sha, `/multipart/${id}/complete`), { method: 'POST', token: t, body: completeBody });
+        expect([403, 404], `complete: ${label}`).toContain(done.status);
+        const put = await call(blobPath(scope, sha, `/multipart/${id}/2`), { method: 'PUT', token: t, body: bytes });
+        expect([403, 404], `parte: ${label}`).toContain(put.status);
+        const abort = await call(blobPath(scope, sha, `/multipart/${id}`), { method: 'DELETE', token: t });
+        expect([403, 404], `abort: ${label}`).toContain(abort.status);
+      }
+      // nada foi registrado e o upload do dono continua utilizavel
+      expect(await dbRows('SELECT 1 FROM blobs WHERE sha256 = ?1', sha)).toHaveLength(0);
+      expect(await dbRows('SELECT 1 FROM uploads WHERE upload_id = ?1', uploadId)).toHaveLength(1);
+      const ok = await call(blobPath(A, sha, `/multipart/${id}/complete`), { method: 'POST', token: tokens.zed!, body: completeBody });
+      expect(ok.status).toBe(201);
+    });
+
+    it('upload_id desconhecido e upload_id de outra pessoa dao a mesma resposta (nao vaza existencia)', async () => {
+      const bytes = randomBytes(2048);
+      const sha = await sha256Hex(bytes);
+      const create = await call(blobPath(A, sha, '/multipart'), { method: 'POST', token: tokens.zed!, body: JSON.stringify({ size: bytes.length }) });
+      const { uploadId } = (await create.json()) as { uploadId: string };
+      const body = JSON.stringify({ parts: [{ partNumber: 1, etag: 'x' }] });
+      // adm e membro ativo (admin) da A com permissao de escrita: so nao e dono do upload
+      const foreign = await call(blobPath(A, sha, `/multipart/${encodeURIComponent(uploadId)}/complete`), { method: 'POST', token: tokens.adm!, body });
+      const unknown = await call(blobPath(A, sha, `/multipart/${encodeURIComponent('nao-existe-123')}/complete`), { method: 'POST', token: tokens.adm!, body });
+      expect(foreign.status).toBe(unknown.status);
+      expect(await foreign.json()).toEqual(await unknown.json());
+    });
+
+    it('catalogo x igreja: membro (mesmo admin da igreja) nao escreve no catalogo; curador nao escreve em igreja so por ser curador', async () => {
+      const blob = await makeBlob(900);
+      expect((await upload(tokens.adm!, CATALOG, blob)).status).toBe(403);
+      expect((await upload(tokens.zed!, CATALOG, blob)).status).toBe(403);
+      expect((await upload(tokens.cura!, A, blob)).status).toBe(403);
+      expect((await call(blobPath(CATALOG, blob.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(403);
+      expect(await dbRows('SELECT 1 FROM blobs WHERE sha256 = ?1', blob.sha)).toHaveLength(0);
+    });
+
+    it('papeis: musico, pendente e sem papel nao escrevem; sound_tech/leader/admin escrevem; so admin exclui', async () => {
+      const blob = await makeBlob(700);
+      for (const who of ['bob', 'dave', 'carol', 'eve']) expect((await upload(tokens[who]!, A, blob)).status, who).toBe(403);
+      expect((await upload(tokens.zed!, A, blob)).status).toBe(201); // sound_tech
+      expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.zed! })).status).toBe(403); // so admin exclui
+      expect((await call(blobPath(A, blob.sha), { method: 'DELETE', token: tokens.adm! })).status).toBe(204);
     });
   });});
