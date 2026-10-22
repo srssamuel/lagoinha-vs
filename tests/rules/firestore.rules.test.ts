@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -14,9 +14,11 @@ import {
   Firestore,
   getDoc,
   getDocs,
+  query,
   setDoc,
   Timestamp,
   updateDoc,
+  where,
   writeBatch
 } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
@@ -283,9 +285,11 @@ describe('I4: catálogo global', () => {
     await assertFails(updateDoc(doc(db('curator'), 'catalog/c1'), { rightsClass: 'church_purchased' }));
   });
 
-  it('membro ativo lê o catálogo; quem só aponta uma igreja sem ser membro, não', async () => {
-    await assertSucceeds(getDoc(doc(db('music-a'), 'catalog/c1')));
-    await assertSucceeds(getDoc(doc(db('music-a'), 'catalog/c1/versions/v1')));
+  it('rascunho do catálogo é só do curador: membro, estranho e visitante não leem', async () => {
+    await assertSucceeds(getDoc(doc(db('curator'), 'catalog/c1')));
+    await assertSucceeds(getDoc(doc(db('curator'), 'catalog/c1/versions/v1')));
+    await assertFails(getDoc(doc(db('music-a'), 'catalog/c1')));
+    await assertFails(getDoc(doc(db('music-a'), 'catalog/c1/versions/v1')));
     await assertFails(getDoc(doc(db('stranger'), 'catalog/c1')));
     await assertFails(getDoc(doc(db(null), 'catalog/c1')));
   });
@@ -405,5 +409,54 @@ describe('regressões da revisão de segurança', () => {
         contentType: 'image/svg+xml'
       })
     );
+  });
+});
+
+describe('I7: biblioteca pública (sem login só o publicado)', () => {
+  const SHA = 'a'.repeat(64);
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const admin = ctx.firestore();
+      const base = { title: 'P', rightsClass: 'own', licenseRef: LICENSE };
+      await setDoc(doc(admin, 'catalog/pub'), { ...base, status: 'published', currentVersionId: 'v2', publishedManifestSha256: SHA });
+      await setDoc(doc(admin, 'catalog/pub/versions/v1'), { stems: [] });
+      await setDoc(doc(admin, 'catalog/pub/versions/v2'), { stems: [] });
+      await setDoc(doc(admin, 'catalog/ret'), { ...base, status: 'withdrawn', currentVersionId: 'v1', publishedManifestSha256: SHA });
+      await setDoc(doc(admin, 'catalog/ret/versions/v1'), { stems: [] });
+      await setDoc(doc(admin, 'catalog/rascunho'), { ...base, status: 'ready' });
+    });
+  });
+
+  it('visitante lê a música publicada e só a versão publicada dela', async () => {
+    await assertSucceeds(getDoc(doc(db(null), 'catalog/pub')));
+    await assertSucceeds(getDoc(doc(db(null), 'catalog/pub/versions/v2')));
+    await assertFails(getDoc(doc(db(null), 'catalog/pub/versions/v1')));
+    await assertFails(getDocs(collection(db(null), 'catalog/pub/versions')));
+  });
+
+  it('visitante não lê rascunho nem música retirada; lista só com filtro de publicadas', async () => {
+    await assertFails(getDoc(doc(db(null), 'catalog/rascunho')));
+    await assertFails(getDoc(doc(db(null), 'catalog/ret')));
+    await assertFails(getDoc(doc(db(null), 'catalog/ret/versions/v1')));
+    await assertFails(getDocs(collection(db(null), 'catalog')));
+    const published = await getDocs(query(collection(db(null), 'catalog'), where('status', '==', 'published')));
+    expect(published.docs.map((d) => d.id)).toEqual(['pub']);
+  });
+
+  it('visitante e membro não escrevem nem apagam no catálogo', async () => {
+    await assertFails(updateDoc(doc(db(null), 'catalog/pub'), { title: 'X' }));
+    await assertFails(deleteDoc(doc(db(null), 'catalog/pub')));
+    await assertFails(setDoc(doc(db(null), 'catalog/novo'), { title: 'X', rightsClass: 'own', licenseRef: LICENSE }));
+    await assertFails(updateDoc(doc(db('music-a'), 'catalog/pub'), { status: 'withdrawn' }));
+  });
+
+  it('publicado exige versão atual e manifesto conferido; publicado não é apagado', async () => {
+    const curator = db('curator');
+    await assertFails(updateDoc(doc(curator, 'catalog/rascunho'), { status: 'published' }));
+    await assertFails(updateDoc(doc(curator, 'catalog/rascunho'), { status: 'published', currentVersionId: 'v1', publishedManifestSha256: 'curto' }));
+    await assertFails(updateDoc(doc(curator, 'catalog/rascunho'), { status: 'qualquer' }));
+    await assertFails(deleteDoc(doc(curator, 'catalog/pub')));
+    await assertSucceeds(updateDoc(doc(curator, 'catalog/pub'), { status: 'withdrawn' }));
+    await assertSucceeds(deleteDoc(doc(curator, 'catalog/ret')));
   });
 });

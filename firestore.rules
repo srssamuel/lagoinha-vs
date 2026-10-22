@@ -7,6 +7,7 @@ rules_version = '2';
 //   I2 igreja A nunca le nada de churches/B/**
 //   I3 convite: +1 por uso, so valido, nao revogado e dentro do prazo, e gera membro pendente
 //   I4 catalog/** so por curador, e so material proprio ou licenciado com documento
+//   I7 sem login so se le a musica publicada do catalogo e a versao publicada dela
 // Tudo que nao esta listado aqui e negado.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -43,13 +44,6 @@ service cloud.firestore {
       return signedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
     }
 
-    // Catalogo global: membro ativo de alguma igreja. O usuario aponta a igreja em users/{uid}.primaryChurchId
-    // e a regra confere o membro ativo la; apontar uma igreja onde nao e membro nao libera nada.
-    function isActiveSomewhere() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && isActiveMember(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('primaryChurchId', '_'));
-    }
 
     function nonEmptyString(value) {
       return value is string && value.size() > 0 && value.size() <= 200;
@@ -89,15 +83,41 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
-    // ---------- Catalogo global (I4) ----------
+    // Estados da musica no catalogo: pending (enviando/conferindo), ready (arquivos conferidos, pronta para
+    // publicar), published (servida sem login pelo Worker) e withdrawn (retirada, recuperavel).
+    // "published" so com o manifesto que o Worker conferiu e gravou (docs/architecture/biblioteca-publica.md).
+    function catalogStatusOk(data) {
+      return data.get('status', 'pending') in ['pending', 'ready', 'published', 'withdrawn']
+        && (data.get('status', 'pending') != 'published'
+          || (data.get('currentVersionId', null) is string
+            && data.get('publishedManifestSha256', null) is string
+            && data.publishedManifestSha256.size() == 64));
+    }
+
+    function catalogSongPath(songId) {
+      return /databases/$(database)/documents/catalog/$(songId);
+    }
+
+    // Versao publicada: a versao atual de uma musica com status "published"
+    function isPublishedVersion(songId, versionId) {
+      return exists(catalogSongPath(songId))
+        && get(catalogSongPath(songId)).data.get('status', '') == 'published'
+        && get(catalogSongPath(songId)).data.get('currentVersionId', '') == versionId;
+    }
+
+    // ---------- Catalogo global (I4) e biblioteca publica (I7) ----------
+    // I7: sem login so se le musica publicada e a versao publicada dela; rascunho, retirada e versoes antigas
+    // so o curador. Escrita continua so do curador.
     match /catalog/{songId} {
-      allow read: if isActiveSomewhere() || isCurator();
-      allow create, update: if isCurator() && catalogEligible(request.resource.data);
-      allow delete: if isCurator();
+      allow get, list: if resource.data.get('status', '') == 'published' || isCurator();
+      allow create, update: if isCurator() && catalogEligible(request.resource.data) && catalogStatusOk(request.resource.data);
+      // Exclusao fisica so depois de retirar a publicacao
+      allow delete: if isCurator() && resource.data.get('status', '') != 'published';
 
       // Versao so nasce sob musica que ja passou pela I4
       match /versions/{versionId} {
-        allow read: if isActiveSomewhere() || isCurator();
+        allow get: if isCurator() || isPublishedVersion(songId, versionId);
+        allow list: if isCurator();
         allow create: if isCurator()
           && exists(/databases/$(database)/documents/catalog/$(songId))
           && catalogEligible(get(/databases/$(database)/documents/catalog/$(songId)).data)
