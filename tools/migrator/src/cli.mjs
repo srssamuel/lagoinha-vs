@@ -54,7 +54,7 @@ export async function main(argv = process.argv.slice(2)) {
   const cmd = args._[0];
   const cfg = loadConfig(process.env);
   if (!cmd || args.help) {
-    console.log('comandos: inventory | classify | migrate [--pilot] [--target local|worker] [--registry local|firestore] [--abort-after N] [--concurrency N] [--retry-failed] [--assume-time-signature 4/4] | reconcile');
+    console.log('comandos: inventory | add-local <arquivo> | classify | migrate [--pilot] [--target local|worker] [--registry local|firestore] [--abort-after N] [--concurrency N] [--retry-failed] [--assume-time-signature 4/4] | reconcile');
     return 0;
   }
   const db = openManifest(cfg.manifestPath);
@@ -73,6 +73,14 @@ export async function main(argv = process.argv.slice(2)) {
       const docPath = writeInventoryDoc(res.totals, docDir, args.date);
       log(`documento agregado: ${docPath}`);
       console.log(JSON.stringify(res.totals, null, 2));
+      return 0;
+    }
+    if (cmd === 'add-local') {
+      const file = args._[1];
+      if (!file) throw new Error('uso: add-local <arquivo> (com um MIGRATION_HOME proprio, fora do inventario do Drive)');
+      const { registerLocalFile } = await import('./local.mjs');
+      const res = await registerLocalFile({ cfg, db, filePath: file });
+      log(`${res.created ? 'registrado' : 'ja registrado'}: item ${res.key} (md5 ${res.md5})`);
       return 0;
     }
     if (cmd === 'classify') {

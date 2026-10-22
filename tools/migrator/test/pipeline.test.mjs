@@ -18,6 +18,40 @@ async function prepare(files = standardFiles(), name = 'p') {
   const targets = () => ({ storage: new LocalStorage(fx.cfg.r2LocalDir), registry: new LocalRegistry(fx.cfg.firestoreLocalDir) });
   return { fx, inv, cls, targets };
 }
+test('add-local: zip fora do Drive vira musica publicada pelo mesmo caminho (classify + migrate); repetir nao duplica', async () => {
+  const { registerLocalFile } = await import('../src/local.mjs');
+  const fx = makeFixture([], { name: 'local' });
+  try {
+    const dir = 'Cancao Local (Versao Teste) 140Bpm - B';
+    const zipPath = path.join(fx.tmp, 'Downloads', `${dir}.zip`);
+    fs.mkdirSync(path.dirname(zipPath), { recursive: true });
+    const names = ['CLICK_140__1.wav', 'GUIA_1.wav', 'DRUM_1.wav', 'BASS_1.wav', 'Keys EP_1.wav'];
+    fs.writeFileSync(zipPath, buildZip([{ name: `${dir}/`, data: Buffer.alloc(0) }, ...names.map((n, i) => ({ name: `${dir}/${n}`, data: makeWav(1, 8000, 40 + i) }))]));
+
+    const r1 = await registerLocalFile({ cfg: fx.cfg, db: fx.db, filePath: zipPath });
+    const r2 = await registerLocalFile({ cfg: fx.cfg, db: fx.db, filePath: zipPath });
+    assert.equal(r1.created, true);
+    assert.equal(r2.created, false);
+    assert.equal(r2.key, r1.key);
+    assert.equal(one(fx.db, 'SELECT real_format f FROM files WHERE key = ?', r1.key).f, 'zip');
+
+    await runClassify({ cfg: fx.cfg, db: fx.db });
+    const res = await runMigrate({
+      cfg: fx.cfg, db: fx.db, storage: new LocalStorage(fx.cfg.r2LocalDir), registry: new LocalRegistry(fx.cfg.firestoreLocalDir), assumeTimeSignature: '4/4',
+    });
+    assert.equal(res.failed, 0);
+    const song = one(fx.db, `SELECT title, bpm, original_key k, status FROM songs WHERE kind = 'song'`);
+    assert.equal(song.bpm, 140);
+    assert.equal(song.k, 'B');
+    assert.equal(song.status, 'ready');
+    const stems = q(fx.db, `SELECT stem_type t, state FROM files WHERE kind = 'zip-entry' AND is_current = 1 ORDER BY stem_type`);
+    assert.equal(stems.length, names.length);
+    assert.ok(stems.every((s) => ['associated', 'published'].includes(s.state)), JSON.stringify(stems));
+  } finally {
+    fx.cleanup();
+  }
+});
+
 const q = (db, sql, ...a) => db.prepare(sql).all(...a);
 const one = (db, sql, ...a) => db.prepare(sql).get(...a);
 const run = (ctx, extra = {}) => runMigrate({ cfg: ctx.fx.cfg, db: ctx.fx.db, ...ctx.targets(), ...extra });

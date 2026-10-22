@@ -65,6 +65,8 @@ export function loadConfig(env = process.env, overrides = {}) {
 
 /** Caminho local de um item do manifesto, respeitando pastas de primeiro nivel realocadas. */
 export function sourcePath(cfg, localRel) {
+  // itens registrados por add-local guardam o caminho absoluto do disco
+  if (path.isAbsolute(localRel)) return localRel;
   const [top, ...rest] = localRel.split('/');
   const moved = cfg.relocations?.[top];
   return moved ? path.join(moved, ...rest) : path.join(cfg.sourceRoot, top, ...rest);
