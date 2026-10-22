@@ -5,7 +5,8 @@ import {
   connectClickToBus,
   connectTestTone,
   createStemChannelStrip,
-  StemAudioNodes
+  StemAudioNodes,
+  stereoWidthFor
 } from '../../../src/infrastructure/audio/AudioRoutingGraph';
 import { MixerBusService } from '../../../src/application/services/MixerBusService';
 import { RoutingMode } from '../../../src/domain/value-objects/AudioRouting';
@@ -31,7 +32,8 @@ function buildRoutedSong(mode: RoutingMode) {
   });
   const apply = (m: RoutingMode) => {
     MixerBusService.evaluateAllStems(song.stems, m).forEach(({ stemId, gains }) => {
-      applyStemRoutingGains(strips.get(stemId)!, gains, 0);
+      const stem = song.stems.find((s) => s.id === stemId)!;
+      applyStemRoutingGains(strips.get(stemId)!, gains, 0, stereoWidthFor(m, stem.type, stem.pan));
     });
   };
   apply(mode);
@@ -105,6 +107,44 @@ describe('AudioRoutingGraph — montagem da cadeia de roteamento/DSP', () => {
     expect([strip.leftGain, strip.rightGain, strip.ch3Gain, strip.ch4Gain].map((x) => x.gain.value)).toEqual([
       0.1, 0.2, 0.3, 0.4
     ]);
+  });
+
+  it('estéreo por stem: L e R do stem entram por uma matriz de largura antes de leftGain/rightGain', () => {
+    const g = createGraphAudioContext();
+    const m = buildMasterRouting(g.ctx, 1);
+    const stem = makeSong(['keys']).stems[0]!;
+    const strip = createStemChannelStrip(g.ctx, stem, 0, m);
+    const n = (x: unknown) => x as unknown as FakeNode;
+
+    expect(edgeTo(n(strip.gainNode), n(strip.stereoSplitter))).toBe(true);
+    expect(edgeTo(n(strip.stereoSplitter), n(strip.lToLeft), 0)).toBe(true);
+    expect(edgeTo(n(strip.stereoSplitter), n(strip.rToRight), 1)).toBe(true);
+    expect(edgeTo(n(strip.stereoSplitter), n(strip.rToLeft), 1)).toBe(true);
+    expect(edgeTo(n(strip.stereoSplitter), n(strip.lToRight), 0)).toBe(true);
+    // O gainNode não liga mais direto em leftGain/rightGain (aquilo somava o stem em mono)
+    expect(edgeTo(n(strip.gainNode), n(strip.leftGain))).toBe(false);
+    expect(edgeTo(n(strip.gainNode), n(strip.rightGain))).toBe(false);
+    expect(n(strip.gainNode).channelCount).toBe(2);
+    expect(n(strip.gainNode).channelCountMode).toBe('explicit');
+
+    const matrix = () => [strip.lToLeft, strip.rToLeft, strip.lToRight, strip.rToRight].map((x) => x.gain.value);
+    const gains = { ch1_vsL: 1, ch2_vsR: 1, ch3_click: 0, ch4_guide: 0, leftGain: 1, rightGain: 1 };
+    applyStemRoutingGains(strip, gains, 0, 1);
+    expect(matrix()).toEqual([1, 0, 0, 1]);
+    applyStemRoutingGains(strip, gains, 0, 0);
+    expect(matrix()).toEqual([0.5, 0.5, 0.5, 0.5]); // igual ao downmix mono anterior
+    applyStemRoutingGains(strip, gains, 0); // padrão = soma mono
+    expect(matrix()).toEqual([0.5, 0.5, 0.5, 0.5]);
+  });
+
+  it('largura estéreo por modo: split e click/guia em mono; modos estéreo fecham com o pan', () => {
+    expect(stereoWidthFor('SPLIT_IEM_PA', 'keys', 0)).toBe(0);
+    expect(stereoWidthFor('STEREO_FULL', 'click', 0)).toBe(0);
+    expect(stereoWidthFor('MULTI_4CH_DISCRETE', 'guide', 0)).toBe(0);
+    expect(stereoWidthFor('STEREO_FULL', 'keys', 0)).toBe(1);
+    expect(stereoWidthFor('MULTI_4CH_DISCRETE', 'drums', 0)).toBe(1);
+    expect(stereoWidthFor('STEREO_FULL', 'guitars', -0.25)).toBe(0.75);
+    expect(stereoWidthFor('STEREO_FULL', 'guitars', 1)).toBe(0);
   });
 
   it('click procedural: SPLIT só no fone L; 4CH só na saída 3; Stereo Full em L e R', () => {

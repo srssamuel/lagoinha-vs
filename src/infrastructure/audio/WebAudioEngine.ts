@@ -17,6 +17,7 @@ import {
   buildMasterRouting,
   connectTestTone,
   createStemChannelStrip,
+  stereoWidthFor,
   StemAudioNodes
 } from './AudioRoutingGraph';
 import { MetronomeScheduler, TRANSPORT_START_MARGIN_S } from './MetronomeScheduler';
@@ -706,11 +707,13 @@ export class WebAudioEngine implements AudioEnginePort {
     );
     const now = this.ctx.currentTime;
 
+    const stemsById = new Map(this.currentSong.stems.map((s) => [s.id, s]));
     stemEvals.forEach(({ stemId, gains }) => {
       const nodes = this.stemNodes.get(stemId);
-      if (!nodes) return;
+      const stem = stemsById.get(stemId);
+      if (!nodes || !stem) return;
 
-      applyStemRoutingGains(nodes, gains, now);
+      applyStemRoutingGains(nodes, gains, now, stereoWidthFor(this.routingMode, stem.type, stem.pan));
     });
   }
 

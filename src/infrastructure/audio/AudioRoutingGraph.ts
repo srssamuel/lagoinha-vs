@@ -26,6 +26,12 @@ export interface StemAudioNodes {
   tubeSaturator: WaveShaperNode;
   compressor: DynamicsCompressorNode;
   gainNode: GainNode;
+  /** Separa L/R do stem; a matriz abaixo decide quanto do estéreo chega a leftGain/rightGain. */
+  stereoSplitter: ChannelSplitterNode;
+  lToLeft: GainNode;
+  rToLeft: GainNode;
+  lToRight: GainNode;
+  rToRight: GainNode;
   leftGain: GainNode; // Ch 1 (VS Left / FOH L)
   rightGain: GainNode; // Ch 2 (VS Right / FOH R)
   ch3Gain: GainNode; // Ch 3 (Click Dedicated IEM)
@@ -148,9 +154,30 @@ export function createStemChannelStrip(
   tubeSaturator.connect(compressor);
   compressor.connect(gainNode);
 
+  // Estéreo por stem: o gainNode sai sempre em 2 canais (stem mono vira L=R) e a matriz de largura
+  // alimenta leftGain/rightGain. Largura 0 = soma mono 0,5*(L+R), igual ao downmix que a entrada do merger
+  // fazia antes; largura 1 = L só na esquerda, R só na direita. Os destinos continuam decididos só pelos
+  // ganhos leftGain/rightGain/ch3/ch4.
+  gainNode.channelCount = 2;
+  gainNode.channelCountMode = 'explicit';
+  gainNode.channelInterpretation = 'speakers';
+  const stereoSplitter = ctx.createChannelSplitter(2);
+  const lToLeft = ctx.createGain();
+  const rToLeft = ctx.createGain();
+  const lToRight = ctx.createGain();
+  const rToRight = ctx.createGain();
+  for (const g of [lToLeft, rToLeft, lToRight, rToRight]) g.gain.value = 0.5;
+  gainNode.connect(stereoSplitter);
+  stereoSplitter.connect(lToLeft, 0);
+  stereoSplitter.connect(rToLeft, 1);
+  stereoSplitter.connect(lToRight, 0);
+  stereoSplitter.connect(rToRight, 1);
+  lToLeft.connect(leftGain);
+  rToLeft.connect(leftGain);
+  lToRight.connect(rightGain);
+  rToRight.connect(rightGain);
+
   gainNode.connect(analyser);
-  gainNode.connect(leftGain);
-  gainNode.connect(rightGain);
   gainNode.connect(ch3Gain);
   gainNode.connect(ch4Gain);
 
@@ -176,6 +203,11 @@ export function createStemChannelStrip(
     tubeSaturator,
     compressor,
     gainNode,
+    stereoSplitter,
+    lToLeft,
+    rToLeft,
+    lToRight,
+    rToRight,
     leftGain,
     rightGain,
     ch3Gain,
@@ -185,13 +217,35 @@ export function createStemChannelStrip(
   };
 }
 
-/** Aplica os ganhos por canal (calculados por modo em AudioRouting) com rampa curta. */
-export function applyStemRoutingGains(nodes: StemAudioNodes, gains: ChannelAssignment, now: number): void {
+/**
+ * Largura estéreo do stem (0..1). Modos split usam L e R como barramentos diferentes (fone x PA): soma mono.
+ * Click e guia são mono. Nos modos estéreo o stem centrado mantém o estéreo e, ao panoramizar, a largura
+ * fecha até a soma mono no extremo (onde o pan de potência constante já manda tudo para um lado).
+ */
+export function stereoWidthFor(mode: RoutingMode, stemType: string, pan: number): number {
+  if (mode === 'SPLIT_IEM_PA' || stemType === 'click' || stemType === 'guide') return 0;
+  return Math.max(0, Math.min(1, 1 - Math.abs(pan)));
+}
+
+/** Aplica os ganhos por canal (calculados por modo em AudioRouting) e a largura estéreo, com rampa curta. */
+export function applyStemRoutingGains(
+  nodes: StemAudioNodes,
+  gains: ChannelAssignment,
+  now: number,
+  stereoWidth = 0
+): void {
+  const w = Math.max(0, Math.min(1, stereoWidth));
+  const direct = (1 + w) / 2;
+  const cross = (1 - w) / 2;
   const targets: Array<[GainNode, number]> = [
     [nodes.leftGain, gains.ch1_vsL], // Canal 1: VS Left (Mesa FOH / Split L)
     [nodes.rightGain, gains.ch2_vsR], // Canal 2: VS Right (Mesa FOH / Split R)
     [nodes.ch3Gain, gains.ch3_click], // Canal 3: Click dedicado (somente IEM)
-    [nodes.ch4Gain, gains.ch4_guide] // Canal 4: Guia dedicado (somente IEM)
+    [nodes.ch4Gain, gains.ch4_guide], // Canal 4: Guia dedicado (somente IEM)
+    [nodes.lToLeft, direct],
+    [nodes.rToRight, direct],
+    [nodes.rToLeft, cross],
+    [nodes.lToRight, cross]
   ];
   for (const [node, value] of targets) {
     node.gain.cancelScheduledValues(now);

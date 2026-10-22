@@ -187,7 +187,9 @@ export function finalInputsReachedFrom(start: FakeNode, finalMerger: FakeNode): 
     }
   };
 
+  // A partir de um stem estéreo os dois canais podem levar sinal: percorre ambos (mais conservador).
   walk(start, 0);
+  walk(start, 1);
   return reached;
 }
 

@@ -1,7 +1,7 @@
 // Entrada empacotada (esbuild) e executada no Chromium: monta o grafo DE PRODUCAO num OfflineAudioContext.
 // Sem mocks de AudioParam: AudioRoutingGraph.buildMasterRouting + createStemChannelStrip + applyStemRoutingGains
 // (os mesmos modulos que o WebAudioEngine usa), com o mesmo ajuste de DSP de refreshDspChain para DSP "Flat".
-import { buildMasterRouting, createStemChannelStrip, applyStemRoutingGains } from '../../src/infrastructure/audio/AudioRoutingGraph';
+import { buildMasterRouting, createStemChannelStrip, applyStemRoutingGains, stereoWidthFor } from '../../src/infrastructure/audio/AudioRoutingGraph';
 import { TrackStem } from '../../src/domain/entities/TrackStem';
 import { AudioRouting } from '../../src/domain/value-objects/AudioRouting';
 import { VstPluginRackService } from '../../src/domain/services/VstPluginRackService';
@@ -24,7 +24,7 @@ function f32ToB64(f32) {
 }
 
 /**
- * spec: { sampleRate, seconds, mode, stems: [{ id, type, name, pitchPolicy, data(b64 f32 mono), volume }],
+ * spec: { sampleRate, seconds, mode, stems: [{ id, type, name, pitchPolicy, data(b64 f32 mono ou L), dataR?(b64 f32 R), pan?, volume }],
  *         initial: semitones, commands: [{ t, st }] }
  * Devolve { channels: [b64 x4], sampleRate, info }.
  */
@@ -39,7 +39,7 @@ async function renderScenario(spec) {
   const master = buildMasterRouting(ctx, 1.0);
   const strips = [];
   for (const s of spec.stems) {
-    const stem = new TrackStem({ id: s.id, name: s.name ?? s.id, type: s.type, volume: s.volume ?? 1, pan: 0, isMuted: false, isSolo: false, pitchPolicy: s.pitchPolicy });
+    const stem = new TrackStem({ id: s.id, name: s.name ?? s.id, type: s.type, volume: s.volume ?? 1, pan: s.pan ?? 0, isMuted: false, isSolo: false, pitchPolicy: s.pitchPolicy });
     const strip = createStemChannelStrip(ctx, stem, spec.initial ?? 0, { vsMerger: master.vsMerger, finalMerger: master.finalMerger });
     // Mesmo ajuste de DSP do WebAudioEngine.refreshDspChain (preset Flat)
     const dsp = stem.dsp;
@@ -48,10 +48,15 @@ async function renderScenario(spec) {
     strip.compressor.threshold.setValueAtTime(0, 0);
     strip.compressor.ratio.setValueAtTime(1.0, 0);
     const gains = AudioRouting.calculateGains(stem.type, spec.mode, stem.pan, true, stem.volume);
-    applyStemRoutingGains(strip, gains, 0);
-    const buf = ctx.createBuffer(1, frames, sr);
+    // Idem WebAudioEngine.applyMixerSettings: ganhos do modo + largura estéreo do stem
+    applyStemRoutingGains(strip, gains, 0, stereoWidthFor(spec.mode, stem.type, stem.pan));
+    const buf = ctx.createBuffer(s.dataR ? 2 : 1, frames, sr);
     const src = b64ToF32(s.data);
     buf.copyToChannel(src.subarray(0, Math.min(src.length, frames)), 0);
+    if (s.dataR) {
+      const srcR = b64ToF32(s.dataR);
+      buf.copyToChannel(srcR.subarray(0, Math.min(srcR.length, frames)), 1);
+    }
     const node = ctx.createBufferSource();
     node.buffer = buf;
     node.connect(strip.pitchShifter.input);

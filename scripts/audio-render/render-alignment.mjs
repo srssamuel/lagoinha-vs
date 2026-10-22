@@ -236,7 +236,8 @@ async function main() {
     const data = { sine: sig.sine, chord: sig.chord, clicks120: sig.clicks120, dense: sig.dense, violao }[material];
     const r = await page.evaluate((s) => window.AudioRender.renderScenario(s), {
       sampleRate: SR, seconds: SECONDS, mode: spec.mode ?? 'SPLIT_IEM_PA',
-      stems: (spec.stems ?? [{ id: 's1', type: spec.type ?? 'violao', pitchPolicy: spec.policy }]).map((s) => ({ ...s, data: b64(data) })),
+      // `right` (Float32Array) torna o stem estéreo: `data` vira o canal L
+      stems: (spec.stems ?? [{ id: 's1', type: spec.type ?? 'violao', pitchPolicy: spec.policy }]).map(({ right, ...s }) => ({ ...s, data: b64(data), ...(right ? { dataR: b64(right) } : {}) })),
       initial: spec.initial ?? 0, commands: spec.commands ?? []
     });
     lastState = r.state;
@@ -389,6 +390,46 @@ async function main() {
     // um stem harmonico transposto nunca vai para ch3/ch4
     const ri = await render('sine', { mode: 'MULTI_4CH_DISCRETE', initial: 2, commands: [{ t: 2, st: -2 }] });
     fail('MULTI_4CH: instrumento transposto fora de ch3/ch4', peakDb(ri[2]) < -150 && peakDb(ri[3]) < -150, `ch3 ${peakDb(ri[2]).toFixed(1)} ch4 ${peakDb(ri[3]).toFixed(1)}`);
+  }
+
+  // ---- 4b) Estéreo por stem: L do stem fica na saída L e R na saída R nos modos estéreo; split segue em mono;
+  // click/guia estéreos e panoramizados continuam fora do FOH
+  {
+    const silence = new Float32Array(SECONDS * SR);
+    const keysLOnly = (extra = {}) => ({ id: 'k', type: 'keys', pitchPolicy: 'harmonic', right: silence, ...extra });
+    const st = (c) => c.map((x) => +peakDb(x).toFixed(1));
+    results.routing.stereo = {};
+    for (const mode of ['STEREO_FULL', 'MULTI_4CH_DISCRETE']) {
+      for (const initial of [0, 2]) {
+        const r = await render('sine', { mode, initial, stems: [keysLOnly()] });
+        results.routing.stereo[`${mode} ${initial} st, stem so com L`] = st(r);
+        fail(`${mode} ${initial > 0 ? '+' : ''}${initial} st: stem estéreo com conteúdo só em L não vaza para a saída R (separação >= 60 dB)`, peakDb(r[0]) - peakDb(r[1]) >= 60, `L ${peakDb(r[0]).toFixed(1)} R ${peakDb(r[1]).toFixed(1)} dBFS`);
+        fail(`${mode} ${initial > 0 ? '+' : ''}${initial} st: o L do stem chega à saída L`, peakDb(r[0]) > -30, `L ${peakDb(r[0]).toFixed(1)} dBFS`);
+      }
+    }
+    // Split: L e R são barramentos diferentes (fone x PA): o stem continua somado em mono nos dois
+    const sp = await render('sine', { mode: 'SPLIT_IEM_PA', initial: 0, stems: [keysLOnly()] });
+    results.routing.stereo['SPLIT_IEM_PA, stem so com L'] = st(sp);
+    fail('SPLIT_IEM_PA: stem estéreo chega ao PA (R) somado em mono', peakDb(sp[1]) > -30, `R ${peakDb(sp[1]).toFixed(1)} dBFS`);
+    // Stem mono centrado: mesmo nível de antes (pan de potência constante, -3,01 dB em cada lado). Referência
+    // medida no próprio grafo: o mesmo stem no PA do SPLIT (ganho 1, sem pan), que inclui o ganho próprio do strip.
+    const monoStem = [{ id: 'm', type: 'keys', pitchPolicy: 'harmonic' }];
+    const mono = await render('sine', { mode: 'STEREO_FULL', initial: 0, stems: monoStem });
+    const monoRef = await render('sine', { mode: 'SPLIT_IEM_PA', initial: 0, stems: monoStem });
+    const expected = peakDb(monoRef[1]) - 3.0103;
+    results.routing.stereo['STEREO_FULL, stem mono centrado'] = st(mono);
+    fail('STEREO_FULL: stem mono centrado com o mesmo nível de antes nos dois lados (+-0,1 dB)', Math.abs(peakDb(mono[0]) - expected) <= 0.1 && Math.abs(peakDb(mono[1]) - expected) <= 0.1, `L ${peakDb(mono[0]).toFixed(2)} R ${peakDb(mono[1]).toFixed(2)} esperado ${expected.toFixed(2)} dBFS`);
+    // Click/guia estéreos, panoramizados ao extremo: nada no FOH
+    for (const pan of [-1, 0, 1]) {
+      const cg = [
+        { id: 'click', type: 'click', pitchPolicy: 'locked', right: sig.sine, pan },
+        { id: 'guide', type: 'guide', pitchPolicy: 'locked', right: sig.sine, pan }
+      ];
+      const rs = await render('sine', { mode: 'SPLIT_IEM_PA', initial: 2, stems: cg });
+      fail(`SPLIT_IEM_PA: click+guia estéreos (pan ${pan}) com R (FOH) em silêncio absoluto`, peakDb(rs[1]) < -150, `R ${peakDb(rs[1]).toFixed(1)} dBFS`);
+      const rm = await render('sine', { mode: 'MULTI_4CH_DISCRETE', initial: 2, stems: cg });
+      fail(`MULTI_4CH: click+guia estéreos (pan ${pan}) com ch1/ch2 (FOH) em silêncio absoluto`, peakDb(rm[0]) < -150 && peakDb(rm[1]) < -150, `ch1 ${peakDb(rm[0]).toFixed(1)} ch2 ${peakDb(rm[1]).toFixed(1)}`);
+    }
   }
 
   // ---- 5) Criterios de alinhamento (tolerancia adotada; justificativa em docs/qa/alinhamento-audio-2026-10-21.md)
