@@ -21,7 +21,6 @@ import { analyzeKeyFromStems, isAbortError } from '../../infrastructure/audio/Au
 import { KeyAnalysisSlot } from '../../infrastructure/audio/KeyAnalysisSlot';
 import { resolveImportKey, stableImportId, stableStemId } from '../../application/setlist/importIdentity';
 import { keyFromName, UNKNOWN_KEY, type SongKeyInfo } from '../../domain/value-objects/SongKey';
-import { VstPluginRackService } from '../../domain/services/VstPluginRackService';
 import { IndexedDbStorageService } from '../../infrastructure/storage/IndexedDbStorageService';
 import { useBackend } from '../BackendContext';
 
@@ -171,9 +170,8 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
           fx: 12
         };
         stemBlobPairs.sort((a, b) => orderRank[a.stem.type] - orderRank[b.stem.type]);
+        // Stems de multitrack chegam mixados: o import fica neutro (Flat). O Smart Auto-Fix e escolha do musico no rack.
         const stems = stemBlobPairs.map((p) => p.stem);
-
-        VstPluginRackService.applySmartAutoFixAll(stems);
 
         const duration = detectedDuration > 10 ? detectedDuration : 247;
         // Nome sem tom: analisa o áudio (Worker, uma música por vez). Inconclusivo = sem tom, nunca um tom padrão.
@@ -265,9 +263,8 @@ export const SetlistSidebar: React.FC<SetlistSidebarProps> = ({
       fx: 12
     };
     stemBlobPairs.sort((a, b) => orderRank[a.stem.type] - orderRank[b.stem.type]);
+    // Import neutro (Flat): ver comentario acima
     const stems = stemBlobPairs.map((p) => p.stem);
-
-    VstPluginRackService.applySmartAutoFixAll(stems);
 
     const duration = detectedDuration > 10 ? detectedDuration : 240;
     // Stems soltos não têm nome de pacote: tom pelo áudio; inconclusivo fica sem tom
