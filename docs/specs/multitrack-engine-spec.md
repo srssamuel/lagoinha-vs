@@ -43,3 +43,30 @@
 - Permite manter uma harmonia ambiente no tom do louvor mesmo com as tracks paradas.
 - Síntese com osciladores polifônicos (Fundamental + Quinta + Oitava) com filtro passa-baixa suave (cutoff ~400Hz - 800Hz) e modulação LFO sutil.
 - Transição com crossfade exponencial de 2 a 3 segundos ao trocar de tom ou desligar.
+
+## 4. Quadro por capacidade (estado em 2026-10-21)
+
+Legenda de evidência:
+- **auto**: teste ou script automatizado que pode falhar, executado;
+- **medido**: render ou medição numérica;
+- **ouvido**: escuta humana;
+- **equip.**: equipamento real (tablet, interface USB, mesa, PA).
+
+Os itens sem evidência marcada não foram verificados.
+
+| Capacidade | Implementação | Evidência | Pendência | Prior. | Critério de conclusão |
+|---|---|---|---|---|---|
+| Acervo e backup | Migrador Drive → R2 + D1 + Firestore, com md5/sha256 conferidos e manifesto SQLite local | auto (suíte do migrador 33/33); medido (D1: 571 blobs, todos com procedência; Firestore: 41 músicas, 551 stems em versões) | Parte da origem foi removida do Drive pelo dono dos arquivos (`docs/migracao/incidente-drive-2026-10-21.md`); diferença de 20 entre blobs e stems referenciados não conciliada | P0 | Conciliação item a item: inventário = migrado + fora do acervo declarado, sem soma de sobreposição |
+| Importação | Importador por zip/pasta; `add-local` para arquivo do disco usando o mesmo pipeline (hash, upload verificado, registro) | auto (teste zip → música publicada, sem duplicar); real (lote de 13 stems: 13/13 verificados, música publicada) | Tocar o lote local no app pelo fluxo da nuvem | P0 | Música importada toca no app a partir do R2, com os stems alinhados |
+| Tom e transposição | `SongKey` com origem e confirmação, sem fallback G; empate maior × relativo menor = ambíguo; Pitch Lock por nome tokenizado | auto (SongKeyDetector 61 testes; PitchLockClassification 36); medido (amostra do acervo em `docs/qa/tom-identificacao-2026-10-21.md`) | Auditoria dos G históricos depende do acervo completo; escuta de stems mistos transpostos | P0 | Nenhum tom gravado sem origem; click e guia nunca transpõem nem saem no PA |
+| Sincronismo | Mesmo `AudioContext.currentTime` para todos os stems; latência constante de 21 ms no caminho dry; click compensado | medido (`docs/qa/alinhamento-audio-2026-10-21.md`: transposto × Pitch Lock com cerca de 3 ms de centroide) | Erro residual de cerca de 3 ms; bypass do saturador não pode ser `curve=null` (muda 128 amostras, ver `docs/qa/bancada-audio-2026-10-21.md`) | P1 | Diferença menor ou igual a 5 ms entre caminhos em render e ouvido no palco |
+| Offline | PWA com precache de todos os chunks; "Preparar e abrir offline" grava os stems do culto no IndexedDB; atualização só é oferecida depois de parar | auto (`npm run e2e:offline` em 2026-10-21: 10/10 PASS. O fluxo cobre build de produção, login, preparo do culto, reabrir sem rede e tocar, atualização v1 → v2 com reprodução ativa sem recarga, e v2 offline) | Material sintético (6 stems); o app não usa WASM hoje; falta repetir com culto real no tablet e com o aparelho reiniciado | P0 | Fluxo autenticar → preparar → fechar → sem rede → reabrir → tocar, automatizado e repetido no tablet |
+| Roteamento | Matriz por `ChannelSplitter`/`Merger`; SPLIT_IEM_PA força ganho 0 de click/guia no FOH; 4 canais discretos | auto (testes de grafo e roteamento); medido (render sem vazamento, controle positivo detecta vazamento) | Perda da interface USB e soma mono só em equipamento real | P0 | Sem click/guia no PA em qualquer modo, inclusive após troca de dispositivo, medido na interface real |
+| Desempenho | Shifter granular (4,7% de 1 núcleo, 8 stems) | medido (laboratório Signalsmith) | Tablet real; soma de PA chega a +0,4 dBTP em ganho unitário (limitador mestre não é brickwall) | P1 | Sem dropout em 60 min no tablet; soma de PA abaixo de 0 dBTP com headroom fixo |
+| Versões e setlists | Versões por música no Firestore; setlist local | auto (testes de domínio) | Escolha de versão por culto e preparo por versão | P2 | Setlist referencia versão específica e prepara só ela |
+| Autorização entre igrejas | Escopo pela URL; chave R2 por igreja; papéis lidos do Firestore com token do usuário | auto (`workers/stems` test:emu 66/66, inclusive hash ou chave de outra igreja negados e `upload_id` alheio = 404) | Correção do `upload_id` (403 → 404) ainda não publicada no Worker | P1 | Conhecer hash, chave ou id nunca concede leitura ou vínculo; teste de contrato no deploy |
+| Origem e direitos | `rightsClass` e procedência por blob (`sources`) | medido (100% dos blobs com procedência) | Política de direitos por música; pasta de origem com link público | P1 | Toda música com classe de direitos e origem rastreável |
+| Atualização e recuperação | Service worker; sem atualização durante a sessão | não verificado | Testar atualização com reprodução ativa e retorno após falha | P1 | Atualização nunca interrompe reprodução; app volta ao estado preparado após reinício |
+| Piloto | — | — | Culto piloto com equipe de som | P1 | Um culto inteiro sem incidente de áudio, com relato da equipe |
+| Evolução comercial | — | — | Depende de decisão do Samuel | P3 | Decisão registrada |
+| Pré-render de variantes (experimento) | Laboratório isolado, fora do app | em andamento | Medir tempo, espaço, CPU e qualidade antes de qualquer adoção | P2 | Relatório com números; sem virar dependência |
