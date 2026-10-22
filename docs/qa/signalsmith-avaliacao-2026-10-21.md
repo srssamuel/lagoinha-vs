@@ -1,5 +1,14 @@
 # Signalsmith Stretch x shifter granular — experimento isolado (2026-10-21)
 
+> **Atualização (2026-10-22, stems reais):**
+> - **Material:** violão, teclas, baixo, pad, BGV e soma, em ±1, ±2 e ±3 semitons, com retorno a 0 e estresse. Detalhes em `03_LABS_E_EXPERIMENTOS/audio-real-stems-2026-10-22/RESULTADO.md`.
+> - **Qualidade:** o Signalsmith segue melhor em nível e alinhamento. A perda de RMS foi de −0,1 a −0,3 dB contra −0,5 a −1,5 dB do granular, e a dispersão dos ataques foi de 3,9 ms contra 7,4 ms.
+> - **Custos:** a latência continua em 120 ms. O CPU do insert é cerca de 2,1 vezes o do granular, medido no Chromium de mesa.
+> - **Estalos:** nenhum clipping e nenhum estalo nos dois motores.
+> - **Falha silenciosa:** a "falha silenciosa" abaixo era uma corrida do harness offline, em que o comando chegava ao worklet depois do início do render. Não é defeito da biblioteca: ao vivo, foram 0 falhas em 25 criações. Uma integração deve esperar `latency()` antes de liberar o play.
+> - **Decisão mantida:** o granular continua no ao vivo. O pré-render de variantes, com Signalsmith offline, passa a ser o candidato prioritário (ver a spec, seção 4).
+> - **Pendente:** escuta cega, com os pares em `%LOCALAPPDATA%\lagoinha-vs\relatorios\audio\real-stems-2026-10-22\cego\`, e teste no tablet.
+
 Decisão: **não trocar agora.** Aprofundar com escuta cega e teste em tablet com a interface USB.
 O laboratório ficou fora do repositório (`03_LABS_E_EXPERIMENTOS/signalsmith-vs-granular-2026-10-21/RESULTADO.md`); nada do app foi alterado.
 
